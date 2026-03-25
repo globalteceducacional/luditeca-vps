@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { prisma } from '../lib/prisma.js';
-import { assertBucket, copyObject, deleteObject, listObjects, publicUrl, presignedGetUrl, presignedPutUrl, putObject, } from '../lib/s3.js';
+import { assertBucket, copyObject, deleteObject, listObjects, presignedGetUrl, presignedPutUrl, putObject, } from '../lib/s3.js';
 import { requireAuth } from '../plugins/auth.js';
 const MEDIA_BUCKET_MAP = {
     image: 'covers',
@@ -102,14 +102,8 @@ export async function registerMediaRoutes(app) {
             const type = extType(file.name);
             let url = null;
             try {
-                // Compat/UX: imagens costumam ser usadas em persistência (DB). Para evitar expirarem,
-                // devolvemos URL pública para conteúdo "image/gif" e presign apenas para outros tipos.
-                if (type === 'image' || type === 'gif') {
-                    url = publicUrl(bucket, fullPath);
-                }
-                else {
-                    url = await presignedGetUrl(bucket, fullPath, 3600);
-                }
+                // MinIO local normalmente não é público; então usamos URL assinada para tudo.
+                url = await presignedGetUrl(bucket, fullPath, 3600);
             }
             catch {
                 url = null;
@@ -207,13 +201,7 @@ export async function registerMediaRoutes(app) {
         }
         let url = null;
         try {
-            const t = extType(safeName);
-            if (t === 'image' || t === 'gif') {
-                url = publicUrl(bucket, key);
-            }
-            else {
-                url = await presignedGetUrl(bucket, key, 3600);
-            }
+            url = await presignedGetUrl(bucket, key, 3600);
         }
         catch {
             url = null;

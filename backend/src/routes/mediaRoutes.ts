@@ -7,7 +7,6 @@ import {
   copyObject,
   deleteObject,
   listObjects,
-  publicUrl,
   presignedGetUrl,
   presignedPutUrl,
   putObject,
@@ -132,13 +131,8 @@ export async function registerMediaRoutes(app: FastifyInstance) {
         const type = extType(file.name);
         let url: string | null = null;
         try {
-          // Compat/UX: imagens costumam ser usadas em persistência (DB). Para evitar expirarem,
-          // devolvemos URL pública para conteúdo "image/gif" e presign apenas para outros tipos.
-          if (type === 'image' || type === 'gif') {
-            url = publicUrl(bucket, fullPath);
-          } else {
-            url = await presignedGetUrl(bucket, fullPath, 3600);
-          }
+          // MinIO local normalmente não é público; então usamos URL assinada para tudo.
+          url = await presignedGetUrl(bucket, fullPath, 3600);
         } catch {
           url = null;
         }
@@ -243,12 +237,7 @@ export async function registerMediaRoutes(app: FastifyInstance) {
 
     let url: string | null = null;
     try {
-      const t = extType(safeName);
-      if (t === 'image' || t === 'gif') {
-        url = publicUrl(bucket, key);
-      } else {
-        url = await presignedGetUrl(bucket, key, 3600);
-      }
+      url = await presignedGetUrl(bucket, key, 3600);
     } catch {
       url = null;
     }

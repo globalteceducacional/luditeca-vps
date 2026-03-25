@@ -6,6 +6,7 @@ import { XMLParser } from 'fast-xml-parser';
 import jwt from 'jsonwebtoken';
 import { buildStorageClient as makeStorageClient } from './storageCompat.mjs';
 import { PrismaClient } from '@prisma/client';
+import { presignedGetUrl } from '../lib/s3.js';
 
 const MAX_FILE_SIZE = 500 * 1024 * 1024;
 const MAX_TOTAL_SIZE = 600 * 1024 * 1024;
@@ -52,69 +53,19 @@ async function parseForm(req) {
   return { fields, files };
 }
 
-/** Corpo JSON pequeno (referência a ficheiro já no Storage) — compatível com limite da Vercel. */
-function readRequestJson(req) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    req.on('data', (chunk) => chunks.push(chunk));
-    req.on('end', () => {
-      try {
-        const raw = Buffer.concat(chunks).toString('utf8');
-        resolve(raw ? JSON.parse(raw) : {});
-      } catch {
-        reject(new Error('JSON inválido no corpo da requisição.'));
-      }
-    });
-    req.on('error', reject);
-  });
-}
-
-const ALLOWED_PPTX_SOURCE_BUCKETS = new Set(['presentations']);
 const prisma = new PrismaClient();
 
-function assertBookId(raw) {
-  const s = String(raw || '').trim();
-  if (!s || !/^\d+$/.test(s) || s.length > 30) {
-    throw new Error('Livro inválido para importação.');
-  }
-  return s;
-}
+// Import PPTX aceita apenas multipart/form-data (upload direto do browser).
+// Para imports feitos antes de o livro existir (ex.: `books/new`), o frontend envia um `bookId` temporário.
+// O backend usa `bookId` apenas para compor caminhos no storage e gerar IDs no payload.
+function normalizeBookId(raw) {
+  const s = String(raw || 'temp-book').trim();
+  if (!s) return 'temp-book';
 
-function assertPptxStoragePathForUser(storagePath, userId) {
-  const normalized = String(storagePath || '')
-    .replace(/\\/g, '/')
-    .replace(/^\/+/, '');
-  if (!normalized.toLowerCase().endsWith('.pptx')) {
-    throw new Error('Caminho inválido: é necessário um arquivo .pptx.');
-  }
-  if (normalized.includes('..')) {
-    throw new Error('Caminho de armazenamento inválido.');
-  }
-  const prefix = `${userId}/`;
-  if (!normalized.startsWith(prefix)) {
-    throw new Error('Caminho de armazenamento não autorizado para este usuário.');
-  }
-  if (!normalized.includes('/imports/staging/')) {
-    throw new Error(
-      'Use apenas arquivos enviados para a pasta de importação (staging).',
-    );
-  }
-  return normalized;
-}
-
-async function removeStagingImportFile({ supabase, bucket, storagePath }) {
-  if (!storagePath || !bucket || !supabase) return;
-  try {
-    const { error } = await supabase.storage.from(bucket).remove([storagePath]);
-    if (error) {
-      importDebug('remover staging pptx (não bloqueia)', {
-        message: error.message,
-        path: storagePath,
-      });
-    }
-  } catch (err) {
-    importDebug('remover staging pptx exceção', { message: err?.message });
-  }
+  // Remove caracteres que poderiam quebrar paths; mantém strings legíveis.
+  const cleaned = s.replace(/[\\/]/g, '_').replace(/[^\w.-]/g, '_');
+  // Limite de tamanho para evitar keys absurdamente grandes.
+  return cleaned.length > 60 ? cleaned.slice(0, 60) : cleaned;
 }
 
 function normalizeRels(value) {
@@ -816,12 +767,8 @@ async function uploadSlideImage({ supabase, userId, bookId, importStamp, slideNu
     throw new Error(`Falha ao subir slide ${slideNumber}: ${uploadError.message}`);
   }
 
-  const { data: urlData } = supabase.storage.from('pages').getPublicUrl(targetPath);
-  const publicUrl = urlData?.publicUrl;
-
-  if (!publicUrl) {
-    throw new Error(`Não foi possível gerar URL pública do slide ${slideNumber}.`);
-  }
+  // MinIO local costuma ser privado; para o browser visualizar, precisamos de URL assinada.
+  const publicUrl = await presignedGetUrl('pages', targetPath, 3600);
 
   const { error: metadataError } = await supabase.from('media_files').insert({
     user_id: userId,
@@ -892,10 +839,9 @@ async function uploadOriginalPptx({ supabase, userId, bookId, importStamp, fileN
     return null;
   }
 
-  const { data: urlData } = supabase.storage.from('presentations').getPublicUrl(targetPath);
   return {
     path: targetPath,
-    publicUrl: urlData?.publicUrl || null,
+    publicUrl: null,
   };
 }
 
@@ -914,118 +860,63 @@ export async function runImportPptxEngine(req, res) {
     const authUserId = await getUserIdFromRequest(req);
     const userId = authUserId;
 
-    const contentType = String(req.headers['content-type'] || '').toLowerCase();
-    const isJsonBody = contentType.includes('application/json');
-
     let bookId = 'temp-book';
     let dryRun = false;
     let fileBuffer;
     let originalName = '';
-    /** Caminho no Storage a remover após sucesso (upload via cliente). */
-    let stagingPathToRemove = null;
-    let stagingBucket = null;
 
-    if (isJsonBody) {
-      importDebug('parse JSON (referência ao Storage)…');
-      const body = await readRequestJson(req);
-      bookId = assertBookId(body.bookId);
-      dryRun = String(body.dryRun || '').toLowerCase() === 'true';
-      const bucket = String(body.bucket || 'presentations');
-      if (!ALLOWED_PPTX_SOURCE_BUCKETS.has(bucket)) {
-        res.status(400).json({ error: 'Bucket de origem não permitido.' });
-        return;
-      }
-      let storagePath;
-      try {
-        storagePath = assertPptxStoragePathForUser(body.storagePath, userId);
-      } catch (pathErr) {
-        res.status(400).json({ error: pathErr.message || 'Caminho inválido.' });
-        return;
-      }
+    // Multipart-only: o frontend envia `FormData` com o ficheiro .pptx.
+    importDebug('parse multipart…');
+    const { fields, files } = await parseForm(req);
+    importDebug('parse OK', {
+      fieldKeys: Object.keys(fields || {}),
+      fileKeys: Object.keys(files || {}),
+    });
 
-      const supabaseDl = buildStorageClient(req);
-      importDebug('download PPTX do Storage', { bucket, storagePath });
-      const { data: blob, error: dlError } = await supabaseDl.storage
-        .from(bucket)
-        .download(storagePath);
+    const rawFile = Array.isArray(files.file) ? files.file[0] : files.file;
+    const rawBookId = Array.isArray(fields.bookId) ? fields.bookId[0] : fields.bookId;
+    const rawDryRun = Array.isArray(fields.dryRun) ? fields.dryRun[0] : fields.dryRun;
+    dryRun = String(rawDryRun || '').toLowerCase() === 'true';
+    bookId = normalizeBookId(rawBookId);
 
-      if (dlError || !blob) {
-        importDebugError('download staging pptx', dlError || new Error('sem blob'));
-        res.status(400).json({
-          error:
-            dlError?.message ||
-            'Não foi possível baixar o arquivo do armazenamento. Confirme o upload e as políticas do bucket.',
-        });
-        return;
-      }
-
-      const ab = await blob.arrayBuffer();
-      fileBuffer = Buffer.from(ab);
-      stagingPathToRemove = storagePath;
-      stagingBucket = bucket;
-      originalName = path.posix.basename(storagePath);
-
-      if (fileBuffer.length > MAX_FILE_SIZE) {
-        res.status(400).json({ error: 'Arquivo muito grande. Limite de 500MB.' });
-        return;
-      }
-
-      importDebug('buffer do Storage', { bytes: fileBuffer.length, originalName });
-    } else {
-      importDebug('parse multipart…');
-      const { fields, files } = await parseForm(req);
-      importDebug('parse OK', {
-        fieldKeys: Object.keys(fields || {}),
-        fileKeys: Object.keys(files || {}),
-      });
-
-      const rawFile = Array.isArray(files.file) ? files.file[0] : files.file;
-      const rawBookId = Array.isArray(fields.bookId)
-        ? fields.bookId[0]
-        : fields.bookId;
-      const rawDryRun = Array.isArray(fields.dryRun)
-        ? fields.dryRun[0]
-        : fields.dryRun;
-      dryRun = String(rawDryRun || '').toLowerCase() === 'true';
-      bookId = assertBookId(rawBookId);
-
-      if (!rawFile) {
-        importDebug('erro: nenhum files.file', { files });
-        res.status(400).json({ error: 'Arquivo .pptx não enviado.' });
-        return;
-      }
-
-      importDebug('arquivo temporário', {
-        originalFilename: rawFile.originalFilename,
-        newFilename: rawFile.newFilename,
-        filepath: rawFile.filepath,
-        size: rawFile.size,
-        mimetype: rawFile.mimetype,
-      });
-
-      originalName = rawFile.originalFilename || '';
-      if (!originalName.toLowerCase().endsWith('.pptx')) {
-        res.status(400).json({ error: 'Arquivo inválido. Envie um .pptx.' });
-        return;
-      }
-
-      if (rawFile.size > MAX_FILE_SIZE) {
-        res.status(400).json({ error: 'Arquivo muito grande. Limite de 500MB.' });
-        return;
-      }
-
-      fileBuffer = await fs.readFile(rawFile.filepath);
-      importDebug('buffer lido', { bytes: fileBuffer.length });
+    if (!rawFile) {
+      importDebug('erro: nenhum files.file', { files });
+      res.status(400).json({ error: 'Arquivo .pptx não enviado.' });
+      return;
     }
 
-    // Valida existência do livro antes de processar (evita path estranho e import em livro inexistente).
-    const exists = await prisma.book.findUnique({
-      where: { id: BigInt(bookId) },
-      select: { id: true },
+    importDebug('arquivo temporário', {
+      originalFilename: rawFile.originalFilename,
+      newFilename: rawFile.newFilename,
+      filepath: rawFile.filepath,
+      size: rawFile.size,
+      mimetype: rawFile.mimetype,
     });
-    if (!exists) {
-      res.status(404).json({ error: 'Livro não encontrado para importação.' });
+
+    originalName = rawFile.originalFilename || '';
+    if (!originalName.toLowerCase().endsWith('.pptx')) {
+      res.status(400).json({ error: 'Arquivo inválido. Envie um .pptx.' });
       return;
+    }
+
+    if (rawFile.size > MAX_FILE_SIZE) {
+      res.status(400).json({ error: 'Arquivo muito grande. Limite de 500MB.' });
+      return;
+    }
+
+    fileBuffer = await fs.readFile(rawFile.filepath);
+    importDebug('buffer lido', { bytes: fileBuffer.length });
+
+    // Valida existência do livro apenas quando `bookId` é numérico (caso contrário, é um import "temporário").
+    if (/^\d+$/.test(bookId)) {
+      const exists = await prisma.book.findUnique({
+        where: { id: BigInt(bookId) },
+        select: { id: true },
+      });
+      if (!exists) {
+        res.status(404).json({ error: 'Livro não encontrado para importação.' });
+        return;
+      }
     }
 
     const zip = await JSZip.loadAsync(fileBuffer);
@@ -1210,11 +1101,6 @@ export async function runImportPptxEngine(req, res) {
     });
 
     if (dryRun) {
-      await removeStagingImportFile({
-        supabase: buildStorageClient(req),
-        bucket: stagingBucket,
-        storagePath: stagingPathToRemove,
-      });
       res.status(200).json({
         dryRun: true,
         totalSlidesDetected: slideSummaries.length,
@@ -1295,12 +1181,6 @@ export async function runImportPptxEngine(req, res) {
       slidesComImagem: uploadedSlides.length,
       warnings: warnings.length,
       pagesJsonApproxBytes: JSON.stringify(pages).length,
-    });
-
-    await removeStagingImportFile({
-      supabase: buildStorageClient(req),
-      bucket: stagingBucket,
-      storagePath: stagingPathToRemove,
     });
 
     res.status(200).json({
