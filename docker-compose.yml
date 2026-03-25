@@ -1,0 +1,98 @@
+# Stack local: Postgres + MinIO + API (Fastify/Prisma) + CMS (Next standalone) + Nginx.
+# UI: http://localhost:8080  |  API (direto): http://localhost:4000  |  MinIO console: http://localhost:9001
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: luditeca
+      POSTGRES_PASSWORD: luditeca
+      POSTGRES_DB: luditeca
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - luditeca
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio12345
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      - luditeca
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        sleep 4
+        mc alias set local http://minio:9000 minio minio12345
+        for b in covers pages presentations audios videos categories autores avatars; do
+          mc mb "local/$$b" --ignore-existing || true
+        done
+        exit 0
+    networks:
+      - luditeca
+
+  api:
+    build: ./luditeca-back
+    environment:
+      DATABASE_URL: postgresql://luditeca:luditeca@db:5432/luditeca?schema=public
+      JWT_SECRET: ${JWT_SECRET:-troque-este-segredo-em-producao-min-32-chars}
+      PORT: 4000
+      HOST: 0.0.0.0
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: minio
+      S3_SECRET_KEY: minio12345
+      S3_FORCE_PATH_STYLE: "true"
+      PUBLIC_MEDIA_BASE: http://localhost:8080/media
+      CORS_ORIGIN: http://localhost:8080,http://localhost:3000,http://127.0.0.1:8080,http://127.0.0.1:3000
+    depends_on:
+      - db
+      - minio
+    ports:
+      - "4000:4000"
+    networks:
+      - luditeca
+
+  web:
+    build:
+      context: ./luditeca-front
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8080/api
+        NEXT_PUBLIC_MEDIA_BASE_URL: http://localhost:8080/media
+    environment:
+      NODE_ENV: production
+    depends_on:
+      - api
+    networks:
+      - luditeca
+
+  nginx:
+    image: nginx:alpine
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "8080:80"
+    depends_on:
+      - web
+      - api
+      - minio
+    networks:
+      - luditeca
+
+volumes:
+  pgdata:
+  minio_data:
+
+networks:
+  luditeca:
