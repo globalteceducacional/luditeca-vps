@@ -9,7 +9,7 @@ import {
   publicUrl,
   putObject,
 } from '../lib/s3.js';
-import { requireAuth } from '../plugins/auth.js';
+import { requireCmsEditor } from '../plugins/auth.js';
 
 function extType(name: string) {
   const ext = name.split('.').pop()?.toLowerCase() || '';
@@ -41,7 +41,7 @@ function assertUserKey(uid: string, key: string) {
 export async function registerStorageRoutes(app: FastifyInstance) {
   app.get<{ Params: { bucket: string }; Querystring: { prefix?: string } }>(
     '/storage/:bucket/list',
-    { preHandler: requireAuth },
+    { preHandler: requireCmsEditor },
     async (request, reply) => {
       try {
         assertBucket(request.params.bucket);
@@ -114,7 +114,7 @@ export async function registerStorageRoutes(app: FastifyInstance) {
 
   app.post<{ Params: { bucket: string } }>(
     '/storage/:bucket/upload',
-    { preHandler: requireAuth },
+    { preHandler: requireCmsEditor },
     async (request, reply) => {
       try {
         assertBucket(request.params.bucket);
@@ -173,7 +173,7 @@ export async function registerStorageRoutes(app: FastifyInstance) {
 
   app.delete<{ Params: { bucket: string }; Querystring: { path?: string } }>(
     '/storage/:bucket/object',
-    { preHandler: requireAuth },
+    { preHandler: requireCmsEditor },
     async (request, reply) => {
       try {
         assertBucket(request.params.bucket);
@@ -199,7 +199,7 @@ export async function registerStorageRoutes(app: FastifyInstance) {
 
   app.post<{ Params: { bucket: string } }>(
     '/storage/:bucket/folder',
-    { preHandler: requireAuth },
+    { preHandler: requireCmsEditor },
     async (request, reply) => {
       try {
         assertBucket(request.params.bucket);
@@ -223,7 +223,7 @@ export async function registerStorageRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { bucket: string }; Querystring: { path?: string } }>(
     '/storage/:bucket/metadata',
-    { preHandler: requireAuth },
+    { preHandler: requireCmsEditor },
     async (request, reply) => {
       try {
         assertBucket(request.params.bucket);
@@ -259,7 +259,7 @@ export async function registerStorageRoutes(app: FastifyInstance) {
 
   app.post<{ Params: { bucket: string } }>(
     '/storage/:bucket/move',
-    { preHandler: requireAuth },
+    { preHandler: requireCmsEditor },
     async (request, reply) => {
       try {
         assertBucket(request.params.bucket);

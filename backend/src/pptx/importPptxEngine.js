@@ -7,6 +7,7 @@ import jwt from 'jsonwebtoken';
 import { buildStorageClient as makeStorageClient } from './storageCompat.mjs';
 import { PrismaClient } from '@prisma/client';
 import { presignedGetUrl } from '../lib/s3.js';
+import crypto from 'node:crypto';
 
 const MAX_FILE_SIZE = 500 * 1024 * 1024;
 const MAX_TOTAL_SIZE = 600 * 1024 * 1024;
@@ -66,6 +67,11 @@ function normalizeBookId(raw) {
   const cleaned = s.replace(/[\\/]/g, '_').replace(/[^\w.-]/g, '_');
   // Limite de tamanho para evitar keys absurdamente grandes.
   return cleaned.length > 60 ? cleaned.slice(0, 60) : cleaned;
+}
+
+function makeImportSessionId() {
+  // URL-safe-ish: usamos base64url sem padding
+  return crypto.randomBytes(12).toString('base64url');
 }
 
 function normalizeRels(value) {
@@ -158,6 +164,20 @@ function extractTxBodyPlainText(txBody) {
     .trim();
 }
 
+function readUnderlineFromRPr(rPr) {
+  if (!rPr || rPr.u == null) return undefined;
+  const u = rPr.u;
+  if (u === false || u === 0 || u === '0') return 'none';
+  if (typeof u === 'object') {
+    const val = u.val ?? u['@_val'];
+    if (val === 'none' || val === 'noUnderline') return 'none';
+    return 'underline';
+  }
+  const s = String(u).toLowerCase();
+  if (s === 'none' || s === 'false') return 'none';
+  return 'underline';
+}
+
 function extractParagraphDefaultCharStyle(p) {
   const base = {
     fontSize: 24,
@@ -165,6 +185,7 @@ function extractParagraphDefaultCharStyle(p) {
     fontStyle: 'normal',
     color: '#000000',
     fontFamily: 'Roboto',
+    textDecoration: 'none',
   };
   const pPr = p?.pPr;
   if (!pPr) return base;
@@ -202,6 +223,10 @@ function applyRunCharStyle(prev, rPr) {
   if (typeface && String(typeface).trim()) {
     next.fontFamily = String(typeface).trim();
   }
+  const und = readUnderlineFromRPr(rPr);
+  if (und !== undefined) {
+    next.textDecoration = und === 'underline' ? 'underline' : 'none';
+  }
   return next;
 }
 
@@ -216,7 +241,8 @@ function mergeAdjacentIdenticalSpans(spans) {
       last.fontStyle === cur.fontStyle &&
       last.color === cur.color &&
       last.fontSize === cur.fontSize &&
-      last.fontFamily === cur.fontFamily
+      last.fontFamily === cur.fontFamily &&
+      Boolean(last.underline) === Boolean(cur.underline)
     ) {
       last.text += cur.text;
     } else {
@@ -242,6 +268,7 @@ function paragraphToSpans(p) {
       fontStyle: style.fontStyle,
       color: style.color,
       fontFamily: style.fontFamily,
+      underline: style.textDecoration === 'underline',
     });
   };
 
@@ -262,6 +289,7 @@ function paragraphToSpans(p) {
         fontStyle: style.fontStyle,
         color: style.color,
         fontFamily: style.fontFamily,
+        underline: style.textDecoration === 'underline',
       });
     });
   }
@@ -658,7 +686,18 @@ function buildTextElementsFromParsedSlide(parsed, slideCx, slideCy, slideNumber,
       ? spans[0]
       : extractFirstRunStyle(txBody);
     const textAlign = structured.textAlign || base.textAlign || 'left';
-    const useRichSpans = spans.length > 1;
+    const contentSpansPayload =
+      spans.length > 0
+        ? spans.map((s) => ({
+            text: s.text,
+            fontSize: s.fontSize,
+            fontWeight: s.fontWeight,
+            fontStyle: s.fontStyle,
+            color: s.color,
+            fontFamily: s.fontFamily,
+            underline: Boolean(s.underline),
+          }))
+        : null;
 
     const spid = getShapeSpid(sp);
     const entranceAnim =
@@ -671,18 +710,7 @@ function buildTextElementsFromParsedSlide(parsed, slideCx, slideCy, slideNumber,
       type: 'text',
       textStyle: 'normal',
       content,
-      ...(useRichSpans
-        ? {
-            contentSpans: spans.map((s) => ({
-              text: s.text,
-              fontSize: s.fontSize,
-              fontWeight: s.fontWeight,
-              fontStyle: s.fontStyle,
-              color: s.color,
-              fontFamily: s.fontFamily,
-            })),
-          }
-        : {}),
+      ...(contentSpansPayload ? { contentSpans: contentSpansPayload } : {}),
       position: { x: rect.x, y: rect.y },
       size: { width: rect.width, height: rect.height },
       animation: entranceAnim,
@@ -710,6 +738,11 @@ function getMimeFromExtension(ext) {
   if (lower === '.bmp') return 'image/bmp';
   if (lower === '.svg') return 'image/svg+xml';
   return 'application/octet-stream';
+}
+
+function mediaKindFromPath(filePath) {
+  const ext = path.extname(String(filePath || '')).toLowerCase();
+  return ext === '.gif' ? 'gif' : 'image';
 }
 
 function buildStorageClient(req) {
@@ -740,10 +773,22 @@ async function getUserIdFromRequest(req) {
   }
 }
 
-async function uploadSlideImage({ supabase, userId, bookId, importStamp, slideNumber, fileName, binary }) {
+function isNumericBookId(bookId) {
+  return /^\d+$/.test(String(bookId || ''));
+}
+
+function buildImportBaseDir({ userId, bookId, importSessionId }) {
+  if (isNumericBookId(bookId)) {
+    return `${userId}/books/${String(bookId)}`;
+  }
+  return `${userId}/imports/${String(importSessionId)}`;
+}
+
+async function uploadSlideImage({ supabase, userId, bookId, importSessionId, importStamp, slideNumber, fileName, binary }) {
   const extension = path.extname(fileName || '.png') || '.png';
   const cleanExtension = extension.toLowerCase();
-  const targetPath = `${userId}/books/${bookId}/imports/${importStamp}/slide-${String(slideNumber).padStart(3, '0')}${cleanExtension}`;
+  const baseDir = buildImportBaseDir({ userId, bookId, importSessionId });
+  const targetPath = `${baseDir}/ativos-importacao/pptx-${importStamp}/slide-${String(slideNumber).padStart(3, '0')}${cleanExtension}`;
   const contentType = getMimeFromExtension(cleanExtension);
 
   const body =
@@ -770,21 +815,22 @@ async function uploadSlideImage({ supabase, userId, bookId, importStamp, slideNu
   // MinIO local costuma ser privado; para o browser visualizar, precisamos de URL assinada.
   const publicUrl = await presignedGetUrl('pages', targetPath, 3600);
 
-  const { error: metadataError } = await supabase.from('media_files').insert({
-    user_id: userId,
-    file_path: targetPath,
-    file_name: path.basename(targetPath),
-    file_type: contentType,
-    file_size: binary.length,
-    bucket_name: 'pages',
-    created_at: new Date().toISOString(),
-  });
-  if (metadataError) {
-    importDebug('media_files insert ignorado (não bloqueia)', {
-      message: metadataError.message,
-      code: metadataError.code,
-      details: metadataError.details,
-      hint: metadataError.hint,
+  try {
+    await prisma.mediaFile.create({
+      data: {
+        userId,
+        bookId: isNumericBookId(bookId) ? BigInt(String(bookId)) : null,
+        filePath: targetPath,
+        fileName: path.basename(targetPath),
+        fileType: contentType,
+        fileSize: BigInt(binary.length),
+        bucketName: 'pages',
+      },
+    });
+  } catch (metadataError) {
+    importDebug('media_files create ignorado (não bloqueia)', {
+      message: metadataError?.message,
+      code: metadataError?.code,
     });
   }
 
@@ -792,6 +838,7 @@ async function uploadSlideImage({ supabase, userId, bookId, importStamp, slideNu
     slideNumber,
     targetPath,
     publicUrl,
+    bucket: 'pages',
   };
 }
 
@@ -799,7 +846,7 @@ function buildWarningPage({ slideNumber, reason, elements = [], idStamp, transit
   const stamp = idStamp ?? Date.now();
   return {
     id: `${stamp}-warn-${slideNumber}`,
-    background: '',
+    background: null,
     elements: Array.isArray(elements) ? elements : [],
     orientation: 'landscape',
     needsAdjustment: true,
@@ -815,9 +862,10 @@ function buildWarningPage({ slideNumber, reason, elements = [], idStamp, transit
   };
 }
 
-async function uploadOriginalPptx({ supabase, userId, bookId, importStamp, fileName, binary }) {
+async function uploadOriginalPptx({ supabase, userId, bookId, importSessionId, importStamp, fileName, binary }) {
   const safeFileName = fileName || `book-${bookId}.pptx`;
-  const targetPath = `${userId}/books/${bookId}/imports/${importStamp}/${safeFileName}`;
+  const baseDir = buildImportBaseDir({ userId, bookId, importSessionId });
+  const targetPath = `${baseDir}/imports/${importStamp}/${safeFileName}`;
 
   const body =
     binary instanceof Buffer ? new Uint8Array(binary) : binary;
@@ -839,9 +887,30 @@ async function uploadOriginalPptx({ supabase, userId, bookId, importStamp, fileN
     return null;
   }
 
+  try {
+    await prisma.mediaFile.create({
+      data: {
+        userId,
+        bookId: isNumericBookId(bookId) ? BigInt(String(bookId)) : null,
+        filePath: targetPath,
+        fileName: path.basename(targetPath),
+        fileType:
+          'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        fileSize: BigInt(binary.length),
+        bucketName: 'presentations',
+      },
+    });
+  } catch (metadataError) {
+    importDebug('media_files create (pptx) ignorado (não bloqueia)', {
+      message: metadataError?.message,
+      code: metadataError?.code,
+    });
+  }
+
   return {
     path: targetPath,
     publicUrl: null,
+    bucket: 'presentations',
   };
 }
 
@@ -861,6 +930,7 @@ export async function runImportPptxEngine(req, res) {
     const userId = authUserId;
 
     let bookId = 'temp-book';
+    let importSessionId = null;
     let dryRun = false;
     let fileBuffer;
     let originalName = '';
@@ -878,6 +948,7 @@ export async function runImportPptxEngine(req, res) {
     const rawDryRun = Array.isArray(fields.dryRun) ? fields.dryRun[0] : fields.dryRun;
     dryRun = String(rawDryRun || '').toLowerCase() === 'true';
     bookId = normalizeBookId(rawBookId);
+    importSessionId = isNumericBookId(bookId) ? null : makeImportSessionId();
 
     if (!rawFile) {
       importDebug('erro: nenhum files.file', { files });
@@ -908,7 +979,7 @@ export async function runImportPptxEngine(req, res) {
     importDebug('buffer lido', { bytes: fileBuffer.length });
 
     // Valida existência do livro apenas quando `bookId` é numérico (caso contrário, é um import "temporário").
-    if (/^\d+$/.test(bookId)) {
+    if (isNumericBookId(bookId)) {
       const exists = await prisma.book.findUnique({
         where: { id: BigInt(bookId) },
         select: { id: true },
@@ -961,6 +1032,7 @@ export async function runImportPptxEngine(req, res) {
         supabase,
         userId,
         bookId,
+        importSessionId,
         importStamp,
         fileName: originalName,
         binary: fileBuffer,
@@ -1063,6 +1135,7 @@ export async function runImportPptxEngine(req, res) {
             supabase,
             userId,
             bookId,
+            importSessionId,
             importStamp,
             slideNumber,
             fileName: chosenName || `slide-${slideNumber}.png`,
@@ -1131,15 +1204,33 @@ export async function runImportPptxEngine(req, res) {
         source: 'pptx',
       };
 
+      /** Fundo do slide vira nó imagem (fica nos ativos do livro); sem background na página. */
+      const elementsWithSlideImage = () => {
+        if (!uploaded) return textElements;
+        const mk = mediaKindFromPath(uploaded.targetPath);
+        const imageEl = {
+          id: `${importStamp}-img-${slideNumber}`,
+          type: 'image',
+          content: uploaded.publicUrl,
+          storage: {
+            bucket: uploaded.bucket,
+            filePath: uploaded.targetPath,
+            ...(importSessionId ? { importSessionId } : {}),
+          },
+          ...(mk === 'gif' ? { mediaKind: 'gif' } : {}),
+          position: { x: 0, y: 0 },
+          size: { width: CANVAS_WIDTH, height: CANVAS_HEIGHT },
+          zIndex: 0,
+          step: 0,
+        };
+        return [imageEl, ...textElements];
+      };
+
       if (uploaded) {
         pages.push({
           id: `${importStamp}-slide-${slideNumber}`,
-          background: {
-            url: uploaded.publicUrl,
-            position: { x: 0.5, y: 0.5 },
-            scale: 1,
-          },
-          elements: textElements,
+          background: null,
+          elements: elementsWithSlideImage(),
           orientation: 'landscape',
           sourceSlide: slideNumber,
           transition: transitionMeta,
@@ -1168,7 +1259,7 @@ export async function runImportPptxEngine(req, res) {
 
       pages.push({
         id: `${importStamp}-slide-${slideNumber}-textonly`,
-        background: '',
+        background: null,
         elements: textElements,
         orientation: 'landscape',
         sourceSlide: slideNumber,
@@ -1184,6 +1275,8 @@ export async function runImportPptxEngine(req, res) {
     });
 
     res.status(200).json({
+      importSessionId,
+      bookId,
       pages,
       warnings,
       totalSlides: pages.length,

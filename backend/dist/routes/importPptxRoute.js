@@ -1,4 +1,4 @@
-import { requireAuth } from '../plugins/auth.js';
+import { requireCmsEditor } from '../plugins/auth.js';
 function nodeResAdapter(reply) {
     return {
         _code: 200,
@@ -12,7 +12,7 @@ function nodeResAdapter(reply) {
     };
 }
 export async function registerImportPptxRoute(app) {
-    app.post('/books/import-pptx', { preHandler: requireAuth }, async (request, reply) => {
+    app.post('/books/import-pptx', { preHandler: requireCmsEditor }, async (request, reply) => {
         const { runImportPptxEngine } = await import('../pptx/importPptxEngine.js');
         const res = nodeResAdapter(reply);
         await runImportPptxEngine(request.raw, res);

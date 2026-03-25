@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import type { UserRole } from './roles.js';
 
 const getSecret = () => {
   const s = process.env.JWT_SECRET;
@@ -6,7 +7,7 @@ const getSecret = () => {
   return s;
 };
 
-export function signAccessToken(payload: { sub: string; email: string; role: string }) {
+export function signAccessToken(payload: { sub: string; email: string; role: UserRole }) {
   return jwt.sign(payload, getSecret(), { expiresIn: '7d' });
 }
 
@@ -14,7 +15,7 @@ export function verifyAccessToken(token: string) {
   return jwt.verify(token, getSecret()) as {
     sub: string;
     email: string;
-    role: string;
+    role: UserRole;
     iat: number;
     exp: number;
   };

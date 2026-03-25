@@ -1,19 +1,22 @@
 import { prisma } from '../lib/prisma.js';
 import { jsonSafe } from '../lib/serialize.js';
-import { requireAuth } from '../plugins/auth.js';
+import { requireAdmin } from '../plugins/auth.js';
+import { requireCmsEditor } from '../plugins/auth.js';
 export async function registerCategoryRoutes(app) {
-    app.get('/categories', { preHandler: requireAuth }, async (_request, reply) => {
+    // Leitura (necessário no fluxo de criar/editar livros): admin + editor
+    app.get('/categories', { preHandler: requireCmsEditor }, async (_request, reply) => {
         const rows = await prisma.category.findMany({ orderBy: { name: 'asc' } });
         return reply.send(jsonSafe(rows));
     });
-    app.get('/categories/:id', { preHandler: requireAuth }, async (request, reply) => {
+    app.get('/categories/:id', { preHandler: requireCmsEditor }, async (request, reply) => {
         const id = BigInt(request.params.id);
         const row = await prisma.category.findUnique({ where: { id } });
         if (!row)
             return reply.code(404).send({ error: 'Categoria não encontrada.' });
         return reply.send(jsonSafe(row));
     });
-    app.post('/categories', { preHandler: requireAuth }, async (request, reply) => {
+    // Escrita: somente ADM
+    app.post('/categories', { preHandler: requireAdmin }, async (request, reply) => {
         const body = request.body;
         const row = await prisma.category.create({
             data: {
@@ -23,7 +26,7 @@ export async function registerCategoryRoutes(app) {
         });
         return reply.code(201).send(jsonSafe(row));
     });
-    app.patch('/categories/:id', { preHandler: requireAuth }, async (request, reply) => {
+    app.patch('/categories/:id', { preHandler: requireAdmin }, async (request, reply) => {
         const id = BigInt(request.params.id);
         const body = request.body;
         const data = {};
@@ -41,7 +44,7 @@ export async function registerCategoryRoutes(app) {
         });
         return reply.send(jsonSafe(row));
     });
-    app.delete('/categories/:id', { preHandler: requireAuth }, async (request, reply) => {
+    app.delete('/categories/:id', { preHandler: requireAdmin }, async (request, reply) => {
         const id = BigInt(request.params.id);
         await prisma.category.delete({ where: { id } });
         return reply.code(204).send();

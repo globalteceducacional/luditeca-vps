@@ -97,6 +97,30 @@ export async function listObjects(bucket: string, prefix: string) {
   return { folders, files };
 }
 
+export async function listAllKeys(bucket: string, prefix: string) {
+  const normalizedPrefix = prefix ? `${prefix.replace(/\/$/, '')}/` : '';
+  const keys: string[] = [];
+  let ContinuationToken: string | undefined;
+  for (;;) {
+    const out = await client().send(
+      new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: normalizedPrefix || undefined,
+        ContinuationToken,
+      }),
+    );
+    for (const c of out.Contents || []) {
+      if (!c.Key) continue;
+      if (c.Key.endsWith('/')) continue;
+      keys.push(c.Key);
+    }
+    if (!out.IsTruncated) break;
+    ContinuationToken = out.NextContinuationToken;
+    if (!ContinuationToken) break;
+  }
+  return keys;
+}
+
 const ALLOWED_BUCKETS = new Set([
   'covers',
   'pages',

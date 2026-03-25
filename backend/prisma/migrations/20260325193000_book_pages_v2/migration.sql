@@ -1,0 +1,2 @@
+ALTER TABLE "books" ADD COLUMN IF NOT EXISTS "pages_v2" JSONB;
+

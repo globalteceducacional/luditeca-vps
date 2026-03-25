@@ -1,19 +1,22 @@
 import { prisma } from '../lib/prisma.js';
 import { jsonSafe } from '../lib/serialize.js';
-import { requireAuth } from '../plugins/auth.js';
+import { requireAdmin } from '../plugins/auth.js';
+import { requireCmsEditor } from '../plugins/auth.js';
 export async function registerAuthorRoutes(app) {
-    app.get('/authors', { preHandler: requireAuth }, async (_request, reply) => {
+    // Leitura (necessário no fluxo de criar/editar livros): admin + editor
+    app.get('/authors', { preHandler: requireCmsEditor }, async (_request, reply) => {
         const rows = await prisma.author.findMany({ orderBy: { name: 'asc' } });
         return reply.send(jsonSafe(rows));
     });
-    app.get('/authors/:id', { preHandler: requireAuth }, async (request, reply) => {
+    app.get('/authors/:id', { preHandler: requireCmsEditor }, async (request, reply) => {
         const id = BigInt(request.params.id);
         const row = await prisma.author.findUnique({ where: { id } });
         if (!row)
             return reply.code(404).send({ error: 'Autor não encontrado.' });
         return reply.send(jsonSafe(row));
     });
-    app.post('/authors', { preHandler: requireAuth }, async (request, reply) => {
+    // Escrita: somente ADM
+    app.post('/authors', { preHandler: requireAdmin }, async (request, reply) => {
         const body = request.body;
         const row = await prisma.author.create({
             data: {
@@ -24,7 +27,7 @@ export async function registerAuthorRoutes(app) {
         });
         return reply.code(201).send(jsonSafe(row));
     });
-    app.patch('/authors/:id', { preHandler: requireAuth }, async (request, reply) => {
+    app.patch('/authors/:id', { preHandler: requireAdmin }, async (request, reply) => {
         const id = BigInt(request.params.id);
         const body = request.body;
         const data = {};
@@ -44,7 +47,7 @@ export async function registerAuthorRoutes(app) {
         });
         return reply.send(jsonSafe(row));
     });
-    app.delete('/authors/:id', { preHandler: requireAuth }, async (request, reply) => {
+    app.delete('/authors/:id', { preHandler: requireAdmin }, async (request, reply) => {
         const id = BigInt(request.params.id);
         await prisma.author.delete({ where: { id } });
         return reply.code(204).send();

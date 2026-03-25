@@ -6,12 +6,13 @@ import {
   assertBucket,
   copyObject,
   deleteObject,
+  listAllKeys,
   listObjects,
   presignedGetUrl,
   presignedPutUrl,
   putObject,
 } from '../lib/s3.js';
-import { requireAuth } from '../plugins/auth.js';
+import { requireCmsEditor } from '../plugins/auth.js';
 
 type MediaType =
   | 'image'
@@ -35,6 +36,19 @@ const MEDIA_BUCKET_MAP: Record<MediaType, string> = {
   avatar: 'avatars',
   presentation: 'presentations',
 };
+
+function parseBookId(request: { query?: any; headers?: any }) {
+  const q = request?.query?.bookId != null ? String(request.query.bookId) : '';
+  const h = request?.headers?.['x-book-id'] != null ? String(request.headers['x-book-id']) : '';
+  const raw = q || h;
+  if (!raw) return null;
+  if (!/^\d+$/.test(raw)) return null;
+  try {
+    return BigInt(raw);
+  } catch {
+    return null;
+  }
+}
 
 function normalizeRel(v: string) {
   return String(v || '')
@@ -82,8 +96,8 @@ export async function registerMediaRoutes(app: FastifyInstance) {
    * O client trabalha com `path` relativo (sem uid).
    */
   app.get<{
-    Querystring: { mediaType?: MediaType; path?: string; root?: string };
-  }>('/media/list', { preHandler: requireAuth }, async (request, reply) => {
+    Querystring: { mediaType?: MediaType; path?: string; root?: string; bookId?: string; recursive?: string };
+  }>('/media/list', { preHandler: requireCmsEditor }, async (request, reply) => {
     const mediaType = (request.query.mediaType || 'image') as MediaType;
     const bucket = MEDIA_BUCKET_MAP[mediaType] || MEDIA_BUCKET_MAP.image;
     try {
@@ -95,24 +109,42 @@ export async function registerMediaRoutes(app: FastifyInstance) {
     const uid = request.user!.id;
     const root = request.query.root || 'library';
     const relPath = request.query.path || '';
+    const recursive = String(request.query.recursive || '').toLowerCase() === 'true';
+    const bookId = parseBookId(request);
 
     let prefix: string;
     try {
-      const base = userFsBase(uid, root);
+      const effectiveRoot =
+        bookId && root === 'library'
+          ? `books/${bookId.toString()}`
+          : root;
+      const base = userFsBase(uid, effectiveRoot);
       const rel = assertSafeRelPath(relPath);
       prefix = rel ? `${base}/${rel}` : base;
     } catch (e) {
       return reply.code(400).send({ error: (e as Error).message });
     }
 
-    const { folders, files } = await listObjects(bucket, prefix);
+    const { folders, files } = recursive
+      ? { folders: [], files: (await listAllKeys(bucket, prefix)).map((fullPath) => ({
+          name: fullPath.split('/').pop() || fullPath,
+          id: fullPath,
+          fullPath,
+          size: undefined,
+          updated_at: undefined,
+        })) }
+      : await listObjects(bucket, prefix);
 
     const metaRows = await prisma.mediaFile.findMany({
       where: { userId: uid, bucketName: bucket },
     });
     const metaByPath = new Map(metaRows.map((m) => [m.filePath, m]));
 
-    const basePrefix = `${userFsBase(uid, root)}/`;
+    const effectiveRoot =
+      bookId && root === 'library'
+        ? `books/${bookId.toString()}`
+        : root;
+    const basePrefix = `${userFsBase(uid, effectiveRoot)}/`;
     const toRel = (full: string) =>
       full.startsWith(basePrefix) ? full.slice(basePrefix.length) : full;
 
@@ -161,12 +193,41 @@ export async function registerMediaRoutes(app: FastifyInstance) {
   });
 
   /**
+   * URL assinada para uma chave já existente (ex.: imagens em pages_v2 após expirar presign do import).
+   * Só devolve URL se a chave pertencer ao utilizador autenticado.
+   */
+  app.get<{
+    Querystring: { bucket?: string; key?: string };
+  }>('/media/signed-get', { preHandler: requireCmsEditor }, async (request, reply) => {
+    const bucket = String(request.query.bucket || 'pages').trim();
+    try {
+      assertBucket(bucket);
+    } catch (e) {
+      return reply.code(400).send({ error: (e as Error).message });
+    }
+    const key = String(request.query.key || '').trim();
+    const uid = request.user!.id;
+    if (!key) {
+      return reply.code(400).send({ error: 'key obrigatorio.' });
+    }
+    if (!key.startsWith(`${uid}/`)) {
+      return reply.code(403).send({ error: 'Acesso negado.' });
+    }
+    try {
+      const url = await presignedGetUrl(bucket, key, 7200);
+      return reply.send({ data: { url }, error: null });
+    } catch (e) {
+      return reply.code(500).send({ error: (e as Error).message || 'Falha ao assinar URL.' });
+    }
+  });
+
+  /**
    * Upload (multipart) com key gerada pelo backend.
    * Client informa só `root` e `path` (pasta relativa); o arquivo vira um nome único.
    */
   app.post<{
-    Querystring: { mediaType?: MediaType; root?: string; path?: string };
-  }>('/media/upload', { preHandler: requireAuth }, async (request, reply) => {
+    Querystring: { mediaType?: MediaType; root?: string; path?: string; bookId?: string };
+  }>('/media/upload', { preHandler: requireCmsEditor }, async (request, reply) => {
     const mediaType = (request.query.mediaType || 'image') as MediaType;
     const bucket = MEDIA_BUCKET_MAP[mediaType] || MEDIA_BUCKET_MAP.image;
     try {
@@ -178,10 +239,16 @@ export async function registerMediaRoutes(app: FastifyInstance) {
     const uid = request.user!.id;
     const root = request.query.root || 'library';
     const relDirRaw = request.query.path || '';
+    const bookId = parseBookId(request);
 
     let baseDir: string;
     try {
-      baseDir = userFsBase(uid, root);
+      // Se vier bookId, guardamos dentro de uma pasta por livro
+      const effectiveRoot =
+        bookId && root === 'library'
+          ? `books/${bookId.toString()}`
+          : root;
+      baseDir = userFsBase(uid, effectiveRoot);
       const relDir = assertSafeRelPath(relDirRaw);
       if (relDir) {
         // Compat: algumas telas podem enviar `path` já contendo filename (ex: "categoria_123.jpg").
@@ -224,6 +291,7 @@ export async function registerMediaRoutes(app: FastifyInstance) {
       await prisma.mediaFile.create({
         data: {
           userId: uid,
+          bookId,
           filePath: key,
           fileName: safeName,
           fileType: ct,
@@ -242,7 +310,11 @@ export async function registerMediaRoutes(app: FastifyInstance) {
       url = null;
     }
 
-    const basePrefix = `${userFsBase(uid, root)}/`;
+    const effectiveRoot =
+      bookId && root === 'library'
+        ? `books/${bookId.toString()}`
+        : root;
+    const basePrefix = `${userFsBase(uid, effectiveRoot)}/`;
     const relPath = key.startsWith(basePrefix) ? key.slice(basePrefix.length) : key;
 
     return reply.send({ data: { path: relPath, url, name: safeName }, error: null, bucket });
@@ -250,7 +322,7 @@ export async function registerMediaRoutes(app: FastifyInstance) {
 
   app.post<{ Body: { mediaType?: MediaType; root?: string; path?: string } }>(
     '/media/folder',
-    { preHandler: requireAuth },
+    { preHandler: requireCmsEditor },
     async (request, reply) => {
       const mediaType = (request.body?.mediaType || 'image') as MediaType;
       const bucket = MEDIA_BUCKET_MAP[mediaType] || MEDIA_BUCKET_MAP.image;
@@ -263,9 +335,14 @@ export async function registerMediaRoutes(app: FastifyInstance) {
       const uid = request.user!.id;
       const root = request.body?.root || 'library';
       const relFolder = request.body?.path || '';
+      const bookId = parseBookId(request);
       let folderKey: string;
       try {
-        const base = userFsBase(uid, root);
+        const effectiveRoot =
+          bookId && root === 'library'
+            ? `books/${bookId.toString()}`
+            : root;
+        const base = userFsBase(uid, effectiveRoot);
         const rel = assertSafeRelPath(relFolder);
         folderKey = rel ? `${base}/${rel}` : base;
       } catch (e) {
@@ -279,8 +356,8 @@ export async function registerMediaRoutes(app: FastifyInstance) {
   );
 
   app.delete<{
-    Querystring: { mediaType?: MediaType; root?: string; path?: string };
-  }>('/media/object', { preHandler: requireAuth }, async (request, reply) => {
+    Querystring: { mediaType?: MediaType; root?: string; path?: string; bookId?: string };
+  }>('/media/object', { preHandler: requireCmsEditor }, async (request, reply) => {
     const mediaType = (request.query.mediaType || 'image') as MediaType;
     const bucket = MEDIA_BUCKET_MAP[mediaType] || MEDIA_BUCKET_MAP.image;
     try {
@@ -291,11 +368,16 @@ export async function registerMediaRoutes(app: FastifyInstance) {
     const uid = request.user!.id;
     const root = request.query.root || 'library';
     const relPath = request.query.path || '';
+    const bookId = parseBookId(request);
     if (!relPath) return reply.code(400).send({ error: 'path obrigatório.' });
 
     let key: string;
     try {
-      const base = userFsBase(uid, root);
+      const effectiveRoot =
+        bookId && root === 'library'
+          ? `books/${bookId.toString()}`
+          : root;
+      const base = userFsBase(uid, effectiveRoot);
       const rel = assertSafeRelPath(relPath);
       key = `${base}/${rel}`;
     } catch (e) {
@@ -309,7 +391,7 @@ export async function registerMediaRoutes(app: FastifyInstance) {
 
   app.post<{ Body: { mediaType?: MediaType; root?: string; from?: string; to?: string } }>(
     '/media/move',
-    { preHandler: requireAuth },
+    { preHandler: requireCmsEditor },
     async (request, reply) => {
       const mediaType = (request.body?.mediaType || 'image') as MediaType;
       const bucket = MEDIA_BUCKET_MAP[mediaType] || MEDIA_BUCKET_MAP.image;
@@ -320,6 +402,7 @@ export async function registerMediaRoutes(app: FastifyInstance) {
       }
       const uid = request.user!.id;
       const root = request.body?.root || 'library';
+      const bookId = parseBookId(request);
       const fromRel = request.body?.from || '';
       const toRel = request.body?.to || '';
       if (!fromRel || !toRel) return reply.code(400).send({ error: 'from e to obrigatórios.' });
@@ -327,7 +410,11 @@ export async function registerMediaRoutes(app: FastifyInstance) {
       let fromKey: string;
       let toKey: string;
       try {
-        const base = userFsBase(uid, root);
+        const effectiveRoot =
+          bookId && root === 'library'
+            ? `books/${bookId.toString()}`
+            : root;
+        const base = userFsBase(uid, effectiveRoot);
         fromKey = `${base}/${assertSafeRelPath(fromRel)}`;
         toKey = `${base}/${assertSafeRelPath(toRel)}`;
       } catch (e) {
@@ -350,7 +437,7 @@ export async function registerMediaRoutes(app: FastifyInstance) {
    */
   app.post<{
     Body: { mediaType?: MediaType; root?: string; path?: string; fileName?: string; contentType?: string };
-  }>('/media/presign', { preHandler: requireAuth }, async (request, reply) => {
+  }>('/media/presign', { preHandler: requireCmsEditor }, async (request, reply) => {
     const mediaType = (request.body?.mediaType || 'image') as MediaType;
     const bucket = MEDIA_BUCKET_MAP[mediaType] || MEDIA_BUCKET_MAP.image;
     try {
@@ -360,13 +447,18 @@ export async function registerMediaRoutes(app: FastifyInstance) {
     }
     const uid = request.user!.id;
     const root = request.body?.root || 'library';
+    const bookId = parseBookId(request);
     const relDir = request.body?.path || '';
     const ct = request.body?.contentType || 'application/octet-stream';
     const safeName = sanitizeFileName(request.body?.fileName || 'file');
 
     let dirKey: string;
     try {
-      dirKey = userFsBase(uid, root);
+      const effectiveRoot =
+        bookId && root === 'library'
+          ? `books/${bookId.toString()}`
+          : root;
+      dirKey = userFsBase(uid, effectiveRoot);
       const rel = assertSafeRelPath(relDir);
       if (rel) dirKey = `${dirKey}/${rel}`;
     } catch (e) {
@@ -378,7 +470,11 @@ export async function registerMediaRoutes(app: FastifyInstance) {
     const putUrl = await presignedPutUrl(bucket, key, ct);
     const getUrl = await presignedGetUrl(bucket, key, 3600);
 
-    const basePrefix = `${userFsBase(uid, root)}/`;
+    const effectiveRoot =
+      bookId && root === 'library'
+        ? `books/${bookId.toString()}`
+        : root;
+    const basePrefix = `${userFsBase(uid, effectiveRoot)}/`;
     const relPath = key.startsWith(basePrefix) ? key.slice(basePrefix.length) : key;
     return reply.send({ data: { bucket, path: relPath, putUrl, url: getUrl, name: safeName } });
   });

@@ -1,35 +1,44 @@
+/// <reference types="node" />
 import 'dotenv/config';
 import { prisma } from '../src/lib/prisma.js';
 import { hashPassword } from '../src/lib/password.js';
+import type { UserRole } from '../src/lib/roles.js';
 
 type SeedUser = {
   email: string;
   password: string;
   name?: string | null;
-  userRole?: string;
-  profileRole?: string;
+  userRole?: UserRole;
+  profileRole?: UserRole;
 };
 
 const users: SeedUser[] = [
   {
-    email: 'admin@luditeca.local',
-    password: 'Admin@123456',
+    email: 'admin@globaltec.com',
+    password: 'admin123',
     name: 'Admin',
     userRole: 'admin',
     profileRole: 'admin',
   },
   {
-    email: 'editor@luditeca.local',
-    password: 'Editor@123456',
+    email: 'editor@globaltec.com',
+    password: 'editor123',
     name: 'Editor',
     userRole: 'editor',
     profileRole: 'aluno',
   },
   {
-    email: 'aluno@luditeca.local',
-    password: 'Aluno@123456',
+    email: 'professor@globaltec.com',
+    password: 'professor123',
+    name: 'Professor',
+    userRole: 'professor',
+    profileRole: 'professor',
+  },
+  {
+    email: 'aluno@globaltec.com',
+    password: 'aluno123',
     name: 'Aluno',
-    userRole: 'editor',
+    userRole: 'aluno',
     profileRole: 'aluno',
   },
 ];
@@ -69,10 +78,10 @@ async function main() {
     throw new Error('DATABASE_URL não definido. Configure o .env antes de rodar o seed.');
   }
 
-  const createdOrUpdated = [];
+  const createdOrUpdated: Array<{ id: string; email: string; role: UserRole }> = [];
   for (const u of users) {
     const user = await upsertUser(u);
-    createdOrUpdated.push({ id: user.id, email: user.email, role: user.role });
+    createdOrUpdated.push({ id: user.id, email: user.email, role: user.role as UserRole });
   }
 
   console.log('Seed concluído. Utilizadores prontos para login:');

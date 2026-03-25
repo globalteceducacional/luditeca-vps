@@ -1,17 +1,19 @@
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '../lib/prisma.js';
 import { jsonSafe } from '../lib/serialize.js';
-import { requireAuth } from '../plugins/auth.js';
+import { requireAdmin } from '../plugins/auth.js';
+import { requireCmsEditor } from '../plugins/auth.js';
 
 export async function registerAuthorRoutes(app: FastifyInstance) {
-  app.get('/authors', { preHandler: requireAuth }, async (_request, reply) => {
+  // Leitura (necessário no fluxo de criar/editar livros): admin + editor
+  app.get('/authors', { preHandler: requireCmsEditor }, async (_request, reply) => {
     const rows = await prisma.author.findMany({ orderBy: { name: 'asc' } });
     return reply.send(jsonSafe(rows));
   });
 
   app.get<{ Params: { id: string } }>(
     '/authors/:id',
-    { preHandler: requireAuth },
+    { preHandler: requireCmsEditor },
     async (request, reply) => {
       const id = BigInt(request.params.id);
       const row = await prisma.author.findUnique({ where: { id } });
@@ -20,7 +22,8 @@ export async function registerAuthorRoutes(app: FastifyInstance) {
     },
   );
 
-  app.post('/authors', { preHandler: requireAuth }, async (request, reply) => {
+  // Escrita: somente ADM
+  app.post('/authors', { preHandler: requireAdmin }, async (request, reply) => {
     const body = request.body as Record<string, unknown>;
     const row = await prisma.author.create({
       data: {
@@ -34,7 +37,7 @@ export async function registerAuthorRoutes(app: FastifyInstance) {
 
   app.patch<{ Params: { id: string } }>(
     '/authors/:id',
-    { preHandler: requireAuth },
+    { preHandler: requireAdmin },
     async (request, reply) => {
       const id = BigInt(request.params.id);
       const body = request.body as Record<string, unknown>;
@@ -61,7 +64,7 @@ export async function registerAuthorRoutes(app: FastifyInstance) {
 
   app.delete<{ Params: { id: string } }>(
     '/authors/:id',
-    { preHandler: requireAuth },
+    { preHandler: requireAdmin },
     async (request, reply) => {
       const id = BigInt(request.params.id);
       await prisma.author.delete({ where: { id } });

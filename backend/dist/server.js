@@ -10,6 +10,7 @@ import { registerCategoryRoutes } from './routes/categoryRoutes.js';
 import { registerStorageRoutes } from './routes/storageRoutes.js';
 import { registerMediaRoutes } from './routes/mediaRoutes.js';
 import { registerImportPptxRoute } from './routes/importPptxRoute.js';
+import { registerUserRoutes } from './routes/userRoutes.js';
 const port = Number(process.env.PORT) || 4000;
 const host = process.env.HOST || '0.0.0.0';
 const corsOrigin = process.env.CORS_ORIGIN?.split(',').map((s) => s.trim()) ?? true;
@@ -31,6 +32,7 @@ async function main() {
     await registerStorageRoutes(app);
     await registerMediaRoutes(app);
     await registerImportPptxRoute(app);
+    await registerUserRoutes(app);
     await app.listen({ port, host });
     app.log.info(`API http://${host}:${port}`);
 }

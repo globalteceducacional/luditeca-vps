@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { requireAuth } from '../plugins/auth.js';
+import { requireCmsEditor } from '../plugins/auth.js';
 
 function nodeResAdapter(reply: FastifyReply) {
   return {
@@ -17,7 +17,7 @@ function nodeResAdapter(reply: FastifyReply) {
 export async function registerImportPptxRoute(app: FastifyInstance) {
   app.post(
     '/books/import-pptx',
-    { preHandler: requireAuth },
+    { preHandler: requireCmsEditor },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { runImportPptxEngine } = await import('../pptx/importPptxEngine.js');
       const res = nodeResAdapter(reply);

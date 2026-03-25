@@ -1,6 +1,6 @@
 import { prisma } from '../lib/prisma.js';
 import { assertBucket, copyObject, deleteObject, listObjects, presignedGetUrl, putObject, } from '../lib/s3.js';
-import { requireAuth } from '../plugins/auth.js';
+import { requireCmsEditor } from '../plugins/auth.js';
 function extType(name) {
     const ext = name.split('.').pop()?.toLowerCase() || '';
     if (['jpg', 'jpeg', 'png', 'webp', 'svg'].includes(ext))
@@ -33,7 +33,7 @@ function assertUserKey(uid, key) {
     return normalized;
 }
 export async function registerStorageRoutes(app) {
-    app.get('/storage/:bucket/list', { preHandler: requireAuth }, async (request, reply) => {
+    app.get('/storage/:bucket/list', { preHandler: requireCmsEditor }, async (request, reply) => {
         try {
             assertBucket(request.params.bucket);
         }
@@ -100,7 +100,7 @@ export async function registerStorageRoutes(app) {
         }));
         return reply.send({ data: [...folderItems, ...fileItems], error: null });
     });
-    app.post('/storage/:bucket/upload', { preHandler: requireAuth }, async (request, reply) => {
+    app.post('/storage/:bucket/upload', { preHandler: requireCmsEditor }, async (request, reply) => {
         try {
             assertBucket(request.params.bucket);
         }
@@ -159,7 +159,7 @@ export async function registerStorageRoutes(app) {
         }
         return reply.send({ data: { path: key, url }, error: null });
     });
-    app.delete('/storage/:bucket/object', { preHandler: requireAuth }, async (request, reply) => {
+    app.delete('/storage/:bucket/object', { preHandler: requireCmsEditor }, async (request, reply) => {
         try {
             assertBucket(request.params.bucket);
         }
@@ -183,7 +183,7 @@ export async function registerStorageRoutes(app) {
         });
         return reply.send({ ok: true });
     });
-    app.post('/storage/:bucket/folder', { preHandler: requireAuth }, async (request, reply) => {
+    app.post('/storage/:bucket/folder', { preHandler: requireCmsEditor }, async (request, reply) => {
         try {
             assertBucket(request.params.bucket);
         }
@@ -204,7 +204,7 @@ export async function registerStorageRoutes(app) {
         await putObject(request.params.bucket, key, Buffer.from('{}'), 'application/json');
         return reply.send({ ok: true, path: key });
     });
-    app.get('/storage/:bucket/metadata', { preHandler: requireAuth }, async (request, reply) => {
+    app.get('/storage/:bucket/metadata', { preHandler: requireCmsEditor }, async (request, reply) => {
         try {
             assertBucket(request.params.bucket);
         }
@@ -239,7 +239,7 @@ export async function registerStorageRoutes(app) {
             created_at: row.createdAt.toISOString(),
         });
     });
-    app.post('/storage/:bucket/move', { preHandler: requireAuth }, async (request, reply) => {
+    app.post('/storage/:bucket/move', { preHandler: requireCmsEditor }, async (request, reply) => {
         try {
             assertBucket(request.params.bucket);
         }
