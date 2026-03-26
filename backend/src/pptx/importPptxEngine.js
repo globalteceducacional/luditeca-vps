@@ -860,7 +860,14 @@ function mapPptxShapeType(prst) {
   return 'rectangle';
 }
 
-function buildShapeElementsFromParsedSlide(parsed, slideCx, slideCy, slideNumber, idPrefix) {
+function buildShapeElementsFromParsedSlide(
+  parsed,
+  slideCx,
+  slideCy,
+  slideNumber,
+  idPrefix,
+  shapeAnimBySpid = {},
+) {
   if (!parsed) return [];
   const spTree = getSlideSpTreeRoot(parsed);
   if (!spTree) return [];
@@ -894,6 +901,11 @@ function buildShapeElementsFromParsedSlide(parsed, slideCx, slideCy, slideNumber
     const shapeType = mapPptxShapeType(prst);
     const rotation = emuRotationToDegrees(xfrm?.rot ?? xfrm?.['@_rot']);
     const flipX = Boolean(xfrm?.flipH ?? xfrm?.['@_flipH']);
+    const spid = getShapeSpid(sp);
+    const entranceAnim =
+      spid && shapeAnimBySpid && typeof shapeAnimBySpid === 'object'
+        ? shapeAnimBySpid[spid] || ''
+        : '';
 
     out.push({
       id: `${idPrefix}-shp-${slideNumber}-${idx}`,
@@ -903,6 +915,7 @@ function buildShapeElementsFromParsedSlide(parsed, slideCx, slideCy, slideNumber
       step: 0,
       // Mantém a forma atrás do texto do mesmo shape.
       zIndex: idx * 2 + 1,
+      animation: entranceAnim,
       shapeProperties: {
         type: shapeType,
         fill: fill || '#fcfdff',
@@ -978,7 +991,7 @@ function buildTextElementsFromParsedSlide(parsed, slideCx, slideCy, slideNumber,
         : '';
 
     elements.push({
-      id: `${idPrefix}-txt-${slideNumber}-${idx}-${z}`,
+      id: `${idPrefix}-txt-${slideNumber}-${idx}${spid ? `-${spid}` : ''}`,
       type: 'text',
       textStyle: 'normal',
       content,
@@ -1343,6 +1356,7 @@ export async function runImportPptxEngine(req, res) {
         slideCy,
         slideNumber,
         String(importStamp),
+        shapeAnimBySpid,
       );
       const textElementsRaw = buildTextElementsFromParsedSlide(
         parsedSlide,

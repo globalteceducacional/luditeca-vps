@@ -145,6 +145,9 @@ function normalizeNodes(elements: LegacyElement[] | undefined) {
       transform: { x, y, width, height, rotation },
       zIndex,
       step,
+      // Campo utilizado pelo editor para aplicar animate.css.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      animation: (el as any)?.animation ?? (el as any)?.anim ?? undefined,
       props: {
         content: contentStr,
         fontSize: el?.fontSize,
