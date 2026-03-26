@@ -62,6 +62,38 @@ function toNum(v: unknown, fallback: number) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function legacyContentSpansToRichSpans(content: unknown, contentSpans: unknown) {
+  const full = String(content ?? '');
+  const spans = Array.isArray(contentSpans) ? contentSpans : [];
+  let pos = 0;
+  const out: Array<Record<string, unknown>> = [];
+  for (const s of spans as Array<Record<string, unknown>>) {
+    const t = String(s?.text ?? '');
+    const start = pos;
+    const end = pos + t.length;
+    pos = end;
+    const w = s?.fontWeight;
+    const bold =
+      w === true ||
+      w === 'bold' ||
+      w === 'bolder' ||
+      (typeof w === 'number' && w >= 600) ||
+      (typeof w === 'string' && /^\d+$/.test(w) && Number(w) >= 600);
+    const italic = s?.fontStyle === 'italic' || s?.fontStyle === 'oblique';
+    const underline = Boolean(s?.underline);
+    if (bold || italic || underline) {
+      out.push({
+        start,
+        end,
+        ...(bold ? { bold: true } : {}),
+        ...(italic ? { italic: true } : {}),
+        ...(underline ? { underline: true } : {}),
+      });
+    }
+  }
+  return out.length > 0 ? out : undefined;
+}
+
 function normalizeBg(bg: unknown): PagesV2['pages'][number]['background'] {
   if (!bg) return null;
   if (typeof bg === 'string') {
@@ -99,6 +131,13 @@ function normalizeNodes(elements: LegacyElement[] | undefined) {
     const rotation = toNum(el?.rotation, 0);
     const zIndex = toNum(el?.zIndex, idx + 1);
     const step = toNum(el?.step, 0);
+    const contentStr = el?.content ?? '';
+    const richFromLegacy = Array.isArray(el?.richSpans) ? el.richSpans : undefined;
+    const richFromImport =
+      type === 'text' && Array.isArray(el?.contentSpans)
+        ? legacyContentSpansToRichSpans(contentStr, el.contentSpans)
+        : undefined;
+    const richSpans = richFromLegacy ?? richFromImport;
 
     return {
       id,
@@ -107,7 +146,7 @@ function normalizeNodes(elements: LegacyElement[] | undefined) {
       zIndex,
       step,
       props: {
-        content: el?.content ?? '',
+        content: contentStr,
         fontSize: el?.fontSize,
         fontFamily: el?.fontFamily,
         fontWeight: el?.fontWeight,
@@ -122,6 +161,7 @@ function normalizeNodes(elements: LegacyElement[] | undefined) {
         storage: el?.storage,
         shapeProperties: el?.shapeProperties,
         audio: el?.audio,
+        ...(richSpans ? { richSpans } : {}),
       },
       legacy: el,
     };

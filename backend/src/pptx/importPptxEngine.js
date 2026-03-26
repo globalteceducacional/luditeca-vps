@@ -294,7 +294,54 @@ function paragraphToSpans(p) {
     });
   }
 
+  // Quebras manuais dentro do mesmo parágrafo (Shift+Enter no PPTX).
+  if (p.br) {
+    const breaks = Array.isArray(p.br) ? p.br.length : 1;
+    for (let i = 0; i < breaks; i += 1) {
+      parts.push({
+        text: '\n',
+        fontSize: style.fontSize,
+        fontWeight: style.fontWeight,
+        fontStyle: style.fontStyle,
+        color: style.color,
+        fontFamily: style.fontFamily,
+        underline: style.textDecoration === 'underline',
+      });
+    }
+  }
+
   return mergeAdjacentIdenticalSpans(parts);
+}
+
+function spansToRichSpans(contentSpans) {
+  const spans = Array.isArray(contentSpans) ? contentSpans : [];
+  const out = [];
+  let pos = 0;
+  for (const s of spans) {
+    const text = String(s?.text ?? '');
+    const start = pos;
+    const end = pos + text.length;
+    pos = end;
+    const weight = s?.fontWeight;
+    const bold =
+      weight === true ||
+      weight === 'bold' ||
+      weight === 'bolder' ||
+      (typeof weight === 'number' && weight >= 600) ||
+      (typeof weight === 'string' && /^\d+$/.test(weight) && Number(weight) >= 600);
+    const italic = s?.fontStyle === 'italic' || s?.fontStyle === 'oblique';
+    const underline = Boolean(s?.underline);
+    if (bold || italic || underline) {
+      out.push({
+        start,
+        end,
+        ...(bold ? { bold: true } : {}),
+        ...(italic ? { italic: true } : {}),
+        ...(underline ? { underline: true } : {}),
+      });
+    }
+  }
+  return out;
 }
 
 /**
@@ -353,18 +400,20 @@ function srgbToHex(val) {
 }
 
 function extractFirstRunStyle(txBody) {
-  let fontSize = 24;
-  let fontWeight = 'normal';
-  let fontStyle = 'normal';
-  let color = '#000000';
-  let textAlign = 'left';
-  let fontFamily = 'Roboto';
-
   if (!txBody?.p) {
-    return { fontSize, fontWeight, fontStyle, color, textAlign, fontFamily };
+    return {
+      fontSize: 24,
+      fontWeight: 'normal',
+      fontStyle: 'normal',
+      color: '#000000',
+      textAlign: 'left',
+      fontFamily: 'Roboto',
+    };
   }
   const ps = Array.isArray(txBody.p) ? txBody.p : [txBody.p];
   const firstP = ps[0];
+  let style = extractParagraphDefaultCharStyle(firstP);
+  let textAlign = 'left';
   if (firstP?.pPr?.algn) {
     textAlign = mapAlign(firstP.pPr.algn);
   }
@@ -373,28 +422,15 @@ function extractFirstRunStyle(txBody) {
       ? firstP.r[0]
       : firstP.r
     : null;
-  const rPr = firstR?.rPr;
-  if (rPr) {
-    if (rPr.sz != null) {
-      fontSize = Math.max(8, Math.round(toNum(rPr.sz, 2400) / 100));
-    }
-    if (rPr.b === '1' || rPr.b === 1 || rPr.b === true) fontWeight = 'bold';
-    if (rPr.i === '1' || rPr.i === 1 || rPr.i === true) fontStyle = 'italic';
-    const rgb =
-      rPr.solidFill?.srgbClr?.val ||
-      rPr.solidFill?.['a:srgbClr']?.val ||
-      rPr.srgbClr?.val;
-    if (rgb) color = srgbToHex(rgb);
-    const typeface =
-      rPr.latin?.typeface ||
-      rPr.latin?.['@_typeface'] ||
-      rPr.ea?.typeface ||
-      rPr.cs?.typeface;
-    if (typeface && String(typeface).trim()) {
-      fontFamily = String(typeface).trim();
-    }
-  }
-  return { fontSize, fontWeight, fontStyle, color, textAlign, fontFamily };
+  style = applyRunCharStyle(style, firstR?.rPr);
+  return {
+    fontSize: style.fontSize,
+    fontWeight: style.fontWeight,
+    fontStyle: style.fontStyle,
+    color: style.color,
+    textAlign,
+    fontFamily: style.fontFamily,
+  };
 }
 
 function collectSpShapes(spTree) {
@@ -439,6 +475,126 @@ function spdToDurationMs(spd) {
   if (s === 'fast') return 280;
   if (s === 'slow') return 900;
   return 500;
+}
+
+function normalizeDurationMs(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.max(200, Math.min(4000, Math.round(n)));
+}
+
+function normalizeTransitionTypeForRuntime(type) {
+  const t = String(type || '').toLowerCase();
+  if (!t || t === 'none') return 'none';
+  const supported = new Set([
+    'esmaecer',
+    'fade',
+    'dissolve',
+    'push',
+    'reveal',
+    'wipe',
+    'cover',
+    'uncover',
+    'shreds',
+    'split',
+    'zoom',
+    'morph',
+    'flash',
+  ]);
+  if (supported.has(t)) return t;
+  const fallbackMap = {
+    pull: 'push',
+    newsflash: 'flash',
+    randombars: 'dissolve',
+    blinds: 'wipe',
+    checker: 'dissolve',
+    circle: 'zoom',
+    comb: 'wipe',
+    cut: 'fade',
+    diamond: 'zoom',
+    plus: 'zoom',
+    strips: 'wipe',
+    wedge: 'wipe',
+    wheel: 'dissolve',
+    fallover: 'zoom',
+    drape: 'wipe',
+    curtains: 'wipe',
+    prism: 'zoom',
+    honeycomb: 'dissolve',
+    ripple: 'dissolve',
+    vortex: 'zoom',
+    // "esmaecer" é alias explícito para fade no runtime antigo.
+    esmaecer: 'fade',
+  };
+  return fallbackMap[t] || 'fade';
+}
+
+function normalizePptxFontFamily(fontFamily, themeFonts = null) {
+  const raw = String(fontFamily || '').trim();
+  if (!raw) return 'Roboto';
+  const lower = raw.toLowerCase();
+  if (lower === '+mn-lt' || lower === '+mn-ea' || lower === '+mn-cs') {
+    return themeFonts?.minorLatin || 'Roboto';
+  }
+  if (lower === '+mj-lt' || lower === '+mj-ea' || lower === '+mj-cs') {
+    return themeFonts?.majorLatin || 'Roboto';
+  }
+  if (raw.startsWith('+')) {
+    return themeFonts?.minorLatin || 'Roboto';
+  }
+  return raw;
+}
+
+async function extractThemeFonts(zip, xmlParser) {
+  const out = { majorLatin: 'Roboto', minorLatin: 'Roboto' };
+  const themeFile = zip.file('ppt/theme/theme1.xml');
+  if (!themeFile) return out;
+  try {
+    const xml = await themeFile.async('text');
+    const parsed = xmlParser.parse(xml);
+    const theme =
+      parsed?.theme ||
+      parsed?.['a:theme'] ||
+      null;
+    const fontScheme =
+      theme?.themeElements?.fontScheme ||
+      theme?.['a:themeElements']?.['a:fontScheme'] ||
+      null;
+    const majorLatin =
+      fontScheme?.majorFont?.latin?.typeface ||
+      fontScheme?.majorFont?.latin?.['@_typeface'] ||
+      fontScheme?.['a:majorFont']?.['a:latin']?.typeface ||
+      null;
+    const minorLatin =
+      fontScheme?.minorFont?.latin?.typeface ||
+      fontScheme?.minorFont?.latin?.['@_typeface'] ||
+      fontScheme?.['a:minorFont']?.['a:latin']?.typeface ||
+      null;
+    if (majorLatin && String(majorLatin).trim()) {
+      out.majorLatin = String(majorLatin).trim();
+    }
+    if (minorLatin && String(minorLatin).trim()) {
+      out.minorLatin = String(minorLatin).trim();
+    }
+  } catch {
+    // Mantém fallback padrão se falhar leitura do tema.
+  }
+  return out;
+}
+
+function normalizeTextElementsFonts(elements, themeFonts) {
+  return (Array.isArray(elements) ? elements : []).map((el) => {
+    if (String(el?.type || '') !== 'text') return el;
+    const next = { ...el };
+    next.fontFamily = normalizePptxFontFamily(el?.fontFamily, themeFonts);
+    if (Array.isArray(el?.contentSpans)) {
+      next.contentSpans = el.contentSpans.map((s) => ({
+        ...s,
+        fontFamily: normalizePptxFontFamily(s?.fontFamily, themeFonts),
+      }));
+    }
+    return next;
+  });
 }
 
 /** Mapeia filho de p:transition (OOXML sem prefixo) → tipo canónico */
@@ -499,7 +655,8 @@ function extractSlideTransitionFromParsed(parsed) {
   if (!tr || typeof tr !== 'object') return base;
 
   const spd = tr.spd || tr['@_spd'];
-  const durationMs = spdToDurationMs(spd);
+  const durRaw = tr.dur ?? tr['@_dur'];
+  const durationMs = normalizeDurationMs(durRaw) ?? spdToDurationMs(spd);
   const reserved = new Set([
     'spd',
     '@_spd',
@@ -521,7 +678,13 @@ function extractSlideTransitionFromParsed(parsed) {
         typeof val === 'object'
           ? extractTransitionDirection(val)
           : null;
-      return { type, durationMs, direction, source: 'pptx', rawType: key };
+      return {
+        type: normalizeTransitionTypeForRuntime(type),
+        durationMs,
+        direction,
+        source: 'pptx',
+        rawType: key,
+      };
     }
   }
 
@@ -649,6 +812,116 @@ function getShapeSpid(sp) {
   return String(id);
 }
 
+function emuRotationToDegrees(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round((n / 60000) * 100) / 100;
+}
+
+function emuLineWidthToPx(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  // 1pt = 12700 EMU e ~1.333px em 96dpi.
+  const pt = n / 12700;
+  return Math.max(0, Math.round(pt * 1.333));
+}
+
+function parseFillFromSpPr(spPr) {
+  if (!spPr || typeof spPr !== 'object') return null;
+  if (spPr.noFill !== undefined) return 'transparent';
+  const rgb =
+    spPr.solidFill?.srgbClr?.val ||
+    spPr.solidFill?.['a:srgbClr']?.val ||
+    spPr.srgbClr?.val;
+  if (rgb) return srgbToHex(rgb);
+  return null;
+}
+
+function parseStrokeFromSpPr(spPr) {
+  if (!spPr || typeof spPr !== 'object') return { borderColor: '#0d0d0d', borderWidth: 0 };
+  const ln = spPr.ln || spPr['a:ln'];
+  if (!ln || ln.noFill !== undefined) return { borderColor: '#0d0d0d', borderWidth: 0 };
+  const rgb =
+    ln.solidFill?.srgbClr?.val ||
+    ln.solidFill?.['a:srgbClr']?.val ||
+    ln.srgbClr?.val;
+  const borderColor = rgb ? srgbToHex(rgb) : '#0d0d0d';
+  const borderWidth = emuLineWidthToPx(ln.w ?? ln['@_w']);
+  return { borderColor, borderWidth };
+}
+
+function mapPptxShapeType(prst) {
+  const t = String(prst || '').toLowerCase();
+  if (t.includes('ellipse') || t.includes('circle')) return 'circle';
+  if (t.includes('triangle')) return 'triangle';
+  if (t.includes('star')) return 'star';
+  if (t.includes('arrow')) return 'arrow';
+  if (t.includes('line')) return 'line';
+  return 'rectangle';
+}
+
+function buildShapeElementsFromParsedSlide(parsed, slideCx, slideCy, slideNumber, idPrefix) {
+  if (!parsed) return [];
+  const spTree = getSlideSpTreeRoot(parsed);
+  if (!spTree) return [];
+  const shapes = collectSpShapes(spTree);
+  const out = [];
+
+  shapes.forEach((sp, idx) => {
+    const spPr = sp.spPr || sp['p:spPr'];
+    const xfrm = spPr?.xfrm || spPr?.['a:xfrm'] || sp['xfrm'];
+    const off = xfrm?.off || xfrm?.['a:off'];
+    const ext = xfrm?.ext || xfrm?.['a:ext'];
+    if (!off || !ext) return;
+    const ox = off.x ?? off['@_x'];
+    const oy = off.y ?? off['@_y'];
+    const cx = ext.cx ?? ext['@_cx'];
+    const cy = ext.cy ?? ext['@_cy'];
+    if (ox == null || oy == null || cx == null || cy == null) return;
+
+    const rect = emuRectToCanvas(ox, oy, cx, cy, slideCx, slideCy);
+    const fill = parseFillFromSpPr(spPr);
+    const { borderColor, borderWidth } = parseStrokeFromSpPr(spPr);
+    const hasVisibleShape = (fill && fill !== 'transparent') || borderWidth > 0;
+    if (!hasVisibleShape) return;
+
+    const prst =
+      spPr?.prstGeom?.prst ||
+      spPr?.prstGeom?.['@_prst'] ||
+      spPr?.['a:prstGeom']?.prst ||
+      'rect';
+    const hasText = Boolean(sp.txBody);
+    const shapeType = mapPptxShapeType(prst);
+    const rotation = emuRotationToDegrees(xfrm?.rot ?? xfrm?.['@_rot']);
+    const flipX = Boolean(xfrm?.flipH ?? xfrm?.['@_flipH']);
+
+    out.push({
+      id: `${idPrefix}-shp-${slideNumber}-${idx}`,
+      type: 'shape',
+      position: { x: rect.x, y: rect.y },
+      size: { width: rect.width, height: rect.height },
+      step: 0,
+      // Mantém a forma atrás do texto do mesmo shape.
+      zIndex: idx * 2 + 1,
+      shapeProperties: {
+        type: shapeType,
+        fill: fill || '#fcfdff',
+        borderColor,
+        borderWidth,
+        rotation,
+        flipX,
+      },
+      // Mantém rastreio de origem; útil para ajustes futuros de import.
+      sourceShape: {
+        prst,
+        hasText,
+      },
+    });
+  });
+
+  return out;
+}
+
 /**
  * Extrai textos dos shapes (slide já parseado) → elementos compatíveis com o editor.
  * @param {Record<string, string>} shapeAnimBySpid
@@ -660,8 +933,6 @@ function buildTextElementsFromParsedSlide(parsed, slideCx, slideCy, slideNumber,
 
   const shapes = collectSpShapes(spTree);
   const elements = [];
-  let z = 1;
-
   shapes.forEach((sp, idx) => {
     const txBody = sp.txBody;
     if (!txBody) return;
@@ -698,6 +969,7 @@ function buildTextElementsFromParsedSlide(parsed, slideCx, slideCy, slideNumber,
             underline: Boolean(s.underline),
           }))
         : null;
+    const richSpansPayload = contentSpansPayload ? spansToRichSpans(contentSpansPayload) : [];
 
     const spid = getShapeSpid(sp);
     const entranceAnim =
@@ -711,11 +983,13 @@ function buildTextElementsFromParsedSlide(parsed, slideCx, slideCy, slideNumber,
       textStyle: 'normal',
       content,
       ...(contentSpansPayload ? { contentSpans: contentSpansPayload } : {}),
+      ...(richSpansPayload.length > 0 ? { richSpans: richSpansPayload } : {}),
       position: { x: rect.x, y: rect.y },
       size: { width: rect.width, height: rect.height },
       animation: entranceAnim,
       step: 0,
-      zIndex: z,
+      // Texto fica acima da forma base do mesmo shape.
+      zIndex: idx * 2 + 2,
       fontSize: base.fontSize,
       fontFamily: base.fontFamily || 'Roboto',
       fontWeight: base.fontWeight,
@@ -723,7 +997,6 @@ function buildTextElementsFromParsedSlide(parsed, slideCx, slideCy, slideNumber,
       textAlign,
       color: base.color,
     });
-    z += 1;
   });
 
   return elements;
@@ -1040,16 +1313,18 @@ export async function runImportPptxEngine(req, res) {
     }
 
     const { cx: slideCx, cy: slideCy } = await getSlideDimensionsEMU(zip, xmlParser);
+    const themeFonts = await extractThemeFonts(zip, xmlParser);
     importDebug('dimensões do slide (EMU)', { slideCx, slideCy });
+    importDebug('fontes do tema PPTX', themeFonts);
 
     importDebug(
       dryRun ? 'dryRun: só detecta slides' : 'iniciando upload de imagens por slide',
       { bookId, importStamp, dryRun },
     );
 
-    /** @type {{ slideNumber: number, fileName: string|null, fileSize: number, textCount: number }[]} */
+    /** @type {{ slideNumber: number, fileName: string|null, fileSize: number, textCount: number, shapeCount: number }[]} */
     const slideSummaries = [];
-    /** @type {{ slideNumber: number, uploaded: object|null, textElements: object[], uploadWarning: object|null, transition: object }[]} */
+    /** @type {{ slideNumber: number, uploaded: object|null, textElements: object[], shapeElements: object[], uploadWarning: object|null, transition: object }[]} */
     const slidePayloads = [];
 
     for (const slideXmlPath of slideXmlPaths) {
@@ -1062,7 +1337,14 @@ export async function runImportPptxEngine(req, res) {
       const parsedSlide = parseSlideXmlSafe(slideXml, xmlParser);
       const slideTransition = extractSlideTransitionFromParsed(parsedSlide);
       const shapeAnimBySpid = extractShapeEntranceAnimations(parsedSlide);
-      const textElements = buildTextElementsFromParsedSlide(
+      const shapeElements = buildShapeElementsFromParsedSlide(
+        parsedSlide,
+        slideCx,
+        slideCy,
+        slideNumber,
+        String(importStamp),
+      );
+      const textElementsRaw = buildTextElementsFromParsedSlide(
         parsedSlide,
         slideCx,
         slideCy,
@@ -1070,6 +1352,7 @@ export async function runImportPptxEngine(req, res) {
         String(importStamp),
         shapeAnimBySpid,
       );
+      const textElements = normalizeTextElementsFonts(textElementsRaw, themeFonts);
 
       const relPath = `ppt/slides/_rels/slide${slideNumber}.xml.rels`;
       const relFile = zip.file(relPath);
@@ -1099,8 +1382,8 @@ export async function runImportPptxEngine(req, res) {
         }
       }
 
-      if (!binary && textElements.length === 0) {
-        importDebug(`slide ${slideNumber}: ignorado (sem imagem nem texto)`);
+      if (!binary && textElements.length === 0 && shapeElements.length === 0) {
+        importDebug(`slide ${slideNumber}: ignorado (sem imagem, texto ou forma)`);
         continue;
       }
 
@@ -1109,6 +1392,7 @@ export async function runImportPptxEngine(req, res) {
         fileName: chosenName,
         fileSize: binary ? binary.length : 0,
         textCount: textElements.length,
+        shapeCount: shapeElements.length,
       };
       slideSummaries.push(summary);
       discoveredSlides.push({
@@ -1129,6 +1413,7 @@ export async function runImportPptxEngine(req, res) {
           fileName: chosenName,
           bytes: binary.length,
           textos: textElements.length,
+          formas: shapeElements.length,
         });
         try {
           uploaded = await uploadSlideImage({
@@ -1154,6 +1439,7 @@ export async function runImportPptxEngine(req, res) {
       } else {
         importDebug(`slide ${slideNumber}: só texto (sem imagem de fundo)`, {
           textos: textElements.length,
+          formas: shapeElements.length,
         });
       }
 
@@ -1161,6 +1447,7 @@ export async function runImportPptxEngine(req, res) {
         slideNumber,
         uploaded,
         textElements,
+        shapeElements,
         uploadWarning,
         transition: slideTransition,
       });
@@ -1196,7 +1483,7 @@ export async function runImportPptxEngine(req, res) {
 
     const pages = [];
     for (const payload of slidePayloads) {
-      const { slideNumber, uploaded, textElements, uploadWarning, transition } = payload;
+      const { slideNumber, uploaded, textElements, shapeElements, uploadWarning, transition } = payload;
       const transitionMeta = transition || {
         type: 'none',
         durationMs: 500,
@@ -1206,7 +1493,10 @@ export async function runImportPptxEngine(req, res) {
 
       /** Fundo do slide vira nó imagem (fica nos ativos do livro); sem background na página. */
       const elementsWithSlideImage = () => {
-        if (!uploaded) return textElements;
+        const mergedElements = [...(shapeElements || []), ...(textElements || [])].sort(
+          (a, b) => Number(a?.zIndex || 0) - Number(b?.zIndex || 0),
+        );
+        if (!uploaded) return mergedElements;
         const mk = mediaKindFromPath(uploaded.targetPath);
         const imageEl = {
           id: `${importStamp}-img-${slideNumber}`,
@@ -1223,7 +1513,7 @@ export async function runImportPptxEngine(req, res) {
           zIndex: 0,
           step: 0,
         };
-        return [imageEl, ...textElements];
+        return [imageEl, ...mergedElements];
       };
 
       if (uploaded) {
@@ -1249,7 +1539,9 @@ export async function runImportPptxEngine(req, res) {
           buildWarningPage({
             slideNumber,
             reason: uploadWarning.error,
-            elements: textElements,
+            elements: [...(shapeElements || []), ...(textElements || [])].sort(
+              (a, b) => Number(a?.zIndex || 0) - Number(b?.zIndex || 0),
+            ),
             idStamp: importStamp,
             transition: transitionMeta,
           }),
@@ -1260,7 +1552,9 @@ export async function runImportPptxEngine(req, res) {
       pages.push({
         id: `${importStamp}-slide-${slideNumber}-textonly`,
         background: null,
-        elements: textElements,
+        elements: [...(shapeElements || []), ...(textElements || [])].sort(
+          (a, b) => Number(a?.zIndex || 0) - Number(b?.zIndex || 0),
+        ),
         orientation: 'landscape',
         sourceSlide: slideNumber,
         transition: transitionMeta,

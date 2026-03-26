@@ -320,6 +320,93 @@ export async function registerMediaRoutes(app: FastifyInstance) {
     return reply.send({ data: { path: relPath, url, name: safeName }, error: null, bucket });
   });
 
+  /**
+   * Substitui um arquivo existente mantendo o mesmo caminho.
+   * Útil para "editar/substituir imagem" sem quebrar referências já salvas.
+   */
+  app.post<{
+    Querystring: { mediaType?: MediaType; root?: string; path?: string; bookId?: string };
+  }>('/media/replace', { preHandler: requireCmsEditor }, async (request, reply) => {
+    const mediaType = (request.query.mediaType || 'image') as MediaType;
+    const bucket = MEDIA_BUCKET_MAP[mediaType] || MEDIA_BUCKET_MAP.image;
+    try {
+      assertBucket(bucket);
+    } catch (e) {
+      return reply.code(400).send({ error: (e as Error).message });
+    }
+
+    const uid = request.user!.id;
+    const root = request.query.root || 'library';
+    const relPathRaw = request.query.path || '';
+    const bookId = parseBookId(request);
+    if (!relPathRaw) {
+      return reply.code(400).send({ error: 'path obrigatório.' });
+    }
+
+    let key: string;
+    try {
+      const effectiveRoot =
+        bookId && root === 'library'
+          ? `books/${bookId.toString()}`
+          : root;
+      const base = userFsBase(uid, effectiveRoot);
+      const rel = assertSafeRelPath(relPathRaw);
+      if (!rel) return reply.code(400).send({ error: 'path inválido.' });
+      key = `${base}/${rel}`;
+    } catch (e) {
+      return reply.code(400).send({ error: (e as Error).message });
+    }
+
+    const parts = request.parts();
+    let buf: Buffer | null = null;
+    let ct = 'application/octet-stream';
+    for await (const part of parts) {
+      if (part.type === 'file' && part.fieldname === 'file') {
+        buf = await part.toBuffer();
+        ct = part.mimetype || ct;
+      }
+    }
+    if (!buf) return reply.code(400).send({ error: 'Ficheiro em falta.' });
+
+    await putObject(bucket, key, buf, ct);
+    const metadataUpdate = {
+      fileName: path.posix.basename(key),
+      fileType: ct,
+      fileSize: BigInt(buf.length),
+      updatedAt: new Date(),
+    };
+    const updated = await prisma.mediaFile.updateMany({
+      where: { userId: uid, bucketName: bucket, filePath: key },
+      data: metadataUpdate,
+    });
+    if (updated.count === 0) {
+      await prisma.mediaFile.create({
+        data: {
+          userId: uid,
+          bookId,
+          filePath: key,
+          fileName: metadataUpdate.fileName,
+          fileType: metadataUpdate.fileType,
+          fileSize: metadataUpdate.fileSize,
+          bucketName: bucket,
+        },
+      });
+    }
+
+    let url: string | null = null;
+    try {
+      url = await presignedGetUrl(bucket, key, 3600);
+    } catch {
+      url = null;
+    }
+
+    return reply.send({
+      data: { path: relPathRaw, url, name: path.posix.basename(key) },
+      error: null,
+      bucket,
+    });
+  });
+
   app.post<{ Body: { mediaType?: MediaType; root?: string; path?: string } }>(
     '/media/folder',
     { preHandler: requireCmsEditor },

@@ -8,8 +8,15 @@ import {
   GetObjectCommand,
   DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
+import path from 'node:path';
+import { promises as fs } from 'node:fs';
+import { putObject, deleteObject, publicUrl } from '../lib/s3.js';
 
 const prisma = new PrismaClient();
+const STORAGE_DRIVER = (process.env.STORAGE_DRIVER || 'local').toLowerCase();
+const LOCAL_STORAGE_DIR = path.resolve(
+  process.env.LOCAL_STORAGE_DIR || path.join(process.cwd(), 'storage'),
+);
 
 function getS3() {
   const endpoint = process.env.S3_ENDPOINT || process.env.MINIO_ENDPOINT;
@@ -30,13 +37,15 @@ function getS3() {
 }
 
 function publicUrlFor(bucket, key) {
-  const base = (process.env.PUBLIC_MEDIA_BASE || '').replace(/\/$/, '');
-  const segments = [bucket, ...key.split('/').filter(Boolean)].map((s) =>
-    encodeURIComponent(s),
-  );
-  const path = segments.join('/');
-  if (!base) return `/${path}`;
-  return `${base}/${path}`;
+  return publicUrl(bucket, key);
+}
+
+function localObjectPath(bucket, key) {
+  const normalized = String(key || '').replace(/\\/g, '/').replace(/^\/+/, '');
+  if (!normalized || normalized.includes('..')) {
+    throw new Error('Caminho de storage inválido.');
+  }
+  return path.join(LOCAL_STORAGE_DIR, bucket, normalized);
 }
 
 async function streamToBuffer(stream) {
@@ -48,7 +57,7 @@ async function streamToBuffer(stream) {
 }
 
 export function createSupabaseLikeClient() {
-  const s3 = getS3();
+  const s3 = STORAGE_DRIVER === 's3' ? getS3() : null;
 
   return {
     storage: {
@@ -63,15 +72,19 @@ export function createSupabaseLikeClient() {
             else buf = Buffer.from(body);
             const ct =
               opts.contentType || 'application/octet-stream';
-            await s3.send(
-              new PutObjectCommand({
-                Bucket: bucket,
-                Key: key,
-                Body: buf,
-                ContentType: ct,
-                CacheControl: opts.cacheControl || '3600',
-              }),
-            );
+            if (STORAGE_DRIVER === 's3') {
+              await s3.send(
+                new PutObjectCommand({
+                  Bucket: bucket,
+                  Key: key,
+                  Body: buf,
+                  ContentType: ct,
+                  CacheControl: opts.cacheControl || '3600',
+                }),
+              );
+            } else {
+              await putObject(bucket, key, buf, ct);
+            }
             return { data: null, error: null };
           },
           getPublicUrl(key) {
@@ -79,10 +92,16 @@ export function createSupabaseLikeClient() {
           },
           async download(key) {
             try {
-              const out = await s3.send(
-                new GetObjectCommand({ Bucket: bucket, Key: key }),
-              );
-              const buf = await streamToBuffer(out.Body);
+              let buf;
+              if (STORAGE_DRIVER === 's3') {
+                const out = await s3.send(
+                  new GetObjectCommand({ Bucket: bucket, Key: key }),
+                );
+                buf = await streamToBuffer(out.Body);
+              } else {
+                const abs = localObjectPath(bucket, key);
+                buf = await fs.readFile(abs);
+              }
               return {
                 data: {
                   async arrayBuffer() {
@@ -101,9 +120,13 @@ export function createSupabaseLikeClient() {
           async remove(keys) {
             try {
               for (const key of keys) {
-                await s3.send(
-                  new DeleteObjectCommand({ Bucket: bucket, Key: key }),
-                );
+                if (STORAGE_DRIVER === 's3') {
+                  await s3.send(
+                    new DeleteObjectCommand({ Bucket: bucket, Key: key }),
+                  );
+                } else {
+                  await deleteObject(bucket, key);
+                }
               }
               return { data: null, error: null };
             } catch (e) {

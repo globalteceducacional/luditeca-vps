@@ -2,8 +2,10 @@ import type { FastifyInstance } from 'fastify';
 import { prisma } from '../lib/prisma.js';
 import { jsonSafe } from '../lib/serialize.js';
 import { requireCmsEditor } from '../plugins/auth.js';
+import { requireAuth } from '../plugins/auth.js';
 import {
   copyObject,
+  deletePrefix,
   deleteObject,
   listAllKeys,
   presignedGetUrl,
@@ -344,7 +346,7 @@ function bookResponse(b: any) {
 }
 
 export async function registerBookRoutes(app: FastifyInstance) {
-  app.get('/books', { preHandler: requireCmsEditor }, async (_request, reply) => {
+  app.get('/books', { preHandler: requireAuth }, async (_request, reply) => {
     const rows = await prisma.book.findMany({
       orderBy: { createdAt: 'desc' },
       include: { authorRel: true },
@@ -354,7 +356,7 @@ export async function registerBookRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { id: string } }>(
     '/books/:id',
-    { preHandler: requireCmsEditor },
+    { preHandler: requireAuth },
     async (request, reply) => {
       const id = BigInt(request.params.id);
       const b = await prisma.book.findUnique({
@@ -489,6 +491,7 @@ export async function registerBookRoutes(app: FastifyInstance) {
     { preHandler: requireCmsEditor },
     async (request, reply) => {
       const id = BigInt(request.params.id);
+      const bookIdAsString = id.toString();
 
       // Limpa mídias vinculadas ao livro (evita acúmulo no storage)
       const media = await prisma.mediaFile.findMany({
@@ -503,6 +506,30 @@ export async function registerBookRoutes(app: FastifyInstance) {
         }
       }
       await prisma.mediaFile.deleteMany({ where: { bookId: id } as Record<string, unknown> });
+
+      // Limpeza extra por prefixo de pasta do livro (user/books/{id}) em todos os buckets.
+      // Cobre arquivos órfãos e remove o acúmulo no storage local.
+      const userIds = Array.from(new Set(media.map((m) => m.userId).filter(Boolean)));
+      const buckets = [
+        'covers',
+        'pages',
+        'presentations',
+        'audios',
+        'videos',
+        'categories',
+        'autores',
+        'avatars',
+      ] as const;
+      for (const userId of userIds) {
+        const prefix = `${userId}/books/${bookIdAsString}`;
+        for (const bucket of buckets) {
+          try {
+            await deletePrefix(bucket, prefix);
+          } catch {
+            // Se não houver nada no bucket/prefixo, seguimos.
+          }
+        }
+      }
 
       await prisma.book.delete({ where: { id } });
       return reply.code(204).send();

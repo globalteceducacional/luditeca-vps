@@ -5,6 +5,16 @@ import { signAccessToken } from '../lib/jwt.js';
 import { requireAuth } from '../plugins/auth.js';
 
 export async function registerAuthRoutes(app: FastifyInstance) {
+  const parseJsonMap = (value: unknown): Record<string, unknown> => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    return value as Record<string, unknown>;
+  };
+
+  const parseJsonList = (value: unknown): unknown[] => {
+    if (!Array.isArray(value)) return [];
+    return value;
+  };
+
   app.post('/auth/register', async (request, reply) => {
     if (process.env.ENABLE_PUBLIC_REGISTER !== 'true') {
       return reply
@@ -136,5 +146,107 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       data: { passwordHash: await hashPassword(next) },
     });
     return reply.send({ ok: true });
+  });
+
+  app.get('/me/profile', { preHandler: requireAuth }, async (request, reply) => {
+    const row = await prisma.user.findUnique({
+      where: { id: request.user!.id },
+      include: { profile: true },
+    });
+    if (!row) return reply.code(404).send({ error: 'Utilizador não encontrado.' });
+
+    return reply.send({
+      user: {
+        id: row.id,
+        email: row.email,
+        name: row.name,
+        role: row.role,
+        createdAt: row.createdAt,
+      },
+      profile: {
+        role: row.profile?.role ?? 'aluno',
+        books_read: Number(row.profile?.booksRead ?? 0),
+        permissions: row.profile?.permissions ?? {},
+        functions: row.profile?.functions ?? null,
+        progress: row.profile?.progress ?? {},
+        favorites: row.profile?.favorites ?? [],
+        name: row.profile?.name ?? row.name ?? '',
+        icone: row.profile?.icone ?? null,
+        books_read_history: row.profile?.booksReadHistory ?? [],
+      },
+    });
+  });
+
+  app.patch('/me/profile', { preHandler: requireAuth }, async (request, reply) => {
+    const body = request.body as {
+      name?: string;
+      icone?: string | null;
+      progress?: unknown;
+      favorites?: unknown;
+      permissions?: unknown;
+      books_read?: unknown;
+      books_read_history?: unknown;
+    };
+    const id = request.user!.id;
+
+    if (body.name !== undefined) {
+      await prisma.user.update({
+        where: { id },
+        data: { name: body.name?.trim() || null },
+      });
+    }
+
+    const profileData: Record<string, unknown> = {};
+    if (body.name !== undefined) profileData.name = body.name?.trim() || null;
+    if (body.icone !== undefined) profileData.icone = body.icone;
+    if (body.progress !== undefined) profileData.progress = parseJsonMap(body.progress);
+    if (body.permissions !== undefined) profileData.permissions = parseJsonMap(body.permissions);
+    if (body.favorites !== undefined) profileData.favorites = parseJsonList(body.favorites);
+    if (body.books_read_history !== undefined) {
+      profileData.booksReadHistory = parseJsonList(body.books_read_history);
+    }
+    if (body.books_read !== undefined) {
+      const n = Number(body.books_read);
+      profileData.booksRead = Number.isFinite(n) && n >= 0 ? BigInt(Math.floor(n)) : BigInt(0);
+    }
+
+    if (Object.keys(profileData).length > 0) {
+      await prisma.profile.upsert({
+        where: { userId: id },
+        create: { userId: id, ...profileData },
+        update: profileData,
+      });
+    }
+
+    return reply.send({ ok: true });
+  });
+
+  app.get('/me/favorites/books', { preHandler: requireAuth }, async (request, reply) => {
+    const row = await prisma.profile.findUnique({
+      where: { userId: request.user!.id },
+      select: { favorites: true },
+    });
+    const ids = parseJsonList(row?.favorites).map((v) => Number(v)).filter((v) => Number.isFinite(v));
+    if (ids.length === 0) return reply.send([]);
+
+    const books = await prisma.book.findMany({
+      where: { id: { in: ids.map((id) => BigInt(id)) } },
+      include: { authorRel: true },
+    });
+    return reply.send(
+      books.map((b) => ({
+        id: Number(b.id),
+        title: b.title,
+        author: b.author,
+        description: b.description,
+        cover_image: b.coverImage,
+        pages: b.pages,
+        link_slidebook: b.linkSlidebook,
+        created_at: b.createdAt,
+        author_id: b.authorId != null ? Number(b.authorId) : null,
+        category_id: b.categoryId != null ? Number(b.categoryId) : null,
+        authors: b.authorRel ? { id: Number(b.authorRel.id), name: b.authorRel.name } : null,
+      })),
+    );
   });
 }
