@@ -45,6 +45,8 @@ O ficheiro `.env` na raiz de `luditeca-vps` alimenta o `docker-compose.yml` (Pos
    - `PUBLIC_MEDIA_BASE` na API igual a `NEXT_PUBLIC_MEDIA_BASE_URL` (URL que o browser e a API usam para links públicos).
    - `CORS_ORIGIN=https://seu-dominio` (sem barra final).
 
+Guia passo a passo (DNS Hostinger + Nginx no host + Certbot): **`docs/DOMINIO-HOSTINGER.md`**.
+
 ## Segredos
 
 - Gere `JWT_SECRET` forte (32+ caracteres aleatórios).
