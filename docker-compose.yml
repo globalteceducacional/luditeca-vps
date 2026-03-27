@@ -28,6 +28,8 @@ services:
       LOCAL_STORAGE_DIR: /app/storage
       PUBLIC_MEDIA_BASE: ${PUBLIC_MEDIA_BASE:-http://localhost:8080/media}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8080,http://localhost:3000,http://127.0.0.1:8080,http://127.0.0.1:3000}
+      # Opcional: 1 = nao corre seed automatico quando a base esta vazia
+      SKIP_AUTO_SEED: ${SKIP_AUTO_SEED:-}
     volumes:
       - luditeca_storage:/app/storage
     depends_on:
