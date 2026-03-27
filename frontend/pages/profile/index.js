@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { FiUser, FiMail, FiSave, FiLock, FiImage } from 'react-icons/fi';
@@ -21,12 +21,12 @@ export default function ProfilePage() {
   const [message, setMessage] = useState({ type: '', text: '' });
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   
-  // Verificar autenticação
+  // Verificar autenticaÃ§Ã£o
   useEffect(() => {
     if (!loading && !user) {
       router.push('/login');
     } else if (user) {
-      // Preencher os campos com os dados do usuário
+      // Preencher os campos com os dados do usuÃ¡rio
       setEmail(user.email || '');
       setName(user.user_metadata?.name || user.name || '');
       if (user.user_metadata?.avatar_url) {
@@ -71,7 +71,7 @@ export default function ProfilePage() {
         },
       });
       
-      // Atualizar o contexto de autenticação
+      // Atualizar o contexto de autenticaÃ§Ã£o
       if (updateUserData) {
         await updateUserData();
       }
@@ -98,7 +98,7 @@ export default function ProfilePage() {
     if (newPassword !== confirmPassword) {
       setMessage({ 
         type: 'error', 
-        text: 'As senhas não coincidem.' 
+        text: 'As senhas nÃ£o coincidem.' 
       });
       return;
     }
@@ -126,7 +126,7 @@ export default function ProfilePage() {
       console.error('Erro ao alterar senha:', error);
       setMessage({ 
         type: 'error', 
-        text: error.message || 'Falha ao alterar a senha. Verifique se a senha atual está correta.'
+        text: error.message || 'Falha ao alterar a senha. Verifique se a senha atual estÃ¡ correta.'
       });
     } finally {
       setIsSaving(false);
@@ -146,7 +146,7 @@ export default function ProfilePage() {
   return (
     <Layout>
       <Head>
-        <title>Meu Perfil | UniverseTeca CMS</title>
+        <title>Meu Perfil | Luditeca CMS</title>
       </Head>
       
       <div className="container mx-auto px-4 py-6">
@@ -161,9 +161,9 @@ export default function ProfilePage() {
         )}
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Informações de perfil */}
+          {/* InformaÃ§Ãµes de perfil */}
           <div className="bg-white rounded-lg shadow-sm p-6">
-            <h2 className="text-xl font-semibold mb-4">Informações de Perfil</h2>
+            <h2 className="text-xl font-semibold mb-4">InformaÃ§Ãµes de Perfil</h2>
             
             <form onSubmit={handleUpdateProfile}>
               {/* Foto de perfil */}
@@ -244,7 +244,7 @@ export default function ProfilePage() {
                     placeholder="seu@email.com"
                   />
                 </div>
-                <p className="text-xs text-gray-500 mt-1">O email não pode ser alterado</p>
+                <p className="text-xs text-gray-500 mt-1">O email nÃ£o pode ser alterado</p>
               </div>
               
               <button
@@ -265,14 +265,14 @@ export default function ProfilePage() {
                 ) : (
                   <>
                     <FiSave className="mr-2" />
-                    Salvar Alterações
+                    Salvar AlteraÃ§Ãµes
                   </>
                 )}
               </button>
             </form>
           </div>
           
-          {/* Alteração de senha */}
+          {/* AlteraÃ§Ã£o de senha */}
           <div className="bg-white rounded-lg shadow-sm p-6">
             <h2 className="text-xl font-semibold mb-4">Alterar Senha</h2>
             

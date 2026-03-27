@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Head from 'next/head';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/router';
@@ -240,7 +240,7 @@ export default function EditBookV2() {
         if (cancelled) return;
         if (!error) setAuthors(data || []);
       } catch {
-        if (!cancelled) toast.error('Não foi possível carregar autores.');
+        if (!cancelled) toast.error('NÃ£o foi possÃ­vel carregar autores.');
       } finally {
         if (!cancelled) setLoadingAuthors(false);
       }
@@ -259,7 +259,7 @@ export default function EditBookV2() {
         if (cancelled) return;
         if (!error) setCategories(data || []);
       } catch {
-        if (!cancelled) toast.error('Não foi possível carregar categorias.');
+        if (!cancelled) toast.error('NÃ£o foi possÃ­vel carregar categorias.');
       } finally {
         if (!cancelled) setLoadingCategories(false);
       }
@@ -527,7 +527,7 @@ export default function EditBookV2() {
         const parsed = JSON.parse(raw);
         if (parsed) handlePickMedia(parsed);
       } catch {
-        // ignorar payload inválido de drag/drop
+        // ignorar payload invÃ¡lido de drag/drop
       }
     },
     [handlePickMedia],
@@ -758,7 +758,7 @@ export default function EditBookV2() {
   return (
     <EditorLayout variant="editor">
       <Head>
-        <title>{title || 'Editor'} - UniverseTeca</title>
+        <title>{title || 'Editor'} - Luditeca</title>
       </Head>
       <div className="flex h-full flex-col overflow-hidden bg-slate-900 font-sans text-slate-300">
         <header className="z-20 flex h-14 shrink-0 items-center justify-between border-b border-slate-700 bg-slate-800 px-4 shadow-sm">
@@ -776,7 +776,7 @@ export default function EditBookV2() {
                     : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                 }`}
               >
-                Edição do livro
+                EdiÃ§Ã£o do livro
               </button>
               <button
                 type="button"
@@ -787,7 +787,7 @@ export default function EditBookV2() {
                     : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                 }`}
               >
-                Informações do livro
+                InformaÃ§Ãµes do livro
               </button>
             </div>
           </div>
@@ -819,15 +819,15 @@ export default function EditBookV2() {
           <div className="min-h-0 flex-1 overflow-y-auto bg-slate-950 px-4 py-8 sm:px-8">
             <div className="mx-auto max-w-2xl space-y-6">
               <div>
-                <h2 className="text-lg font-semibold text-slate-100">Informações do livro</h2>
-                <p className="mt-1 text-sm text-slate-500">Título, capa, descrição e classificação. Use &quot;Salvar projeto&quot; para gravar.</p>
+                <h2 className="text-lg font-semibold text-slate-100">InformaÃ§Ãµes do livro</h2>
+                <p className="mt-1 text-sm text-slate-500">TÃ­tulo, capa, descriÃ§Ã£o e classificaÃ§Ã£o. Use &quot;Salvar projeto&quot; para gravar.</p>
               </div>
               <label className="block">
-                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Título</span>
+                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">TÃ­tulo</span>
                 <input
                   className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none"
                   value={title}
-                  placeholder="Título do livro"
+                  placeholder="TÃ­tulo do livro"
                   onChange={(e) => {
                     setTitle(e.target.value);
                     setIsModified(true);
@@ -835,7 +835,7 @@ export default function EditBookV2() {
                 />
               </label>
               <label className="block">
-                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Descrição</span>
+                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">DescriÃ§Ã£o</span>
                 <textarea
                   className="min-h-[120px] w-full resize-y rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none"
                   value={description}
@@ -858,7 +858,7 @@ export default function EditBookV2() {
                       setIsModified(true);
                     }}
                   >
-                    <option value="">— Selecionar —</option>
+                    <option value="">â€” Selecionar â€”</option>
                     {authors.map((a) => (
                       <option key={a.id} value={a.id}>
                         {a.name}
@@ -877,7 +877,7 @@ export default function EditBookV2() {
                       setIsModified(true);
                     }}
                   >
-                    <option value="">— Selecionar —</option>
+                    <option value="">â€” Selecionar â€”</option>
                     {categories.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}
@@ -1070,4 +1070,5 @@ export default function EditBookV2() {
 export async function getServerSideProps() {
   return { props: {} };
 }
+
 

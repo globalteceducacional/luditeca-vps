@@ -1,64 +1,37 @@
-# Stack local: Postgres + MinIO + API (Fastify/Prisma) + CMS (Next standalone) + Nginx.
-# UI: http://localhost:8080  |  API (direto): http://localhost:4000  |  MinIO console: http://localhost:9001
+# Stack: Postgres + API (storage local em disco) + CMS (Next) + Nginx.
+# UI: http://localhost:8080  |  API (direto): http://localhost:4000
+#
+# Midia: ficheiros em volume Docker luditeca_storage montado em /app/storage na API.
+# Nginx encaminha /media/* para a API (Fastify serve /media/*).
+#
+# Variáveis: ficheiro .env na raiz (ver env.vps.example).
 services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: luditeca
-      POSTGRES_PASSWORD: luditeca
-      POSTGRES_DB: luditeca
+      POSTGRES_USER: ${POSTGRES_USER:-luditeca}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-luditeca}
+      POSTGRES_DB: ${POSTGRES_DB:-luditeca}
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
       - luditeca
 
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: minio
-      MINIO_ROOT_PASSWORD: minio12345
-    volumes:
-      - minio_data:/data
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    networks:
-      - luditeca
-
-  minio-init:
-    image: minio/mc:latest
-    depends_on:
-      - minio
-    entrypoint: /bin/sh
-    command:
-      - -c
-      - |
-        sleep 4
-        mc alias set local http://minio:9000 minio minio12345
-        for b in covers pages presentations audios videos categories autores avatars; do
-          mc mb "local/$$b" --ignore-existing || true
-        done
-        exit 0
-    networks:
-      - luditeca
-
   api:
-    build: ./luditeca-back
+    build: ./backend
     environment:
-      DATABASE_URL: postgresql://luditeca:luditeca@db:5432/luditeca?schema=public
+      DATABASE_URL: postgresql://${POSTGRES_USER:-luditeca}:${POSTGRES_PASSWORD:-luditeca}@db:5432/${POSTGRES_DB:-luditeca}?schema=public
       JWT_SECRET: ${JWT_SECRET:-troque-este-segredo-em-producao-min-32-chars}
       PORT: 4000
       HOST: 0.0.0.0
-      S3_ENDPOINT: http://minio:9000
-      S3_ACCESS_KEY: minio
-      S3_SECRET_KEY: minio12345
-      S3_FORCE_PATH_STYLE: "true"
-      PUBLIC_MEDIA_BASE: http://localhost:8080/media
-      CORS_ORIGIN: http://localhost:8080,http://localhost:3000,http://127.0.0.1:8080,http://127.0.0.1:3000
+      STORAGE_DRIVER: local
+      LOCAL_STORAGE_DIR: /app/storage
+      PUBLIC_MEDIA_BASE: ${PUBLIC_MEDIA_BASE:-http://localhost:8080/media}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8080,http://localhost:3000,http://127.0.0.1:8080,http://127.0.0.1:3000}
+    volumes:
+      - luditeca_storage:/app/storage
     depends_on:
       - db
-      - minio
     ports:
       - "4000:4000"
     networks:
@@ -66,10 +39,10 @@ services:
 
   web:
     build:
-      context: ./luditeca-front
+      context: ./frontend
       args:
-        NEXT_PUBLIC_API_URL: http://localhost:8080/api
-        NEXT_PUBLIC_MEDIA_BASE_URL: http://localhost:8080/media
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080/api}
+        NEXT_PUBLIC_MEDIA_BASE_URL: ${NEXT_PUBLIC_MEDIA_BASE_URL:-http://localhost:8080/media}
     environment:
       NODE_ENV: production
     depends_on:
@@ -86,13 +59,12 @@ services:
     depends_on:
       - web
       - api
-      - minio
     networks:
       - luditeca
 
 volumes:
   pgdata:
-  minio_data:
+  luditeca_storage:
 
 networks:
   luditeca:

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
@@ -21,7 +21,7 @@ export default function Books() {
   const [deleteLoading, setDeleteLoading] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Verificar autenticação
+  // Verificar autenticaÃ§Ã£o
   useEffect(() => {
     if (!authLoading && !user) {
       router.push('/login');
@@ -38,7 +38,7 @@ export default function Books() {
     }
   }, [user]);
   
-  // Função para buscar livros
+  // FunÃ§Ã£o para buscar livros
   const fetchBooks = async () => {
     try {
       setLoading(true);
@@ -60,7 +60,7 @@ export default function Books() {
           if (book.cover_image.startsWith('http')) {
             coverUrl = book.cover_image;
           } else {
-            // Caso contrário, obter do bucket 'covers'
+            // Caso contrÃ¡rio, obter do bucket 'covers'
             coverUrl = getFileUrl('covers', book.cover_image);
           }
         }
@@ -80,9 +80,9 @@ export default function Books() {
     }
   };
   
-  // Função para excluir um livro
+  // FunÃ§Ã£o para excluir um livro
   const handleDeleteBook = async (id) => {
-    if (window.confirm('Tem certeza que deseja excluir este livro? Esta ação não pode ser desfeita.')) {
+    if (window.confirm('Tem certeza que deseja excluir este livro? Esta aÃ§Ã£o nÃ£o pode ser desfeita.')) {
       try {
         setDeleteLoading(id);
         const { error } = await deleteBook(id);
@@ -102,7 +102,7 @@ export default function Books() {
     }
   };
   
-  // Função para criar um novo livro
+  // FunÃ§Ã£o para criar um novo livro
   const handleCreateBook = () => {
     router.push('/books/new');
   };
@@ -127,7 +127,7 @@ export default function Books() {
   return (
     <>
       <Head>
-        <title>Gerenciar Livros | UniverseTeca CMS</title>
+        <title>Gerenciar Livros | Luditeca CMS</title>
       </Head>
       
       <Layout>
@@ -149,7 +149,7 @@ export default function Books() {
             <div className="relative max-w-md mx-auto">
               <input
                 type="text"
-                placeholder="Pesquisar livros por título, autor ou descrição..."
+                placeholder="Pesquisar livros por tÃ­tulo, autor ou descriÃ§Ã£o..."
                 className="w-full px-4 py-2 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -214,7 +214,7 @@ export default function Books() {
                   
                   <div className="p-3">
                     <h2 className="text-base font-semibold mb-1 truncate">
-                      {book.title || 'Sem título'}
+                      {book.title || 'Sem tÃ­tulo'}
                     </h2>
                     
                     <p className="text-gray-600 text-xs mb-1">
@@ -222,7 +222,7 @@ export default function Books() {
                     </p>
                     
                     <p className="text-gray-600 text-xs mb-2 line-clamp-2 h-8">
-                      {book.description || 'Sem descrição'}
+                      {book.description || 'Sem descriÃ§Ã£o'}
                     </p>
                     
                     <div className="flex justify-between">

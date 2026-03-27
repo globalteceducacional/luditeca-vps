@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { createBook } from '../../lib/books';
 import { getAuthors } from '../../lib/authors';
@@ -24,7 +24,7 @@ function summarizeSlide(page) {
   if (textCount) parts.push(`${textCount} texto(s)`);
   if (imageCount) parts.push(`${imageCount} imagem(ns)`);
   if (hasBg) parts.push('fundo');
-  return parts.length ? parts.join(', ') : 'sem mídia';
+  return parts.length ? parts.join(', ') : 'sem mÃ­dia';
 }
 
 export default function NewBook() {
@@ -48,7 +48,7 @@ export default function NewBook() {
   const { user, loading: isLoading } = useAuth();
   const router = useRouter();
   
-  // Verificar autenticação
+  // Verificar autenticaÃ§Ã£o
   useEffect(() => {
     if (!isLoading && !user) {
       router.push('/login');
@@ -118,9 +118,9 @@ export default function NewBook() {
     setError(null);
     
     try {
-      // Validação básica
+      // ValidaÃ§Ã£o bÃ¡sica
       if (!title.trim()) {
-        throw new Error('O título do livro é obrigatório');
+        throw new Error('O tÃ­tulo do livro Ã© obrigatÃ³rio');
       }
       
       const defaultPages = [{
@@ -141,12 +141,12 @@ export default function NewBook() {
         ...(importSessionId ? { import_session_id: importSessionId } : {}),
       };
       
-      console.log('Enviando dados do livro para criação:', bookData);
+      console.log('Enviando dados do livro para criaÃ§Ã£o:', bookData);
       
       const { data, error } = await createBook(bookData);
       
       if (error) {
-        console.error('Erro retornado pela função createBook:', error);
+        console.error('Erro retornado pela funÃ§Ã£o createBook:', error);
         throw new Error(error.message || 'Erro ao criar o livro');
       }
       
@@ -157,7 +157,7 @@ export default function NewBook() {
         router.push('/books');
       }
     } catch (err) {
-      console.error('Exceção capturada no handleSubmit:', err);
+      console.error('ExceÃ§Ã£o capturada no handleSubmit:', err);
       setError(err.message);
       toast.error(err.message);
     } finally {
@@ -174,7 +174,7 @@ export default function NewBook() {
       setPptxImportProgress({
         phase: 'upload',
         percent: 0,
-        message: 'Iniciando envio do arquivo…',
+        message: 'Iniciando envio do arquivoâ€¦',
       });
       const payload = await importPptxForBook({
         bookId: 'new-book',
@@ -191,7 +191,7 @@ export default function NewBook() {
       });
 
       if (!Array.isArray(payload?.pages) || payload.pages.length === 0) {
-        throw new Error('A importação não retornou páginas válidas.');
+        throw new Error('A importaÃ§Ã£o nÃ£o retornou pÃ¡ginas vÃ¡lidas.');
       }
       setImportSessionId(payload?.importSessionId || null);
 
@@ -205,7 +205,7 @@ export default function NewBook() {
         setPptxImportProgress({
           phase: 'slides',
           percent: pct,
-          message: `Carregando slide ${i + 1}/${total} — ${summarizeSlide(page)}`,
+          message: `Carregando slide ${i + 1}/${total} â€” ${summarizeSlide(page)}`,
         });
         // Yield para renderizar a mensagem antes de continuar
         // eslint-disable-next-line no-await-in-loop
@@ -215,10 +215,10 @@ export default function NewBook() {
       const warningCount = Array.isArray(payload?.warnings) ? payload.warnings.length : 0;
       if (warningCount > 0) {
         toast.success(
-          `${payload?.message || 'Importação com avisos.'} Ajuste ${warningCount} página(s) no editor.`,
+          `${payload?.message || 'ImportaÃ§Ã£o com avisos.'} Ajuste ${warningCount} pÃ¡gina(s) no editor.`,
         );
       } else {
-        toast.success(payload?.message || `PPTX importado com ${payload.pages.length} páginas.`);
+        toast.success(payload?.message || `PPTX importado com ${payload.pages.length} pÃ¡ginas.`);
       }
     } catch (err) {
       toast.error(err.message || 'Falha ao importar PPTX');
@@ -235,12 +235,12 @@ export default function NewBook() {
     return (
       <EditorLayout>
         <Head>
-          <title>Novo Livro - UniverseTeca</title>
+          <title>Novo Livro - Luditeca</title>
         </Head>
         <LoadingProgressOverlay
           active
           title="Carregando"
-          message="Verificando sua sessão…"
+          message="Verificando sua sessÃ£oâ€¦"
           mode="indeterminate"
         />
       </EditorLayout>
@@ -250,14 +250,14 @@ export default function NewBook() {
   return (
     <EditorLayout>
       <Head>
-        <title>Novo Livro - UniverseTeca</title>
+        <title>Novo Livro - Luditeca</title>
       </Head>
 
       {importingPptx ? (
         <LoadingProgressOverlay
           active
-          title="Importando…"
-          message={pptxImportProgress?.message || 'Processando…'}
+          title="Importandoâ€¦"
+          message={pptxImportProgress?.message || 'Processandoâ€¦'}
           compact
           showFooterHint={false}
           mode={
@@ -277,7 +277,7 @@ export default function NewBook() {
         <LoadingProgressOverlay
           active
           title="Criando livro"
-          message="Salvando no servidor…"
+          message="Salvando no servidorâ€¦"
           mode="indeterminate"
         />
       ) : null}
@@ -296,7 +296,7 @@ export default function NewBook() {
         <form onSubmit={handleSubmit} className="bg-white shadow-md rounded px-8 pt-6 pb-8 mb-4">
           <div className="mb-4">
             <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="title">
-              Título*
+              TÃ­tulo*
             </label>
             <input
               id="title"
@@ -356,7 +356,7 @@ export default function NewBook() {
           
           <div className="mb-4">
             <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="description">
-              Descrição
+              DescriÃ§Ã£o
             </label>
             <textarea
               id="description"
@@ -391,7 +391,7 @@ export default function NewBook() {
               </label>
               {importedPages.length > 0 && (
                 <div className="text-sm text-green-600">
-                  {importedPages.length} páginas importadas
+                  {importedPages.length} pÃ¡ginas importadas
                 </div>
               )}
             </div>
@@ -420,7 +420,7 @@ export default function NewBook() {
             
             {coverImage && (
               <div className="mt-4 border rounded p-4">
-                <p className="text-sm text-gray-500 mb-2">Prévia:</p>
+                <p className="text-sm text-gray-500 mb-2">PrÃ©via:</p>
                 <img src={coverImage} alt="Capa do livro" className="max-h-48 object-contain" />
               </div>
             )}
@@ -445,6 +445,6 @@ export default function NewBook() {
 
 export async function getServerSideProps() {
   return {
-    props: {}, // Será preenchido com dados client-side
+    props: {}, // SerÃ¡ preenchido com dados client-side
   };
 } 

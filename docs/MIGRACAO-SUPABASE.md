@@ -19,7 +19,7 @@ Repita para `authors` e `categories`.
 
 2. **media_files**: exporte linhas de `public.media_files`. O campo `user_id` deve referenciar o novo UUID em `public.users` (não o `auth.users`). Se os UUIDs forem mantidos ao importar utilizadores, pode preservar `user_id`; caso contrário, use um script de mapeamento.
 
-3. **Ficheiros no Storage**: sincronize buckets (`covers`, `pages`, `presentations`, …) para o MinIO com `mc mirror`, `rclone` ou upload manual, mantendo os mesmos caminhos de objeto para não quebrar URLs guardadas na base.
+3. **Ficheiros no Storage**: copie os buckets (`covers`, `pages`, `presentations`, …) para o diretório local da API (ex.: volume `luditeca_storage` em `/app/storage/<bucket>/...` no Docker), com `rsync`, `rclone` ou upload manual, mantendo os mesmos caminhos relativos para não quebrar referências na base.
 
 ## Importar na VPS
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { FiPlus, FiEdit, FiTrash2 } from 'react-icons/fi';
@@ -20,7 +20,7 @@ export default function Authors() {
   const [deleteLoading, setDeleteLoading] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Verificar autenticação
+  // Verificar autenticaÃ§Ã£o
   useEffect(() => {
     if (!authLoading && !user) {
       router.push('/login');
@@ -37,7 +37,7 @@ export default function Authors() {
     }
   }, [user]);
   
-  // Função para buscar autores
+  // FunÃ§Ã£o para buscar autores
   const fetchAuthors = async () => {
     try {
       setLoading(true);
@@ -59,7 +59,7 @@ export default function Authors() {
           if (author.photo_url.startsWith('http')) {
             imageUrl = author.photo_url;
           } else {
-            // Caso contrário, obter do bucket 'autores'
+            // Caso contrÃ¡rio, obter do bucket 'autores'
             imageUrl = getFileUrl('autores', author.photo_url);
           }
         }
@@ -79,9 +79,9 @@ export default function Authors() {
     }
   };
   
-  // Função para excluir um autor
+  // FunÃ§Ã£o para excluir um autor
   const handleDeleteAuthor = async (id) => {
-    if (window.confirm('Tem certeza que deseja excluir este autor? Esta ação não pode ser desfeita.')) {
+    if (window.confirm('Tem certeza que deseja excluir este autor? Esta aÃ§Ã£o nÃ£o pode ser desfeita.')) {
       try {
         setDeleteLoading(id);
         const { error } = await deleteAuthor(id);
@@ -101,7 +101,7 @@ export default function Authors() {
     }
   };
   
-  // Função para criar um novo autor
+  // FunÃ§Ã£o para criar um novo autor
   const handleCreateAuthor = () => {
     router.push('/authors/new');
   };
@@ -125,7 +125,7 @@ export default function Authors() {
   return (
     <>
       <Head>
-        <title>Gerenciar Autores | UniverseTeca CMS</title>
+        <title>Gerenciar Autores | Luditeca CMS</title>
       </Head>
       
       <Layout>
@@ -205,7 +205,7 @@ export default function Authors() {
                       Biografia
                     </th>
                     <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Ações
+                      AÃ§Ãµes
                     </th>
                   </tr>
                 </thead>

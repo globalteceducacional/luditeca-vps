@@ -1,2 +1,5 @@
 /backend/storage
 backend/.env
+# Segredos de deploy Docker na raiz do stack
+.env
+.env.local

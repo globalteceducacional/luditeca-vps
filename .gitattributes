@@ -1,6 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
 
-luditeca-vps/luditeca-back/.env
+luditeca-vps/backend/.env
 
 luditeca-vps/backend/storage

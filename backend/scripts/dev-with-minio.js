@@ -1,7 +1,7 @@
 /**
- * Opcional: sobe MinIO via docker compose e inicia a API.
- * Desenvolvimento normal: `npm run dev` (ficheiros locais + Postgres local, sem Docker).
- * Use este script quando quiser testar com S3/MinIO como na VPS.
+ * Opcional: sobe um MinIO efemero (docker run) e inicia a API com STORAGE_DRIVER=s3.
+ * Desenvolvimento normal: `npm run dev` (STORAGE_DRIVER=local, pasta backend/storage).
+ * O stack Docker principal (luditeca-vps) usa apenas disco local na API, sem MinIO.
  */
 import { spawn, spawnSync } from 'node:child_process';
 
@@ -14,41 +14,76 @@ function isDockerAvailable() {
   return r.status === 0;
 }
 
-async function waitForMinioReady(url, { retries = 30, delayMs = 500 } = {}) {
-  // Node 18+ tem fetch nativo.
+async function waitForMinioReady(url, { retries = 40, delayMs = 500 } = {}) {
   for (let i = 0; i < retries; i++) {
     try {
       const res = await fetch(url);
       if (res.ok) return;
     } catch {
-      // ignora, vamos tentar novamente
+      // ignora
     }
     await wait(delayMs);
   }
   throw new Error(`MinIO não ficou pronto a tempo: ${url}`);
 }
 
-function dockerComposeUpMinio() {
+const MINIO_CONTAINER = 'luditeca-minio-dev';
+
+function dockerRunMinio() {
+  spawnSync('docker', ['rm', '-f', MINIO_CONTAINER], { stdio: 'ignore' });
   const r = spawnSync(
     'docker',
-    ['compose', 'up', '-d', 'minio', 'minio-init'],
-    {
-      stdio: 'inherit',
-    },
+    [
+      'run',
+      '-d',
+      '--name',
+      MINIO_CONTAINER,
+      '-p',
+      '9000:9000',
+      '-p',
+      '9001:9001',
+      '-e',
+      'MINIO_ROOT_USER=minio',
+      '-e',
+      'MINIO_ROOT_PASSWORD=minio12345',
+      'minio/minio:latest',
+      'server',
+      '/data',
+      '--console-address',
+      ':9001',
+    ],
+    { stdio: 'inherit' },
   );
-
   if (r.status !== 0) {
-    throw new Error('Falha ao subir MinIO via docker compose.');
+    throw new Error('Falha ao iniciar o contentor MinIO (docker run).');
   }
 }
 
-function startServer() {
-  const child = spawn(
-    'npx',
-    ['tsx', 'watch', 'src/server.ts'],
-    { stdio: 'inherit', shell: true, env: process.env },
-  );
+function startServerPlain() {
+  const child = spawn('npx', ['tsx', 'watch', 'src/server.ts'], {
+    stdio: 'inherit',
+    shell: true,
+    env: process.env,
+  });
+  child.on('exit', (code) => {
+    process.exit(code ?? 0);
+  });
+}
 
+function startServerWithS3() {
+  const child = spawn('npx', ['tsx', 'watch', 'src/server.ts'], {
+    stdio: 'inherit',
+    shell: true,
+    env: {
+      ...process.env,
+      STORAGE_DRIVER: 's3',
+      S3_ENDPOINT: 'http://localhost:9000',
+      S3_ACCESS_KEY: 'minio',
+      S3_SECRET_KEY: 'minio12345',
+      S3_FORCE_PATH_STYLE: 'true',
+      PUBLIC_MEDIA_BASE: process.env.PUBLIC_MEDIA_BASE || 'http://localhost:3020/media',
+    },
+  });
   child.on('exit', (code) => {
     process.exit(code ?? 0);
   });
@@ -61,31 +96,27 @@ async function main() {
     console.error(
       [
         '[dev-with-minio] Docker não está acessível.',
-        'Para subir o MinIO automaticamente você precisa do Docker Desktop aberto e rodando.',
-        'Para desenvolvimento sem Docker use: npm run dev',
+        'Para subir o MinIO automaticamente precisa do Docker em execução.',
+        'Para desenvolvimento sem S3 use: npm run dev',
       ].join('\n'),
     );
     if (allowNoMinio) {
-      startServer();
+      startServerPlain();
       return;
     }
     process.exit(1);
   }
 
-  dockerComposeUpMinio();
-
-  // Aguarda o MinIO aceitar conexões antes de iniciar a API.
-  // health/ready existe no MinIO (comportamento padrão).
+  dockerRunMinio();
   await waitForMinioReady('http://localhost:9000/minio/health/ready', {
     retries: 40,
     delayMs: 500,
   });
 
-  startServer();
+  startServerWithS3();
 }
 
 main().catch((err) => {
   console.error('[dev-with-minio]', err?.message || err);
   process.exit(1);
 });
-

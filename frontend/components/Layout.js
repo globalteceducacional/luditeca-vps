@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { FiBook, FiUser, FiTag, FiLogOut, FiMenu, FiX, FiChevronLeft, FiChevronRight, FiSettings, FiUsers } from 'react-icons/fi';
@@ -22,7 +22,7 @@ export default function Layout({ children }) {
     }
   }, [router.pathname]);
 
-  // Guard global de navegação por role (evita acesso ao CMS por aluno/professor)
+  // Guard global de navegaÃ§Ã£o por role (evita acesso ao CMS por aluno/professor)
   useEffect(() => {
     if (!user?.role) return;
     const isAppOnly = user.role === ROLES.aluno || user.role === ROLES.professor;
@@ -74,7 +74,7 @@ export default function Layout({ children }) {
 
           <Link href="/admin/users" className={`flex items-center ${collapsed ? 'justify-center' : 'px-3'} p-3 rounded-lg ${router.pathname.startsWith('/admin/users') ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100'}`}>
             <FiUsers className={collapsed ? "mx-auto" : "mr-2"} size={collapsed ? 26 : 20} />
-            {!collapsed && <span className="truncate">Usuários</span>}
+            {!collapsed && <span className="truncate">UsuÃ¡rios</span>}
           </Link>
         </>
       )}
@@ -92,7 +92,7 @@ export default function Layout({ children }) {
       <div className={`hidden md:flex md:flex-col ${isSidebarCollapsed ? 'md:w-20' : 'md:w-52'} md:fixed md:inset-y-0 bg-white border-r transition-all duration-300`}>
         <div className="flex flex-col flex-grow pt-5 pb-4 overflow-y-auto">
           <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'justify-between'} flex-shrink-0 px-4 mb-5`}>
-            {!isSidebarCollapsed && <h1 className="text-lg font-bold text-blue-600">UniverseTeca</h1>}
+            {!isSidebarCollapsed && <h1 className="text-lg font-bold text-blue-600">Luditeca</h1>}
             <button 
               onClick={toggleSidebar}
               className="p-2 rounded-full hover:bg-gray-200 focus:outline-none"
@@ -126,7 +126,7 @@ export default function Layout({ children }) {
                 </div>
                 <div className="ml-2 truncate">
                   <p className="text-sm font-medium text-gray-700 truncate">
-                    {user?.user_metadata?.name || user?.email || 'Usuário'}
+                    {user?.user_metadata?.name || user?.email || 'UsuÃ¡rio'}
                   </p>
                 </div>
               </div>
@@ -175,7 +175,7 @@ export default function Layout({ children }) {
                 <FiMenu size={24} />
               )}
             </button>
-            <h1 className="ml-3 text-lg font-bold text-blue-600">UniverseTeca</h1>
+            <h1 className="ml-3 text-lg font-bold text-blue-600">Luditeca</h1>
           </div>
         </div>
       </div>
@@ -193,7 +193,7 @@ export default function Layout({ children }) {
                 >
                   <FiX size={24} />
                 </button>
-                <h1 className="ml-3 text-lg font-bold text-blue-600">UniverseTeca CMS</h1>
+                <h1 className="ml-3 text-lg font-bold text-blue-600">Luditeca CMS</h1>
               </div>
               
               <div className="flex-grow px-4 mt-5 space-y-2 overflow-y-auto">
@@ -219,7 +219,7 @@ export default function Layout({ children }) {
                   </div>
                   <div className="ml-3 truncate">
                     <p className="text-sm font-medium text-gray-700 truncate">
-                      {user?.user_metadata?.name || user?.email || 'Usuário'}
+                      {user?.user_metadata?.name || user?.email || 'UsuÃ¡rio'}
                     </p>
                   </div>
                 </div>

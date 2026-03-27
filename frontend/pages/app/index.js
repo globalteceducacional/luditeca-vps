@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+﻿import { useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { useAuth } from '../../contexts/auth';
@@ -21,20 +21,21 @@ export default function AppHome() {
   return (
     <>
       <Head>
-        <title>App | UniverseTeca</title>
+        <title>App | Luditeca</title>
       </Head>
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
         <div className="max-w-lg w-full bg-white rounded-lg shadow p-6">
-          <h1 className="text-xl font-bold mb-2">Área do App</h1>
+          <h1 className="text-xl font-bold mb-2">Ãrea do App</h1>
           <p className="text-gray-700">
-            Você está logado como <b>{user.role}</b>. Esta área é destinada a alunos e professores.
+            VocÃª estÃ¡ logado como <b>{user.role}</b>. Esta Ã¡rea Ã© destinada a alunos e professores.
           </p>
           <p className="text-gray-500 mt-3 text-sm">
-            Próximo passo: conectar aqui o app (leitura, progresso, favoritos, etc.).
+            PrÃ³ximo passo: conectar aqui o app (leitura, progresso, favoritos, etc.).
           </p>
         </div>
       </div>
     </>
   );
 }
+
 
