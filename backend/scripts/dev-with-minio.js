@@ -1,3 +1,8 @@
+/**
+ * Opcional: sobe MinIO via docker compose e inicia a API.
+ * Desenvolvimento normal: `npm run dev` (ficheiros locais + Postgres local, sem Docker).
+ * Use este script quando quiser testar com S3/MinIO como na VPS.
+ */
 import { spawn, spawnSync } from 'node:child_process';
 
 async function wait(ms) {
@@ -57,7 +62,7 @@ async function main() {
       [
         '[dev-with-minio] Docker não está acessível.',
         'Para subir o MinIO automaticamente você precisa do Docker Desktop aberto e rodando.',
-        'Se quiser iniciar o backend mesmo assim (sem uploads), rode: $env:ALLOW_NO_MINIO="1"; npm run dev',
+        'Para desenvolvimento sem Docker use: npm run dev',
       ].join('\n'),
     );
     if (allowNoMinio) {

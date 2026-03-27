@@ -186,6 +186,14 @@ function extractParagraphDefaultCharStyle(p) {
     color: '#000000',
     fontFamily: 'Roboto',
     textDecoration: 'none',
+    opacity: 1,
+    strokeColor: undefined,
+    strokeWidth: 0,
+    shadowColor: undefined,
+    shadowBlur: 0,
+    shadowOpacity: 0,
+    shadowOffsetX: 0,
+    shadowOffsetY: 0,
   };
   const pPr = p?.pPr;
   if (!pPr) return base;
@@ -193,6 +201,69 @@ function extractParagraphDefaultCharStyle(p) {
   if (pPr.defRPr) s = applyRunCharStyle(s, pPr.defRPr);
   if (pPr.endParaRPr) s = applyRunCharStyle(s, pPr.endParaRPr);
   return s;
+}
+
+function parsePctAlphaToOpacity(alphaVal) {
+  const n = Number(alphaVal);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(0, Math.min(1, n / 100000));
+}
+
+function emuToPx(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return n / 9525;
+}
+
+function readColorWithAlpha(fillNode) {
+  const srgb = fillNode?.srgbClr || fillNode?.['a:srgbClr'];
+  const val = srgb?.val || srgb?.['@_val'];
+  const alphaRaw = srgb?.alpha?.val || srgb?.alpha?.['@_val'];
+  const opacity = parsePctAlphaToOpacity(alphaRaw);
+  return {
+    color: val ? srgbToHex(val) : null,
+    opacity,
+  };
+}
+
+function parseTextStrokeFromRPr(rPr) {
+  const ln = rPr?.ln || rPr?.['a:ln'];
+  if (!ln || ln.noFill !== undefined) return null;
+  const { color } = readColorWithAlpha(ln.solidFill || ln);
+  const w = Number(ln.w ?? ln['@_w']);
+  if (!Number.isFinite(w) || w <= 0) {
+    if (!color) return null;
+    return { strokeColor: color, strokeWidth: 1 };
+  }
+  const strokeWidth = Math.max(0, Math.round((w / 12700) * 1.333 * 100) / 100);
+  return {
+    strokeColor: color || '#000000',
+    strokeWidth,
+  };
+}
+
+function parseTextShadowFromRPr(rPr) {
+  const outer =
+    rPr?.effectLst?.outerShdw ||
+    rPr?.effectLst?.['a:outerShdw'] ||
+    rPr?.['a:effectLst']?.outerShdw ||
+    rPr?.['a:effectLst']?.['a:outerShdw'] ||
+    null;
+  if (!outer) return null;
+
+  const { color, opacity } = readColorWithAlpha(outer);
+  const blur = emuToPx(outer.blurRad ?? outer['@_blurRad']);
+  const dist = emuToPx(outer.dist ?? outer['@_dist']);
+  const dirRaw = Number(outer.dir ?? outer['@_dir']);
+  const dirDeg = Number.isFinite(dirRaw) ? dirRaw / 60000 : 270;
+  const rad = (dirDeg * Math.PI) / 180;
+  return {
+    shadowColor: color || '#000000',
+    shadowBlur: Math.max(0, Math.round(blur * 100) / 100),
+    shadowOpacity: opacity != null ? opacity : 0.35,
+    shadowOffsetX: Math.round(Math.cos(rad) * dist * 100) / 100,
+    shadowOffsetY: Math.round(Math.sin(rad) * dist * 100) / 100,
+  };
 }
 
 /** Herança de estilo entre runs (OOXML): só sobrescreve propriedades presentes em rPr. */
@@ -215,6 +286,13 @@ function applyRunCharStyle(prev, rPr) {
     rPr.solidFill?.['a:srgbClr']?.val ||
     rPr.srgbClr?.val;
   if (rgb) next.color = srgbToHex(rgb);
+  const alphaRaw =
+    rPr.solidFill?.srgbClr?.alpha?.val ||
+    rPr.solidFill?.srgbClr?.alpha?.['@_val'] ||
+    rPr.solidFill?.['a:srgbClr']?.alpha?.val ||
+    rPr.solidFill?.['a:srgbClr']?.alpha?.['@_val'];
+  const opacity = parsePctAlphaToOpacity(alphaRaw);
+  if (opacity != null) next.opacity = opacity;
   const typeface =
     rPr.latin?.typeface ||
     rPr.latin?.['@_typeface'] ||
@@ -226,6 +304,19 @@ function applyRunCharStyle(prev, rPr) {
   const und = readUnderlineFromRPr(rPr);
   if (und !== undefined) {
     next.textDecoration = und === 'underline' ? 'underline' : 'none';
+  }
+  const stroke = parseTextStrokeFromRPr(rPr);
+  if (stroke) {
+    next.strokeColor = stroke.strokeColor;
+    next.strokeWidth = stroke.strokeWidth;
+  }
+  const shadow = parseTextShadowFromRPr(rPr);
+  if (shadow) {
+    next.shadowColor = shadow.shadowColor;
+    next.shadowBlur = shadow.shadowBlur;
+    next.shadowOpacity = shadow.shadowOpacity;
+    next.shadowOffsetX = shadow.shadowOffsetX;
+    next.shadowOffsetY = shadow.shadowOffsetY;
   }
   return next;
 }
@@ -242,7 +333,15 @@ function mergeAdjacentIdenticalSpans(spans) {
       last.color === cur.color &&
       last.fontSize === cur.fontSize &&
       last.fontFamily === cur.fontFamily &&
-      Boolean(last.underline) === Boolean(cur.underline)
+      Boolean(last.underline) === Boolean(cur.underline) &&
+      (last.opacity ?? 1) === (cur.opacity ?? 1) &&
+      (last.strokeColor || '') === (cur.strokeColor || '') &&
+      (last.strokeWidth || 0) === (cur.strokeWidth || 0) &&
+      (last.shadowColor || '') === (cur.shadowColor || '') &&
+      (last.shadowBlur || 0) === (cur.shadowBlur || 0) &&
+      (last.shadowOpacity || 0) === (cur.shadowOpacity || 0) &&
+      (last.shadowOffsetX || 0) === (cur.shadowOffsetX || 0) &&
+      (last.shadowOffsetY || 0) === (cur.shadowOffsetY || 0)
     ) {
       last.text += cur.text;
     } else {
@@ -269,6 +368,14 @@ function paragraphToSpans(p) {
       color: style.color,
       fontFamily: style.fontFamily,
       underline: style.textDecoration === 'underline',
+      opacity: style.opacity,
+      strokeColor: style.strokeColor,
+      strokeWidth: style.strokeWidth,
+      shadowColor: style.shadowColor,
+      shadowBlur: style.shadowBlur,
+      shadowOpacity: style.shadowOpacity,
+      shadowOffsetX: style.shadowOffsetX,
+      shadowOffsetY: style.shadowOffsetY,
     });
   };
 
@@ -290,6 +397,14 @@ function paragraphToSpans(p) {
         color: style.color,
         fontFamily: style.fontFamily,
         underline: style.textDecoration === 'underline',
+        opacity: style.opacity,
+        strokeColor: style.strokeColor,
+        strokeWidth: style.strokeWidth,
+        shadowColor: style.shadowColor,
+        shadowBlur: style.shadowBlur,
+        shadowOpacity: style.shadowOpacity,
+        shadowOffsetX: style.shadowOffsetX,
+        shadowOffsetY: style.shadowOffsetY,
       });
     });
   }
@@ -306,6 +421,14 @@ function paragraphToSpans(p) {
         color: style.color,
         fontFamily: style.fontFamily,
         underline: style.textDecoration === 'underline',
+        opacity: style.opacity,
+        strokeColor: style.strokeColor,
+        strokeWidth: style.strokeWidth,
+        shadowColor: style.shadowColor,
+        shadowBlur: style.shadowBlur,
+        shadowOpacity: style.shadowOpacity,
+        shadowOffsetX: style.shadowOffsetX,
+        shadowOffsetY: style.shadowOffsetY,
       });
     }
   }
@@ -372,6 +495,14 @@ function extractTxBodyStructured(txBody) {
         fontStyle: s0.fontStyle,
         color: s0.color,
         fontFamily: s0.fontFamily,
+        opacity: s0.opacity,
+        strokeColor: s0.strokeColor,
+        strokeWidth: s0.strokeWidth,
+        shadowColor: s0.shadowColor,
+        shadowBlur: s0.shadowBlur,
+        shadowOpacity: s0.shadowOpacity,
+        shadowOffsetX: s0.shadowOffsetX,
+        shadowOffsetY: s0.shadowOffsetY,
       });
     }
     mergedParagraphSpans.push(...lineSpans);
@@ -408,6 +539,14 @@ function extractFirstRunStyle(txBody) {
       color: '#000000',
       textAlign: 'left',
       fontFamily: 'Roboto',
+      opacity: 1,
+      strokeColor: undefined,
+      strokeWidth: 0,
+      shadowColor: undefined,
+      shadowBlur: 0,
+      shadowOpacity: 0,
+      shadowOffsetX: 0,
+      shadowOffsetY: 0,
     };
   }
   const ps = Array.isArray(txBody.p) ? txBody.p : [txBody.p];
@@ -430,6 +569,14 @@ function extractFirstRunStyle(txBody) {
     color: style.color,
     textAlign,
     fontFamily: style.fontFamily,
+    opacity: style.opacity,
+    strokeColor: style.strokeColor,
+    strokeWidth: style.strokeWidth,
+    shadowColor: style.shadowColor,
+    shadowBlur: style.shadowBlur,
+    shadowOpacity: style.shadowOpacity,
+    shadowOffsetX: style.shadowOffsetX,
+    shadowOffsetY: style.shadowOffsetY,
   };
 }
 
@@ -643,6 +790,24 @@ function extractTransitionDirection(val) {
   return d != null ? String(d).toLowerCase() : null;
 }
 
+function findTransitionNodeDeep(node) {
+  if (!node || typeof node !== 'object') return null;
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      const hit = findTransitionNodeDeep(item);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  if (node.transition != null) return node.transition;
+  if (node['p:transition'] != null) return node['p:transition'];
+  for (const value of Object.values(node)) {
+    const hit = findTransitionNodeDeep(value);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 /**
  * Transição entre slides (separador p:transition no slide XML).
  */
@@ -651,7 +816,7 @@ function extractSlideTransitionFromParsed(parsed) {
   if (!parsed) return base;
   const sld = parsed.sld || parsed['p:sld'];
   if (!sld) return base;
-  const tr = sld.transition || sld['p:transition'];
+  const tr = sld.transition || sld['p:transition'] || findTransitionNodeDeep(sld);
   if (!tr || typeof tr !== 'object') return base;
 
   const spd = tr.spd || tr['@_spd'];
@@ -683,7 +848,30 @@ function extractSlideTransitionFromParsed(parsed) {
         durationMs,
         direction,
         source: 'pptx',
+        via: 'child',
         rawType: key,
+      };
+    }
+  }
+
+  // Alguns geradores (ou conversões) expõem tipo como atributo sem child explícito.
+  // Ex.: <p:transition type="fade" .../> ou <p:transition val="push" .../>
+  const attrTypeRaw =
+    tr.type ??
+    tr['@_type'] ??
+    tr.val ??
+    tr['@_val'] ??
+    null;
+  if (attrTypeRaw != null) {
+    const mapped = normalizeTransitionTypeForRuntime(String(attrTypeRaw));
+    if (mapped && mapped !== 'none') {
+      return {
+        type: mapped,
+        durationMs,
+        direction: extractTransitionDirection(tr),
+        source: 'pptx',
+        via: 'attr',
+        rawType: String(attrTypeRaw),
       };
     }
   }
@@ -796,8 +984,15 @@ function walkTimingForAnimations(node, out) {
 function extractShapeEntranceAnimations(parsed) {
   const out = {};
   if (!parsed) return out;
-  const cSld = parsed.sld?.cSld || parsed['p:sld']?.['p:cSld'];
-  const timing = cSld?.timing || cSld?.['p:timing'];
+  // OOXML padrão: p:timing é filho direto de p:sld (irmão de p:cSld).
+  // Mantemos fallback para variações não padrão em cSld.
+  const sld = parsed.sld || parsed['p:sld'];
+  const cSld = sld?.cSld || sld?.['p:cSld'];
+  const timing =
+    sld?.timing ||
+    sld?.['p:timing'] ||
+    cSld?.timing ||
+    cSld?.['p:timing'];
   if (!timing) return out;
   walkTimingForAnimations(timing, out);
   return out;
@@ -860,6 +1055,16 @@ function mapPptxShapeType(prst) {
   return 'rectangle';
 }
 
+function pushIgnoredItem(collector, item) {
+  if (!Array.isArray(collector)) return;
+  collector.push({
+    slideNumber: item?.slideNumber ?? 0,
+    category: item?.category || 'unknown',
+    reason: item?.reason || 'unspecified',
+    details: item?.details || {},
+  });
+}
+
 function buildShapeElementsFromParsedSlide(
   parsed,
   slideCx,
@@ -867,6 +1072,7 @@ function buildShapeElementsFromParsedSlide(
   slideNumber,
   idPrefix,
   shapeAnimBySpid = {},
+  ignoredItems = [],
 ) {
   if (!parsed) return [];
   const spTree = getSlideSpTreeRoot(parsed);
@@ -879,18 +1085,42 @@ function buildShapeElementsFromParsedSlide(
     const xfrm = spPr?.xfrm || spPr?.['a:xfrm'] || sp['xfrm'];
     const off = xfrm?.off || xfrm?.['a:off'];
     const ext = xfrm?.ext || xfrm?.['a:ext'];
-    if (!off || !ext) return;
+    if (!off || !ext) {
+      pushIgnoredItem(ignoredItems, {
+        slideNumber,
+        category: 'shape',
+        reason: 'missing_transform',
+        details: { index: idx },
+      });
+      return;
+    }
     const ox = off.x ?? off['@_x'];
     const oy = off.y ?? off['@_y'];
     const cx = ext.cx ?? ext['@_cx'];
     const cy = ext.cy ?? ext['@_cy'];
-    if (ox == null || oy == null || cx == null || cy == null) return;
+    if (ox == null || oy == null || cx == null || cy == null) {
+      pushIgnoredItem(ignoredItems, {
+        slideNumber,
+        category: 'shape',
+        reason: 'missing_dimensions',
+        details: { index: idx },
+      });
+      return;
+    }
 
     const rect = emuRectToCanvas(ox, oy, cx, cy, slideCx, slideCy);
     const fill = parseFillFromSpPr(spPr);
     const { borderColor, borderWidth } = parseStrokeFromSpPr(spPr);
     const hasVisibleShape = (fill && fill !== 'transparent') || borderWidth > 0;
-    if (!hasVisibleShape) return;
+    if (!hasVisibleShape) {
+      pushIgnoredItem(ignoredItems, {
+        slideNumber,
+        category: 'shape',
+        reason: 'invisible_shape_no_fill_or_stroke',
+        details: { index: idx },
+      });
+      return;
+    }
 
     const prst =
       spPr?.prstGeom?.prst ||
@@ -906,10 +1136,61 @@ function buildShapeElementsFromParsedSlide(
       spid && shapeAnimBySpid && typeof shapeAnimBySpid === 'object'
         ? shapeAnimBySpid[spid] || ''
         : '';
+    const structuredText = hasText ? extractTxBodyStructured(sp.txBody) : null;
+    const shapeText = structuredText?.plain ? String(structuredText.plain).trim() : '';
+    const shapeTextBase = hasText ? extractFirstRunStyle(sp.txBody) : null;
+    const shapeTextSpansPayload =
+      structuredText?.spans?.length
+        ? structuredText.spans.map((s) => ({
+            text: s.text,
+            fontSize: s.fontSize,
+            fontWeight: s.fontWeight,
+            fontStyle: s.fontStyle,
+            color: s.color,
+            fontFamily: s.fontFamily,
+            underline: Boolean(s.underline),
+            opacity: s.opacity,
+            strokeColor: s.strokeColor,
+            strokeWidth: s.strokeWidth,
+            shadowColor: s.shadowColor,
+            shadowBlur: s.shadowBlur,
+            shadowOpacity: s.shadowOpacity,
+            shadowOffsetX: s.shadowOffsetX,
+            shadowOffsetY: s.shadowOffsetY,
+          }))
+        : null;
+    const shapeTextRichSpans =
+      shapeTextSpansPayload && shapeTextSpansPayload.length
+        ? spansToRichSpans(shapeTextSpansPayload)
+        : [];
 
     out.push({
       id: `${idPrefix}-shp-${slideNumber}-${idx}`,
       type: 'shape',
+      ...(shapeText
+        ? {
+            content: shapeText,
+            ...(shapeTextSpansPayload ? { contentSpans: shapeTextSpansPayload } : {}),
+            ...(shapeTextRichSpans.length ? { richSpans: shapeTextRichSpans } : {}),
+            fontSize: shapeTextBase?.fontSize,
+            fontFamily: shapeTextBase?.fontFamily,
+            fontWeight: shapeTextBase?.fontWeight,
+            fontStyle: shapeTextBase?.fontStyle,
+            textAlign: structuredText?.textAlign || shapeTextBase?.textAlign || 'center',
+            color: shapeTextBase?.color || '#111111',
+            lineHeight: 1.2,
+            ...(shapeTextBase?.opacity != null ? { opacity: shapeTextBase.opacity } : {}),
+            ...(shapeTextBase?.strokeColor ? { strokeColor: shapeTextBase.strokeColor } : {}),
+            ...(shapeTextBase?.strokeWidth ? { strokeWidth: shapeTextBase.strokeWidth } : {}),
+            ...(shapeTextBase?.shadowColor ? { shadowColor: shapeTextBase.shadowColor } : {}),
+            ...(shapeTextBase?.shadowBlur ? { shadowBlur: shapeTextBase.shadowBlur } : {}),
+            ...(shapeTextBase?.shadowOpacity != null
+              ? { shadowOpacity: shapeTextBase.shadowOpacity }
+              : {}),
+            ...(shapeTextBase?.shadowOffsetX ? { shadowOffsetX: shapeTextBase.shadowOffsetX } : {}),
+            ...(shapeTextBase?.shadowOffsetY ? { shadowOffsetY: shapeTextBase.shadowOffsetY } : {}),
+          }
+        : {}),
       position: { x: rect.x, y: rect.y },
       size: { width: rect.width, height: rect.height },
       step: 0,
@@ -939,7 +1220,15 @@ function buildShapeElementsFromParsedSlide(
  * Extrai textos dos shapes (slide já parseado) → elementos compatíveis com o editor.
  * @param {Record<string, string>} shapeAnimBySpid
  */
-function buildTextElementsFromParsedSlide(parsed, slideCx, slideCy, slideNumber, idPrefix, shapeAnimBySpid = {}) {
+function buildTextElementsFromParsedSlide(
+  parsed,
+  slideCx,
+  slideCy,
+  slideNumber,
+  idPrefix,
+  shapeAnimBySpid = {},
+  ignoredItems = [],
+) {
   if (!parsed) return [];
   const spTree = getSlideSpTreeRoot(parsed);
   if (!spTree) return [];
@@ -951,18 +1240,42 @@ function buildTextElementsFromParsedSlide(parsed, slideCx, slideCy, slideNumber,
     if (!txBody) return;
     const structured = extractTxBodyStructured(txBody);
     const content = structured.plain;
-    if (!content || !content.trim()) return;
+    if (!content || !content.trim()) {
+      pushIgnoredItem(ignoredItems, {
+        slideNumber,
+        category: 'text',
+        reason: 'empty_content',
+        details: { index: idx },
+      });
+      return;
+    }
 
     const xfrm = sp.spPr?.xfrm || sp['p:spPr']?.['p:xfrm'];
     const off = xfrm?.off || xfrm?.['a:off'];
     const ext = xfrm?.ext || xfrm?.['a:ext'];
-    if (!off || ext == null) return;
+    if (!off || ext == null) {
+      pushIgnoredItem(ignoredItems, {
+        slideNumber,
+        category: 'text',
+        reason: 'missing_transform',
+        details: { index: idx },
+      });
+      return;
+    }
 
     const ox = off.x ?? off['@_x'];
     const oy = off.y ?? off['@_y'];
     const cx = ext.cx ?? ext['@_cx'];
     const cy = ext.cy ?? ext['@_cy'];
-    if (ox == null || oy == null || cx == null || cy == null) return;
+    if (ox == null || oy == null || cx == null || cy == null) {
+      pushIgnoredItem(ignoredItems, {
+        slideNumber,
+        category: 'text',
+        reason: 'missing_dimensions',
+        details: { index: idx },
+      });
+      return;
+    }
 
     const rect = emuRectToCanvas(ox, oy, cx, cy, slideCx, slideCy);
     const spans = structured.spans;
@@ -980,11 +1293,36 @@ function buildTextElementsFromParsedSlide(parsed, slideCx, slideCy, slideNumber,
             color: s.color,
             fontFamily: s.fontFamily,
             underline: Boolean(s.underline),
+            opacity: s.opacity,
+            strokeColor: s.strokeColor,
+            strokeWidth: s.strokeWidth,
+            shadowColor: s.shadowColor,
+            shadowBlur: s.shadowBlur,
+            shadowOpacity: s.shadowOpacity,
+            shadowOffsetX: s.shadowOffsetX,
+            shadowOffsetY: s.shadowOffsetY,
           }))
         : null;
     const richSpansPayload = contentSpansPayload ? spansToRichSpans(contentSpansPayload) : [];
 
     const spid = getShapeSpid(sp);
+    // Se o shape já tem geometria visível, o texto é incorporado no próprio elemento de forma.
+    // Evita desalinhamento de "texto solto" sobre forma no editor/runtime.
+    const spPr = sp.spPr || sp['p:spPr'];
+    const hasVisibleShapeForInlineText = (() => {
+      const fill = parseFillFromSpPr(spPr);
+      const stroke = parseStrokeFromSpPr(spPr);
+      return (fill && fill !== 'transparent') || (stroke?.borderWidth || 0) > 0;
+    })();
+    if (hasVisibleShapeForInlineText) {
+      pushIgnoredItem(ignoredItems, {
+        slideNumber,
+        category: 'text',
+        reason: 'embedded_into_shape_element',
+        details: { index: idx, mode: 'inline-shape-text' },
+      });
+      return;
+    }
     const entranceAnim =
       spid && shapeAnimBySpid && typeof shapeAnimBySpid === 'object'
         ? shapeAnimBySpid[spid] || ''
@@ -1009,6 +1347,14 @@ function buildTextElementsFromParsedSlide(parsed, slideCx, slideCy, slideNumber,
       fontStyle: base.fontStyle,
       textAlign,
       color: base.color,
+      opacity: base.opacity,
+      strokeColor: base.strokeColor,
+      strokeWidth: base.strokeWidth,
+      shadowColor: base.shadowColor,
+      shadowBlur: base.shadowBlur,
+      shadowOpacity: base.shadowOpacity,
+      shadowOffsetX: base.shadowOffsetX,
+      shadowOffsetY: base.shadowOffsetY,
     });
   });
 
@@ -1308,6 +1654,15 @@ export async function runImportPptxEngine(req, res) {
     const uploadedSlides = [];
     const discoveredSlides = [];
     const warnings = [];
+    const importDiagnostics = {
+      slidesWithTimingAnimations: 0,
+      totalAnimatedShapesDetected: 0,
+      transitionsByChild: 0,
+      transitionsByAttr: 0,
+      transitionsNone: 0,
+      ignoredElementsByReason: {},
+      ignoredItems: [],
+    };
 
     let supabase = null;
     const importStamp = Date.now();
@@ -1350,6 +1705,20 @@ export async function runImportPptxEngine(req, res) {
       const parsedSlide = parseSlideXmlSafe(slideXml, xmlParser);
       const slideTransition = extractSlideTransitionFromParsed(parsedSlide);
       const shapeAnimBySpid = extractShapeEntranceAnimations(parsedSlide);
+      const animatedShapeCount = Object.keys(shapeAnimBySpid || {}).length;
+      if (animatedShapeCount > 0) {
+        importDiagnostics.slidesWithTimingAnimations += 1;
+        importDiagnostics.totalAnimatedShapesDetected += animatedShapeCount;
+      }
+      if (slideTransition?.type && slideTransition.type !== 'none') {
+        if (slideTransition?.via === 'child') {
+          importDiagnostics.transitionsByChild += 1;
+        } else if (slideTransition?.via === 'attr') {
+          importDiagnostics.transitionsByAttr += 1;
+        }
+      } else {
+        importDiagnostics.transitionsNone += 1;
+      }
       const shapeElements = buildShapeElementsFromParsedSlide(
         parsedSlide,
         slideCx,
@@ -1357,6 +1726,7 @@ export async function runImportPptxEngine(req, res) {
         slideNumber,
         String(importStamp),
         shapeAnimBySpid,
+        importDiagnostics.ignoredItems,
       );
       const textElementsRaw = buildTextElementsFromParsedSlide(
         parsedSlide,
@@ -1365,6 +1735,7 @@ export async function runImportPptxEngine(req, res) {
         slideNumber,
         String(importStamp),
         shapeAnimBySpid,
+        importDiagnostics.ignoredItems,
       );
       const textElements = normalizeTextElementsFonts(textElementsRaw, themeFonts);
 
@@ -1397,6 +1768,11 @@ export async function runImportPptxEngine(req, res) {
       }
 
       if (!binary && textElements.length === 0 && shapeElements.length === 0) {
+        pushIgnoredItem(importDiagnostics.ignoredItems, {
+          slideNumber,
+          category: 'slide',
+          reason: 'no_image_and_no_visible_elements',
+        });
         importDebug(`slide ${slideNumber}: ignorado (sem imagem, texto ou forma)`);
         continue;
       }
@@ -1472,7 +1848,16 @@ export async function runImportPptxEngine(req, res) {
       uploaded: uploadedSlides.length,
       warnings: warnings.length,
       dryRun,
+      diagnostics: importDiagnostics,
     });
+    importDiagnostics.ignoredElementsByReason = importDiagnostics.ignoredItems.reduce(
+      (acc, item) => {
+        const key = String(item?.reason || 'unknown');
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      },
+      {},
+    );
 
     if (dryRun) {
       res.status(200).json({
@@ -1480,6 +1865,7 @@ export async function runImportPptxEngine(req, res) {
         totalSlidesDetected: slideSummaries.length,
         slides: slideSummaries,
         message: `Dry-run concluído com ${slideSummaries.length} slides detectados.`,
+        diagnostics: importDiagnostics,
       });
       return;
     }
@@ -1580,6 +1966,7 @@ export async function runImportPptxEngine(req, res) {
       slidesComImagem: uploadedSlides.length,
       warnings: warnings.length,
       pagesJsonApproxBytes: JSON.stringify(pages).length,
+      diagnostics: importDiagnostics,
     });
 
     res.status(200).json({
@@ -1590,6 +1977,7 @@ export async function runImportPptxEngine(req, res) {
       totalSlides: pages.length,
       totalSlidesWithImage: uploadedSlides.length,
       totalSlidesWithWarning: warnings.length,
+      diagnostics: importDiagnostics,
       message:
         warnings.length > 0
           ? `Importação parcial: ${pages.length} página(s), ${uploadedSlides.length} com fundo enviado e ${warnings.length} com aviso.`

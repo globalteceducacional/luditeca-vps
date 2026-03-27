@@ -156,6 +156,22 @@ function normalizeNodes(elements: LegacyElement[] | undefined) {
         fontStyle: el?.fontStyle,
         textAlign: el?.textAlign,
         color: el?.color,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        opacity: (el as any)?.opacity,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        strokeColor: (el as any)?.strokeColor,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        strokeWidth: (el as any)?.strokeWidth,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        shadowColor: (el as any)?.shadowColor,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        shadowBlur: (el as any)?.shadowBlur,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        shadowOpacity: (el as any)?.shadowOpacity,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        shadowOffsetX: (el as any)?.shadowOffsetX,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        shadowOffsetY: (el as any)?.shadowOffsetY,
         lineHeight: el?.lineHeight,
         letterSpacing: el?.letterSpacing,
         textDecoration: el?.textDecoration,

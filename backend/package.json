@@ -7,8 +7,8 @@
     "seed": "tsx scripts/seed.ts"
   },
   "scripts": {
-    "dev:server": "tsx watch src/server.ts",
-    "dev": "node scripts/dev-with-minio.js",
+    "dev": "tsx watch src/server.ts",
+    "dev:with-minio": "node scripts/dev-with-minio.js",
     "build": "tsc",
     "start": "node dist/server.js",
     "db:generate": "prisma generate",

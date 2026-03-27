@@ -107,6 +107,7 @@ export default function PageSidebar({
   bookId,
   onSelectMedia,
   onSelectTransitionBetweenPages,
+  showTabs = true,
 }) {
   const [mediaItems, setMediaItems] = useState([]);
   const [mediaLoading, setMediaLoading] = useState(false);
@@ -244,30 +245,32 @@ export default function PageSidebar({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="border-b border-slate-700 px-3 py-2">
-        <div className="mb-2 flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => onTabChange?.('pages')}
-            className={`rounded px-2.5 py-1 text-xs font-semibold ${
-              activeTab === 'pages'
-                ? 'bg-indigo-600 text-white'
-                : 'bg-slate-700 text-slate-200 hover:bg-slate-600'
-            }`}
-          >
-            Paginas
-          </button>
-          <button
-            type="button"
-            onClick={() => onTabChange?.('media')}
-            className={`rounded px-2.5 py-1 text-xs font-semibold ${
-              activeTab === 'media'
-                ? 'bg-indigo-600 text-white'
-                : 'bg-slate-700 text-slate-200 hover:bg-slate-600'
-            }`}
-          >
-            Midia
-          </button>
-        </div>
+        {showTabs ? (
+          <div className="mb-2 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onTabChange?.('pages')}
+              className={`rounded px-2.5 py-1 text-xs font-semibold ${
+                activeTab === 'pages'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-slate-700 text-slate-200 hover:bg-slate-600'
+              }`}
+            >
+              Paginas
+            </button>
+            <button
+              type="button"
+              onClick={() => onTabChange?.('media')}
+              className={`rounded px-2.5 py-1 text-xs font-semibold ${
+                activeTab === 'media'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-slate-700 text-slate-200 hover:bg-slate-600'
+              }`}
+            >
+              Midia
+            </button>
+          </div>
+        ) : null}
 
         {activeTab === 'pages' ? (
           <div className="flex items-center justify-between">
@@ -385,16 +388,17 @@ export default function PageSidebar({
             Nenhum arquivo encontrado.
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
             {visibleMedia.map((item, index) => {
               const key = item?.id || item?.path || `asset-${index}`;
               const previewUrl = item?.url || item?.directUrl || '';
               const isAudio = item?.type === 'audio';
               const isGif = item?.type === 'gif' || isGifUrl(item?.name || previewUrl);
               return (
-                <button
+                <div
                   key={key}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   draggable={!isAudio}
                   onDragStart={(event) => {
                     if (isAudio) return;
@@ -405,6 +409,13 @@ export default function PageSidebar({
                       JSON.stringify(payload),
                     );
                     event.dataTransfer.setData('text/plain', payload?.name || 'media');
+                  }}
+                  onClick={() => onSelectMedia?.({ ...item, url: previewUrl })}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      onSelectMedia?.({ ...item, url: previewUrl });
+                    }
                   }}
                   className="w-full rounded border border-slate-700 bg-slate-900 p-2 text-left transition hover:bg-slate-800"
                 >
@@ -469,7 +480,7 @@ export default function PageSidebar({
                       </div>
                     ) : null}
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>

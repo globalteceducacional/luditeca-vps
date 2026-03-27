@@ -11,7 +11,9 @@ import {
   FiSave,
   FiSquare,
   FiType,
+  FiUpload,
 } from 'react-icons/fi';
+import { toast } from 'react-hot-toast';
 
 import EditorLayout from '../../../components/EditorLayout';
 import RulersOverlay from '../../../components/editor/RulersOverlay';
@@ -19,7 +21,10 @@ import BottomDock from '../../../components/editor/v2/BottomDock';
 import PageSidebar from '../../../components/editor/v2/PageSidebar';
 import PropertiesInspector from '../../../components/editor/v2/PropertiesInspector';
 import { useAuth } from '../../../contexts/auth';
+import { getAuthors } from '../../../lib/authors';
 import { getBook, updateBook } from '../../../lib/books';
+import { getCategories } from '../../../lib/categories';
+import { uploadFile } from '../../../lib/storageApi';
 import { CMS_ROLES, isRole } from '../../../lib/roles';
 import {
   isPagesV2,
@@ -124,12 +129,13 @@ export default function EditBookV2() {
   const [isModified, setIsModified] = useState(false);
   const [showRulers, setShowRulers] = useState(true);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
-  const [rightCollapsed, setRightCollapsed] = useState(false);
   const [leftTab, setLeftTab] = useState('pages');
   const [mediaType, setMediaType] = useState('image');
   const [bottomHeight, setBottomHeight] = useState(280);
   const [currentStep, setCurrentStep] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  /** Incrementado no play para disparar animacoes de entrada (texto/imagem/forma) na etapa atual. */
+  const [playbackNonce, setPlaybackNonce] = useState(0);
   const [elementAnimationTest, setElementAnimationTest] = useState({
     nonce: 0,
     elementId: null,
@@ -140,8 +146,20 @@ export default function EditBookV2() {
     className: '',
   });
   const [showTransitionEditor, setShowTransitionEditor] = useState(false);
+  /** 'edit' = canvas e timeline; 'info' = metadados do livro */
+  const [workspaceTab, setWorkspaceTab] = useState('edit');
+  const [description, setDescription] = useState('');
+  const [authorId, setAuthorId] = useState('');
+  const [categoryId, setCategoryId] = useState('');
+  const [coverImage, setCoverImage] = useState('');
+  const [authors, setAuthors] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [loadingAuthors, setLoadingAuthors] = useState(true);
+  const [loadingCategories, setLoadingCategories] = useState(true);
+  const [uploadingCover, setUploadingCover] = useState(false);
 
   const playTimerRef = useRef(null);
+  const prevStepForPlaybackRef = useRef(null);
   const isResizingBottomRef = useRef(false);
   const resizeStartRef = useRef(null);
   const historyRef = useRef({ undo: [], redo: [] });
@@ -196,6 +214,10 @@ export default function EditBookV2() {
     }
     setBook(data);
     setTitle(data.title || '');
+    setDescription(data.description || '');
+    setAuthorId(data.author_id || '');
+    setCategoryId(data.category_id || '');
+    setCoverImage(data.cover_image || '');
     let nextV2 = null;
     if (isPagesV2(data.pages_v2)) nextV2 = data.pages_v2;
     else if (Array.isArray(data.pages) && data.pages.length > 0) nextV2 = migratePagesLegacyToV2(data.pages);
@@ -208,6 +230,61 @@ export default function EditBookV2() {
   useEffect(() => {
     if (id && user?.id) void fetchBook();
   }, [id, user?.id, fetchBook]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoadingAuthors(true);
+        const { data, error } = await getAuthors();
+        if (cancelled) return;
+        if (!error) setAuthors(data || []);
+      } catch {
+        if (!cancelled) toast.error('Não foi possível carregar autores.');
+      } finally {
+        if (!cancelled) setLoadingAuthors(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoadingCategories(true);
+        const { data, error } = await getCategories();
+        if (cancelled) return;
+        if (!error) setCategories(data || []);
+      } catch {
+        if (!cancelled) toast.error('Não foi possível carregar categorias.');
+      } finally {
+        if (!cancelled) setLoadingCategories(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleInfoCoverUpload = useCallback(async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setUploadingCover(true);
+      const { url } = await uploadFile('covers', file.name, file);
+      setCoverImage(url || '');
+      setIsModified(true);
+      toast.success('Capa atualizada.');
+    } catch (err) {
+      toast.error(err?.message || 'Falha ao enviar capa.');
+    } finally {
+      setUploadingCover(false);
+      e.target.value = '';
+    }
+  }, []);
 
   const openImageAssets = useCallback(() => {
     setMediaType('image');
@@ -309,7 +386,7 @@ export default function EditBookV2() {
     const safeIndex = Math.max(0, Number.isFinite(Number(fromPageIndex)) ? Math.trunc(Number(fromPageIndex)) : 0);
     setCurrentPage(safeIndex);
     setSelectedNodeId(null);
-    setRightCollapsed(false);
+    setLeftTab('properties');
     setShowTransitionEditor(true);
   }, []);
 
@@ -548,29 +625,102 @@ export default function EditBookV2() {
   const saveBook = useCallback(async () => {
     if (!book || !id || !pagesV2) return;
     setSaving(true);
-    const payload = { ...book, title, pages: migratePagesV2ToLegacy(ensurePagesV2(pagesV2)), pages_v2: ensurePagesV2(pagesV2) };
+    const payload = {
+      ...book,
+      title,
+      description: description || '',
+      author_id: authorId || null,
+      category_id: categoryId || null,
+      cover_image: coverImage || null,
+      pages: migratePagesV2ToLegacy(ensurePagesV2(pagesV2)),
+      pages_v2: ensurePagesV2(pagesV2),
+    };
     if (payload.authors) delete payload.authors;
     const { error } = await updateBook(id, payload);
     setSaving(false);
-    if (!error) setIsModified(false);
-  }, [book, id, pagesV2, title]);
+    if (!error) {
+      setIsModified(false);
+      setBook((prev) =>
+        prev
+          ? {
+              ...prev,
+              title,
+              description,
+              author_id: authorId || null,
+              category_id: categoryId || null,
+              cover_image: coverImage || null,
+            }
+          : prev,
+      );
+    }
+  }, [book, id, pagesV2, title, description, authorId, categoryId, coverImage]);
 
   const playPause = useCallback(() => {
     if (isPlaying) {
-      if (playTimerRef.current) clearInterval(playTimerRef.current);
+      if (playTimerRef.current != null) {
+        clearInterval(playTimerRef.current);
+        clearTimeout(playTimerRef.current);
+      }
       playTimerRef.current = null;
       setIsPlaying(false);
+      prevStepForPlaybackRef.current = null;
       return;
     }
     const maxStep = Math.max(0, ...nodes.map((n) => Number(n.step || 0)));
-    playTimerRef.current = setInterval(() => {
-      setCurrentStep((prev) => (prev >= maxStep ? 0 : prev + 1));
-    }, 900);
+    setCurrentStep(0);
+    prevStepForPlaybackRef.current = null;
+    setPlaybackNonce((n) => n + 1);
     setIsPlaying(true);
+
+    const finishPlayback = () => {
+      if (playTimerRef.current != null) {
+        clearInterval(playTimerRef.current);
+        clearTimeout(playTimerRef.current);
+      }
+      playTimerRef.current = null;
+      setIsPlaying(false);
+      prevStepForPlaybackRef.current = null;
+    };
+
+    if (maxStep <= 0) {
+      playTimerRef.current = window.setTimeout(finishPlayback, 900);
+      return;
+    }
+
+    playTimerRef.current = window.setInterval(() => {
+      setCurrentStep((prev) => {
+        if (prev >= maxStep) return prev;
+        const next = prev + 1;
+        if (next >= maxStep) {
+          const tid = playTimerRef.current;
+          if (tid != null) {
+            clearInterval(tid);
+            playTimerRef.current = null;
+          }
+          queueMicrotask(() => {
+            setIsPlaying(false);
+            prevStepForPlaybackRef.current = null;
+          });
+        }
+        return next;
+      });
+    }, 900);
   }, [isPlaying, nodes]);
 
+  useEffect(() => {
+    if (!isPlaying) return;
+    const prev = prevStepForPlaybackRef.current;
+    if (prev !== null && prev !== currentStep) {
+      setPlaybackNonce((n) => n + 1);
+    }
+    prevStepForPlaybackRef.current = currentStep;
+  }, [currentStep, isPlaying]);
+
   useEffect(() => () => {
-    if (playTimerRef.current) clearInterval(playTimerRef.current);
+    if (playTimerRef.current != null) {
+      clearInterval(playTimerRef.current);
+      clearTimeout(playTimerRef.current);
+    }
   }, []);
 
   const handleBottomResizeStart = useCallback((event) => {
@@ -612,32 +762,47 @@ export default function EditBookV2() {
       </Head>
       <div className="flex h-full flex-col overflow-hidden bg-slate-900 font-sans text-slate-300">
         <header className="z-20 flex h-14 shrink-0 items-center justify-between border-b border-slate-700 bg-slate-800 px-4 shadow-sm">
-          <div className="flex items-center gap-4">
-            <button type="button" onClick={() => router.push('/books')} className="rounded-md bg-slate-700 p-2 text-slate-200 transition-colors hover:bg-slate-600" title="Voltar aos livros">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <button type="button" onClick={() => router.push('/books')} className="shrink-0 rounded-md bg-slate-700 p-2 text-slate-200 transition-colors hover:bg-slate-600" title="Voltar aos livros">
               <FiChevronLeft size={18} />
             </button>
-            <div className="flex items-center gap-2 border-l border-slate-600 pl-4">
-              <input
-                className="w-80 rounded border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 transition-colors focus:border-indigo-500 focus:outline-none"
-                value={title}
-                placeholder="Titulo do livro..."
-                onChange={(e) => {
-                  setTitle(e.target.value);
-                  setIsModified(true);
-                }}
-              />
+            <div className="flex min-w-0 items-center gap-1 rounded-lg border border-slate-600 bg-slate-900/60 p-1">
+              <button
+                type="button"
+                onClick={() => setWorkspaceTab('edit')}
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors sm:text-sm ${
+                  workspaceTab === 'edit'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                Edição do livro
+              </button>
+              <button
+                type="button"
+                onClick={() => setWorkspaceTab('info')}
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors sm:text-sm ${
+                  workspaceTab === 'info'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                Informações do livro
+              </button>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setShowRulers((v) => !v)}
-              className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors ${showRulers ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
-              title="Alternar guias e reguas"
-            >
-              <FiGrid size={16} />
-              <span>Guias</span>
-            </button>
+          <div className="flex shrink-0 items-center gap-3">
+            {workspaceTab === 'edit' ? (
+              <button
+                type="button"
+                onClick={() => setShowRulers((v) => !v)}
+                className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors ${showRulers ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
+                title="Alternar guias e reguas"
+              >
+                <FiGrid size={16} />
+                <span className="hidden sm:inline">Guias</span>
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={saveBook}
@@ -650,27 +815,173 @@ export default function EditBookV2() {
           </div>
         </header>
 
+        {workspaceTab === 'info' ? (
+          <div className="min-h-0 flex-1 overflow-y-auto bg-slate-950 px-4 py-8 sm:px-8">
+            <div className="mx-auto max-w-2xl space-y-6">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-100">Informações do livro</h2>
+                <p className="mt-1 text-sm text-slate-500">Título, capa, descrição e classificação. Use &quot;Salvar projeto&quot; para gravar.</p>
+              </div>
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Título</span>
+                <input
+                  className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none"
+                  value={title}
+                  placeholder="Título do livro"
+                  onChange={(e) => {
+                    setTitle(e.target.value);
+                    setIsModified(true);
+                  }}
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Descrição</span>
+                <textarea
+                  className="min-h-[120px] w-full resize-y rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none"
+                  value={description}
+                  placeholder="Resumo ou sinopse..."
+                  onChange={(e) => {
+                    setDescription(e.target.value);
+                    setIsModified(true);
+                  }}
+                />
+              </label>
+              <div className="grid gap-6 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Autor</span>
+                  <select
+                    className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none"
+                    value={authorId}
+                    disabled={loadingAuthors}
+                    onChange={(e) => {
+                      setAuthorId(e.target.value);
+                      setIsModified(true);
+                    }}
+                  >
+                    <option value="">— Selecionar —</option>
+                    {authors.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Categoria</span>
+                  <select
+                    className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none"
+                    value={categoryId}
+                    disabled={loadingCategories}
+                    onChange={(e) => {
+                      setCategoryId(e.target.value);
+                      setIsModified(true);
+                    }}
+                  >
+                    <option value="">— Selecionar —</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div>
+                <span className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-400">Capa</span>
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+                  {coverImage ? (
+                    <div className="overflow-hidden rounded-lg border border-slate-700 bg-slate-900">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={coverImage} alt="" className="h-40 w-auto max-w-full object-contain" />
+                    </div>
+                  ) : (
+                    <div className="flex h-40 w-28 items-center justify-center rounded-lg border border-dashed border-slate-600 bg-slate-900/50 text-xs text-slate-500">
+                      Sem capa
+                    </div>
+                  )}
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-600 bg-slate-800 px-4 py-2 text-sm text-slate-200 transition-colors hover:bg-slate-700">
+                    <FiUpload size={16} />
+                    {uploadingCover ? 'A enviar...' : 'Carregar imagem'}
+                    <input type="file" accept="image/*" className="hidden" onChange={handleInfoCoverUpload} disabled={uploadingCover} />
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
         <div className="grid min-h-0 flex-1 overflow-hidden" style={{ gridTemplateRows: `minmax(360px, 1fr) 8px ${bottomHeight}px` }}>
           <main className="relative flex min-h-0 overflow-hidden">
             {!leftCollapsed ? (
               <aside className="relative z-10 flex h-full w-[280px] shrink-0 flex-col border-r border-slate-700 bg-slate-800 shadow-[2px_0_8px_rgba(0,0,0,0.1)]">
-                <PageSidebar
-                  pages={safeV2.pages}
-                  currentPage={currentPage}
-                  onSelectPage={(idx) => {
-                    setCurrentPage(idx);
-                    setShowTransitionEditor(false);
-                  }}
-                  onAddPage={addPage}
-                  onDeletePage={deletePage}
-                  onSelectTransitionBetweenPages={selectTransitionBetweenPages}
-                  activeTab={leftTab}
-                  onTabChange={setLeftTab}
-                  mediaType={mediaType}
-                  onMediaTypeChange={setMediaType}
-                  bookId={id}
-                  onSelectMedia={handlePickMedia}
-                />
+                <div className="border-b border-slate-700 px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setLeftTab('pages')}
+                      className={`rounded px-2.5 py-1 text-xs font-semibold ${
+                        leftTab === 'pages'
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-slate-700 text-slate-200 hover:bg-slate-600'
+                      }`}
+                    >
+                      Paginas
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLeftTab('media')}
+                      className={`rounded px-2.5 py-1 text-xs font-semibold ${
+                        leftTab === 'media'
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-slate-700 text-slate-200 hover:bg-slate-600'
+                      }`}
+                    >
+                      Midia
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLeftTab('properties')}
+                      className={`rounded px-2.5 py-1 text-xs font-semibold ${
+                        leftTab === 'properties'
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-slate-700 text-slate-200 hover:bg-slate-600'
+                      }`}
+                    >
+                      Propriedades
+                    </button>
+                  </div>
+                </div>
+                {leftTab === 'properties' ? (
+                  <PropertiesInspector
+                    page={page}
+                    selectedNodeId={selectedNodeId}
+                    onPatchNode={patchNode}
+                    onDeleteNode={deleteNode}
+                    onOpenAudioLibrary={openAudioAssets}
+                    onPatchPageTransition={patchCurrentPageTransition}
+                    onTestElementAnimation={testElementAnimation}
+                    onTestPageTransition={testPageTransition}
+                    showPageTransitionEditor={showTransitionEditor}
+                  />
+                ) : (
+                  <PageSidebar
+                    pages={safeV2.pages}
+                    currentPage={currentPage}
+                    onSelectPage={(idx) => {
+                      setCurrentPage(idx);
+                      setShowTransitionEditor(false);
+                    }}
+                    onAddPage={addPage}
+                    onDeletePage={deletePage}
+                    onSelectTransitionBetweenPages={selectTransitionBetweenPages}
+                    activeTab={leftTab}
+                    onTabChange={setLeftTab}
+                    mediaType={mediaType}
+                    onMediaTypeChange={setMediaType}
+                    bookId={id}
+                    onSelectMedia={handlePickMedia}
+                    showTabs={false}
+                  />
+                )}
                 <button type="button" onClick={() => setLeftCollapsed(true)} className="absolute -right-4 top-1/2 flex h-8 w-4 -translate-y-1/2 items-center justify-center rounded-r-md border border-l-0 border-slate-700 bg-slate-800 text-slate-400 hover:text-white" title="Ocultar painel esquerdo">
                   <FiChevronLeft size={14} />
                 </button>
@@ -684,8 +995,6 @@ export default function EditBookV2() {
             <nav className="z-10 flex w-14 shrink-0 flex-col items-center gap-3 border-r border-slate-700 bg-slate-900 py-4 shadow-inner">
               <ToolButton icon={<FiType size={18} />} label="Texto" onClick={addText} />
               <ToolButton icon={<FiSquare size={18} />} label="Forma" onClick={addShape} />
-              <div className="my-2 h-px w-8 bg-slate-700" />
-              <ToolButton icon={<FiImage size={18} />} label="Imagem" onClick={openImageAssets} />
             </nav>
 
             <section
@@ -697,7 +1006,7 @@ export default function EditBookV2() {
                 <RulersOverlay visible={showRulers} />
                 <div
                   key={pageTransitionTest.nonce}
-                  className={`absolute inset-0 flex items-center justify-center pl-6 pt-6 ${pageTransitionTest.className ? `animate__animated ${pageTransitionTest.className}` : ''}`}
+                  className={`absolute inset-0 flex items-center justify-center pl-10 pt-10 ${pageTransitionTest.className ? `animate__animated ${pageTransitionTest.className}` : ''}`}
                 >
                   <CanvasStageKonva
                     pagesV2={safeV2}
@@ -720,34 +1029,19 @@ export default function EditBookV2() {
                     isPreviewMode={false}
                     timelineStep={currentStep}
                     elementAnimationTest={elementAnimationTest}
+                    timelinePlayback={
+                      isPlaying ? { nonce: playbackNonce, step: currentStep } : null
+                    }
+                    onRequestPropertiesPanel={() => {
+                      setLeftTab('properties');
+                      setShowTransitionEditor(false);
+                    }}
                   />
                 </div>
                 {pageIsVisuallyEmpty ? <EmptyState onAddImage={openImageAssets} /> : null}
               </div>
             </section>
 
-            {!rightCollapsed ? (
-              <aside className="relative z-10 h-full w-[320px] shrink-0 border-l border-slate-700 bg-slate-800 shadow-[-2px_0_8px_rgba(0,0,0,0.1)]">
-                <button type="button" onClick={() => setRightCollapsed(true)} className="absolute -left-4 top-1/2 flex h-8 w-4 -translate-y-1/2 items-center justify-center rounded-l-md border border-r-0 border-slate-700 bg-slate-800 text-slate-400 hover:text-white" title="Ocultar painel direito">
-                  <FiChevronRight size={14} />
-                </button>
-                <PropertiesInspector
-                  page={page}
-                  selectedNodeId={selectedNodeId}
-                  onPatchNode={patchNode}
-                  onDeleteNode={deleteNode}
-                  onOpenAudioLibrary={openAudioAssets}
-                  onPatchPageTransition={patchCurrentPageTransition}
-                  onTestElementAnimation={testElementAnimation}
-                  onTestPageTransition={testPageTransition}
-                  showPageTransitionEditor={showTransitionEditor}
-                />
-              </aside>
-            ) : (
-              <button type="button" onClick={() => setRightCollapsed(false)} className="absolute right-0 top-1/2 z-20 flex h-8 w-6 -translate-y-1/2 items-center justify-center rounded-l-md border border-r-0 border-slate-700 bg-slate-800 text-slate-400 shadow-md hover:text-white" title="Mostrar painel direito">
-                <FiChevronLeft size={14} />
-              </button>
-            )}
           </main>
 
           <div role="separator" aria-label="Redimensionar painel inferior" onPointerDown={handleBottomResizeStart} className="h-2 shrink-0 cursor-row-resize border-y border-slate-700 bg-slate-900 hover:bg-slate-800" />
@@ -767,6 +1061,7 @@ export default function EditBookV2() {
             />
           </footer>
         </div>
+        )}
       </div>
     </EditorLayout>
   );

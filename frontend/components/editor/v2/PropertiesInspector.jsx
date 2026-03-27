@@ -440,9 +440,10 @@ export default function PropertiesInspector({
   const isShape = selectedNode.type === 'shape';
   const supportsAudioBinding = isText || isImage;
   const supportsEffects = isText || isShape;
+  const supportsTextEditing = isText || isShape;
 
   const applyInlineMark = (marker) => {
-    if (!isText) return;
+    if (!supportsTextEditing) return;
     const el = textAreaRef.current;
     if (!el || typeof el.selectionStart !== 'number' || typeof el.selectionEnd !== 'number') return;
     const start = el.selectionStart;
@@ -629,6 +630,57 @@ export default function PropertiesInspector({
               onPatchNode(selectedNode.id, { step: v });
             }}
           />
+
+          <div className="mt-4 rounded border border-slate-700 bg-slate-900/40 p-2">
+            <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              Camada (ordem visual)
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  onPatchNode(selectedNode.id, {
+                    zIndex: Math.max(0, Math.trunc(toNum(selectedNode.zIndex, 0)) - 1),
+                  })
+                }
+                className="rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-300 transition-colors hover:bg-slate-800"
+                title="Descer um nível"
+              >
+                Descer 1
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  onPatchNode(selectedNode.id, {
+                    zIndex: Math.max(0, Math.trunc(toNum(selectedNode.zIndex, 0)) + 1),
+                  })
+                }
+                className="rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-300 transition-colors hover:bg-slate-800"
+                title="Subir um nível"
+              >
+                Subir 1
+              </button>
+              <button
+                type="button"
+                onClick={() => onPatchNode(selectedNode.id, { zIndex: 0 })}
+                className="rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-300 transition-colors hover:bg-slate-800"
+                title="Enviar para trás de todos"
+              >
+                Enviar para trás
+              </button>
+              <button
+                type="button"
+                onClick={() => onPatchNode(selectedNode.id, { zIndex: 9999 })}
+                className="rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-300 transition-colors hover:bg-slate-800"
+                title="Trazer para frente de todos"
+              >
+                Trazer para frente
+              </button>
+            </div>
+            <div className="mt-2 text-[10px] text-slate-500">
+              Camada atual: <span className="text-slate-300">{Math.max(0, Math.trunc(toNum(selectedNode.zIndex, 0)))}</span>
+            </div>
+          </div>
         </section>
 
         <hr className="border-slate-700" />
@@ -760,10 +812,10 @@ export default function PropertiesInspector({
 
         {supportsEffects ? <hr className="border-slate-700" /> : null}
 
-        {isText ? (
+        {supportsTextEditing ? (
           <section>
             <h3 className="mb-3 text-xs font-semibold text-slate-300">
-              Tipografia e conteudo
+              {isShape ? 'Texto da forma' : 'Tipografia e conteudo'}
             </h3>
             <label className="flex flex-col gap-1">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
