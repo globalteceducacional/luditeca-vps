@@ -496,7 +496,7 @@ export async function registerBookRoutes(app: FastifyInstance) {
       // Limpa mídias vinculadas ao livro (evita acúmulo no storage)
       const media = await prisma.mediaFile.findMany({
         where: { bookId: id } as Record<string, unknown>,
-        select: { bucketName: true, filePath: true },
+        select: { bucketName: true, filePath: true, userId: true },
       });
       for (const m of media) {
         try {
