@@ -7,6 +7,8 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Next exige pasta public no standalone; pode estar vazia (ficheiros estaticos).
+RUN mkdir -p public
 ARG NEXT_PUBLIC_API_URL=http://localhost:8080/api
 ARG NEXT_PUBLIC_MEDIA_BASE_URL=http://localhost:8080/media
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
