@@ -1,7 +1,8 @@
 import { prisma } from '../lib/prisma.js';
 import { jsonSafe } from '../lib/serialize.js';
 import { requireCmsEditor } from '../plugins/auth.js';
-import { copyObject, deleteObject, listAllKeys, presignedGetUrl, } from '../lib/s3.js';
+import { requireAuth } from '../plugins/auth.js';
+import { copyObject, deletePrefix, deleteObject, listAllKeys, presignedGetUrl, } from '../lib/s3.js';
 import { isPagesV2, migratePagesLegacyToV2 } from '../lib/pagesV2/migrate.js';
 function toBigIntOrNull(v) {
     if (v === null || v === undefined || v === '')
@@ -293,14 +294,14 @@ function bookResponse(b) {
     };
 }
 export async function registerBookRoutes(app) {
-    app.get('/books', { preHandler: requireCmsEditor }, async (_request, reply) => {
+    app.get('/books', { preHandler: requireAuth }, async (_request, reply) => {
         const rows = await prisma.book.findMany({
             orderBy: { createdAt: 'desc' },
             include: { authorRel: true },
         });
         return reply.send(rows.map((r) => bookResponse(r)));
     });
-    app.get('/books/:id', { preHandler: requireCmsEditor }, async (request, reply) => {
+    app.get('/books/:id', { preHandler: requireAuth }, async (request, reply) => {
         const id = BigInt(request.params.id);
         const b = await prisma.book.findUnique({
             where: { id },
@@ -421,10 +422,11 @@ export async function registerBookRoutes(app) {
     });
     app.delete('/books/:id', { preHandler: requireCmsEditor }, async (request, reply) => {
         const id = BigInt(request.params.id);
+        const bookIdAsString = id.toString();
         // Limpa mídias vinculadas ao livro (evita acúmulo no storage)
         const media = await prisma.mediaFile.findMany({
             where: { bookId: id },
-            select: { bucketName: true, filePath: true },
+            select: { bucketName: true, filePath: true, userId: true },
         });
         for (const m of media) {
             try {
@@ -435,6 +437,30 @@ export async function registerBookRoutes(app) {
             }
         }
         await prisma.mediaFile.deleteMany({ where: { bookId: id } });
+        // Limpeza extra por prefixo de pasta do livro (user/books/{id}) em todos os buckets.
+        // Cobre arquivos órfãos e remove o acúmulo no storage local.
+        const userIds = Array.from(new Set(media.map((m) => m.userId).filter(Boolean)));
+        const buckets = [
+            'covers',
+            'pages',
+            'presentations',
+            'audios',
+            'videos',
+            'categories',
+            'autores',
+            'avatars',
+        ];
+        for (const userId of userIds) {
+            const prefix = `${userId}/books/${bookIdAsString}`;
+            for (const bucket of buckets) {
+                try {
+                    await deletePrefix(bucket, prefix);
+                }
+                catch {
+                    // Se não houver nada no bucket/prefixo, seguimos.
+                }
+            }
+        }
         await prisma.book.delete({ where: { id } });
         return reply.code(204).send();
     });

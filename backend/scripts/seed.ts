@@ -1,8 +1,9 @@
 /// <reference types="node" />
 import 'dotenv/config';
-import { prisma } from '../src/lib/prisma.js';
-import { hashPassword } from '../src/lib/password.js';
-import type { UserRole } from '../src/lib/roles.js';
+// Em Docker só existe dist/; em dev local, corre `npm run build` antes do seed ou use db:seed.
+import { prisma } from '../dist/lib/prisma.js';
+import { hashPassword } from '../dist/lib/password.js';
+import type { UserRole } from '../dist/lib/roles.js';
 
 type SeedUser = {
   email: string;

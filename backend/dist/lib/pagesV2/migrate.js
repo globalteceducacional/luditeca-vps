@@ -9,6 +9,36 @@ function toNum(v, fallback) {
     const n = Number(v);
     return Number.isFinite(n) ? n : fallback;
 }
+function legacyContentSpansToRichSpans(content, contentSpans) {
+    const full = String(content ?? '');
+    const spans = Array.isArray(contentSpans) ? contentSpans : [];
+    let pos = 0;
+    const out = [];
+    for (const s of spans) {
+        const t = String(s?.text ?? '');
+        const start = pos;
+        const end = pos + t.length;
+        pos = end;
+        const w = s?.fontWeight;
+        const bold = w === true ||
+            w === 'bold' ||
+            w === 'bolder' ||
+            (typeof w === 'number' && w >= 600) ||
+            (typeof w === 'string' && /^\d+$/.test(w) && Number(w) >= 600);
+        const italic = s?.fontStyle === 'italic' || s?.fontStyle === 'oblique';
+        const underline = Boolean(s?.underline);
+        if (bold || italic || underline) {
+            out.push({
+                start,
+                end,
+                ...(bold ? { bold: true } : {}),
+                ...(italic ? { italic: true } : {}),
+                ...(underline ? { underline: true } : {}),
+            });
+        }
+    }
+    return out.length > 0 ? out : undefined;
+}
 function normalizeBg(bg) {
     if (!bg)
         return null;
@@ -45,20 +75,45 @@ function normalizeNodes(elements) {
         const rotation = toNum(el?.rotation, 0);
         const zIndex = toNum(el?.zIndex, idx + 1);
         const step = toNum(el?.step, 0);
+        const contentStr = el?.content ?? '';
+        const richFromLegacy = Array.isArray(el?.richSpans) ? el.richSpans : undefined;
+        const richFromImport = type === 'text' && Array.isArray(el?.contentSpans)
+            ? legacyContentSpansToRichSpans(contentStr, el.contentSpans)
+            : undefined;
+        const richSpans = richFromLegacy ?? richFromImport;
         return {
             id,
             type,
             transform: { x, y, width, height, rotation },
             zIndex,
             step,
+            // Campo utilizado pelo editor para aplicar animate.css.
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            animation: el?.animation ?? el?.anim ?? undefined,
             props: {
-                content: el?.content ?? '',
+                content: contentStr,
                 fontSize: el?.fontSize,
                 fontFamily: el?.fontFamily,
                 fontWeight: el?.fontWeight,
                 fontStyle: el?.fontStyle,
                 textAlign: el?.textAlign,
                 color: el?.color,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                opacity: el?.opacity,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                strokeColor: el?.strokeColor,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                strokeWidth: el?.strokeWidth,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                shadowColor: el?.shadowColor,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                shadowBlur: el?.shadowBlur,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                shadowOpacity: el?.shadowOpacity,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                shadowOffsetX: el?.shadowOffsetX,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                shadowOffsetY: el?.shadowOffsetY,
                 lineHeight: el?.lineHeight,
                 letterSpacing: el?.letterSpacing,
                 textDecoration: el?.textDecoration,
@@ -67,6 +122,7 @@ function normalizeNodes(elements) {
                 storage: el?.storage,
                 shapeProperties: el?.shapeProperties,
                 audio: el?.audio,
+                ...(richSpans ? { richSpans } : {}),
             },
             legacy: el,
         };

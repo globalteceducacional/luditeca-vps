@@ -1,14 +1,14 @@
 import { prisma } from '../lib/prisma.js';
 import { jsonSafe } from '../lib/serialize.js';
 import { requireAdmin } from '../plugins/auth.js';
-import { requireCmsEditor } from '../plugins/auth.js';
+import { requireAuth } from '../plugins/auth.js';
 export async function registerCategoryRoutes(app) {
     // Leitura (necessário no fluxo de criar/editar livros): admin + editor
-    app.get('/categories', { preHandler: requireCmsEditor }, async (_request, reply) => {
+    app.get('/categories', { preHandler: requireAuth }, async (_request, reply) => {
         const rows = await prisma.category.findMany({ orderBy: { name: 'asc' } });
         return reply.send(jsonSafe(rows));
     });
-    app.get('/categories/:id', { preHandler: requireCmsEditor }, async (request, reply) => {
+    app.get('/categories/:id', { preHandler: requireAuth }, async (request, reply) => {
         const id = BigInt(request.params.id);
         const row = await prisma.category.findUnique({ where: { id } });
         if (!row)
