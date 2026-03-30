@@ -210,7 +210,17 @@ export async function registerMediaRoutes(app: FastifyInstance) {
     if (!key) {
       return reply.code(400).send({ error: 'key obrigatorio.' });
     }
-    if (!key.startsWith(`${uid}/`)) {
+    let allowed = key.startsWith(`${uid}/`);
+    if (!allowed) {
+      // Permite acesso a mídia vinculada a livro (compartilhada entre editores),
+      // mesmo que o arquivo tenha sido enviado por outro usuário.
+      const linkedMedia = await prisma.mediaFile.findFirst({
+        where: { bucketName: bucket, filePath: key, bookId: { not: null } },
+        select: { id: true },
+      });
+      allowed = Boolean(linkedMedia);
+    }
+    if (!allowed) {
       return reply.code(403).send({ error: 'Acesso negado.' });
     }
     try {

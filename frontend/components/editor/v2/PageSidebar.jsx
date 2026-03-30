@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { FiCheckSquare, FiEdit2, FiImage, FiMusic, FiPlus, FiTrash2 } from 'react-icons/fi';
+import { FiCheckSquare, FiEdit2, FiImage, FiMusic, FiPlus, FiTrash2, FiUploadCloud } from 'react-icons/fi';
 import {
   storageDeleteObjectWithRoot,
   storageListWithRoot,
   storageReplaceWithRoot,
+  storageUploadWithProgressAndRoot,
 } from '../../../lib/storageApi';
 import { getApiBaseUrl } from '../../../lib/apiClient';
 
@@ -17,6 +18,12 @@ function getBackgroundUrl(page) {
 function isGifUrl(url) {
   const s = String(url || '');
   return /\.gif(?:$|[?#])/i.test(s);
+}
+
+function getAcceptFromMediaType(type) {
+  return type === 'audio'
+    ? 'audio/*,.mp3,.wav,.ogg,.m4a'
+    : 'image/*,.gif,.webp,.png,.jpg,.jpeg';
 }
 
 function GifStillThumb({ url, className = '' }) {
@@ -112,6 +119,8 @@ export default function PageSidebar({
   const [mediaItems, setMediaItems] = useState([]);
   const [mediaLoading, setMediaLoading] = useState(false);
   const [processingPath, setProcessingPath] = useState('');
+  const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const apiBaseUrl = getApiBaseUrl();
 
   useEffect(() => {
@@ -242,6 +251,28 @@ export default function PageSidebar({
     }
   };
 
+  const handleUploadMedia = async (event) => {
+    const file = event.target.files?.[0];
+    if (!bookId || !file) return;
+    const bucket = mediaType === 'audio' ? 'audios' : 'pages';
+    try {
+      setUploadingMedia(true);
+      setUploadProgress(0);
+      await storageUploadWithProgressAndRoot(bucket, {
+        path: '',
+        file,
+        root: 'library',
+        headers: { 'x-book-id': String(bookId) },
+        onProgress: (pct) => setUploadProgress(Number(pct || 0)),
+      });
+      await reloadMedia();
+    } finally {
+      setUploadingMedia(false);
+      setUploadProgress(0);
+      event.target.value = '';
+    }
+  };
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="border-b border-slate-700 px-3 py-2">
@@ -297,15 +328,32 @@ export default function PageSidebar({
             </div>
           </div>
         ) : (
-          <div className="flex items-center justify-between">
-            <div className="text-xs font-semibold text-slate-200">Midia do livro</div>
-            <button
-              type="button"
-              onClick={() => onMediaTypeChange?.(mediaType === 'audio' ? 'image' : 'audio')}
-              className="rounded bg-slate-700 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-200 transition-colors hover:bg-slate-600"
-            >
-              {mediaType === 'audio' ? 'Audios' : 'Imagens'}
-            </button>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-semibold text-slate-200">Midia do livro</div>
+              <button
+                type="button"
+                onClick={() => onMediaTypeChange?.(mediaType === 'audio' ? 'image' : 'audio')}
+                className="rounded bg-slate-700 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-200 transition-colors hover:bg-slate-600"
+              >
+                {mediaType === 'audio' ? 'Audios' : 'Imagens'}
+              </button>
+            </div>
+            <label className="flex w-full cursor-pointer items-center justify-center gap-2 rounded bg-indigo-600 px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-white transition-colors hover:bg-indigo-500">
+              <FiUploadCloud size={13} />
+              {uploadingMedia
+                ? `Enviando ${Math.max(0, Math.min(100, uploadProgress))}%`
+                : mediaType === 'audio'
+                  ? 'Upload de audio'
+                  : 'Upload de imagem'}
+              <input
+                type="file"
+                className="hidden"
+                accept={getAcceptFromMediaType(mediaType)}
+                onChange={handleUploadMedia}
+                disabled={uploadingMedia}
+              />
+            </label>
           </div>
         )}
       </div>
