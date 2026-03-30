@@ -472,8 +472,14 @@ export default function EditBookV2() {
   const handlePickMedia = useCallback((file) => {
     if (!file) return;
     const isAudio = String(file?.type || '').toLowerCase() === 'audio';
-
-    const basePath = file?.path ? `${user?.id}/books/${String(id || '').trim()}/${file.path}`.replace(/\/+/g, '/') : null;
+    const explicitStorageKey =
+      typeof file?.storageKey === 'string' && file.storageKey.trim()
+        ? file.storageKey.trim()
+        : null;
+    const fallbackPath = file?.path
+      ? `${user?.id}/books/${String(id || '').trim()}/${file.path}`.replace(/\/+/g, '/')
+      : null;
+    const basePath = explicitStorageKey || fallbackPath;
 
     const fileVisualType = String(file?.type || '').toLowerCase();
 

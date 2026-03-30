@@ -112,6 +112,60 @@ export async function registerMediaRoutes(app: FastifyInstance) {
     const recursive = String(request.query.recursive || '').toLowerCase() === 'true';
     const bookId = parseBookId(request);
 
+    // Modo compartilhado por livro: lista todos os assets vinculados ao bookId,
+    // independentemente de quem fez o upload/importação.
+    if (bookId && root === 'library') {
+      const rows = await prisma.mediaFile.findMany({
+        where: { bookId, bucketName: bucket },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      const byPath = new Map<string, (typeof rows)[number]>();
+      for (const row of rows) {
+        if (!byPath.has(row.filePath)) {
+          byPath.set(row.filePath, row);
+        }
+      }
+
+      const files = Array.from(byPath.values()).filter((row) => {
+        if (!relPath) return true;
+        const safeRel = assertSafeRelPath(relPath);
+        return row.filePath.includes(safeRel);
+      });
+
+      const fileItems = await Promise.all(
+        files.map(async (row) => {
+          let url: string | null = null;
+          try {
+            url = await presignedGetUrl(bucket, row.filePath, 3600);
+          } catch {
+            url = null;
+          }
+          const fileName = row.fileName || path.posix.basename(row.filePath);
+          return {
+            id: row.id.toString(),
+            name: fileName,
+            type: extType(fileName),
+            // Compat com o frontend atual (path relativo "virtual" da tela)
+            path: fileName,
+            // Chave real no storage (usar sempre que possível)
+            storageKey: row.filePath,
+            url,
+            metadata: {
+              file_size: Number(row.fileSize),
+              created_at: row.createdAt.toISOString(),
+              user_id: row.userId,
+            },
+            user_id: row.userId,
+            updated_at: row.updatedAt.toISOString(),
+            size: Number(row.fileSize),
+          };
+        }),
+      );
+
+      return reply.send({ data: fileItems, error: null, bucket });
+    }
+
     let prefix: string;
     try {
       const effectiveRoot =
