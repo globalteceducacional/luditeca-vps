@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "dev:with-minio": "node scripts/dev-with-minio.js",
-    "build": "tsc",
+    "build": "tsc && node scripts/copy-pptx-assets.mjs",
     "start": "node dist/server.js",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
