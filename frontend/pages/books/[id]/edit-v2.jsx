@@ -20,6 +20,7 @@ import RulersOverlay from '../../../components/editor/RulersOverlay';
 import BottomDock from '../../../components/editor/v2/BottomDock';
 import PageSidebar from '../../../components/editor/v2/PageSidebar';
 import PropertiesInspector from '../../../components/editor/v2/PropertiesInspector';
+import ShapeSidebar from '../../../components/editor/v2/ShapeSidebar';
 import { useAuth } from '../../../contexts/auth';
 import { getAuthors } from '../../../lib/authors';
 import { getBook, updateBook } from '../../../lib/books';
@@ -68,14 +69,29 @@ function makeTextNode() {
   };
 }
 
-function makeShapeNode() {
+function makeShapeNode(shapeType = 'rectangle') {
   return {
     id: String(Date.now()),
     type: 'shape',
-    transform: { x: 120, y: 120, width: 180, height: 140, rotation: 0 },
+    transform: { x: 150, y: 150, width: 150, height: 150, rotation: 0 },
     zIndex: 1,
     step: 0,
-    props: { shapeProperties: { type: 'rectangle', fill: '#fcfdff' } },
+    props: {
+      content: '',
+      shapeProperties: {
+        type: shapeType,
+        fill: '#6366f1',
+        borderRadius: shapeType === 'rectangle' ? 12 : 0,
+      },
+      opacity: 1,
+      strokeColor: '#4338ca',
+      strokeWidth: 2,
+      shadowColor: '#000000',
+      shadowBlur: 10,
+      shadowOpacity: 0.2,
+      shadowOffsetX: 4,
+      shadowOffsetY: 4,
+    },
   };
 }
 
@@ -395,6 +411,20 @@ export default function EditBookV2() {
     patchNode(nodeId, { step: safeStep });
   }, [patchNode]);
 
+  const handleTimelineSelectNode = useCallback((nodeId) => {
+    const target = nodes.find((n) => String(n?.id) === String(nodeId));
+    setSelectedNodeId(nodeId);
+    setLeftTab('properties');
+    setShowTransitionEditor(false);
+    if (target) {
+      const targetStep = Math.max(
+        0,
+        Number.isFinite(Number(target.step)) ? Math.trunc(Number(target.step)) : 0,
+      );
+      setCurrentStep(targetStep);
+    }
+  }, [nodes]);
+
   const deleteNode = useCallback((nodeId) => {
     patchPage(currentPage, (p) => {
       p.nodes = (p.nodes || []).filter((n) => String(n.id) !== String(nodeId));
@@ -458,8 +488,8 @@ export default function EditBookV2() {
     setSelectedNodeId(node.id);
   }, [currentPage, patchPage]);
 
-  const addShape = useCallback(() => {
-    const node = makeShapeNode();
+  const addShape = useCallback((shapeType = 'rectangle') => {
+    const node = makeShapeNode(shapeType);
     patchPage(currentPage, (p) => {
       const maxZ = Math.max(0, ...(p.nodes || []).map((n) => Number(n.zIndex || 0)));
       node.zIndex = maxZ + 1;
@@ -468,6 +498,12 @@ export default function EditBookV2() {
     });
     setSelectedNodeId(node.id);
   }, [currentPage, patchPage]);
+
+  const handleAddShapeFromPalette = useCallback((shapeType) => {
+    addShape(shapeType);
+    setLeftTab('properties');
+    setShowTransitionEditor(false);
+  }, [addShape]);
 
   const handlePickMedia = useCallback((file) => {
     if (!file) return;
@@ -920,11 +956,11 @@ export default function EditBookV2() {
             {!leftCollapsed ? (
               <aside className="relative z-10 flex h-full w-[280px] shrink-0 flex-col border-r border-slate-700 bg-slate-800 shadow-[2px_0_8px_rgba(0,0,0,0.1)]">
                 <div className="border-b border-slate-700 px-3 py-2">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap pb-1">
                     <button
                       type="button"
                       onClick={() => setLeftTab('pages')}
-                      className={`rounded px-2.5 py-1 text-xs font-semibold ${
+                      className={`shrink-0 rounded px-2.5 py-1 text-xs font-semibold ${
                         leftTab === 'pages'
                           ? 'bg-indigo-600 text-white'
                           : 'bg-slate-700 text-slate-200 hover:bg-slate-600'
@@ -935,7 +971,7 @@ export default function EditBookV2() {
                     <button
                       type="button"
                       onClick={() => setLeftTab('media')}
-                      className={`rounded px-2.5 py-1 text-xs font-semibold ${
+                      className={`shrink-0 rounded px-2.5 py-1 text-xs font-semibold ${
                         leftTab === 'media'
                           ? 'bg-indigo-600 text-white'
                           : 'bg-slate-700 text-slate-200 hover:bg-slate-600'
@@ -946,13 +982,24 @@ export default function EditBookV2() {
                     <button
                       type="button"
                       onClick={() => setLeftTab('properties')}
-                      className={`rounded px-2.5 py-1 text-xs font-semibold ${
+                      className={`shrink-0 rounded px-2.5 py-1 text-xs font-semibold ${
                         leftTab === 'properties'
                           ? 'bg-indigo-600 text-white'
                           : 'bg-slate-700 text-slate-200 hover:bg-slate-600'
                       }`}
                     >
                       Propriedades
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLeftTab('shapes')}
+                      className={`shrink-0 rounded px-2.5 py-1 text-xs font-semibold ${
+                        leftTab === 'shapes'
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-slate-700 text-slate-200 hover:bg-slate-600'
+                      }`}
+                    >
+                      Formas
                     </button>
                   </div>
                 </div>
@@ -968,6 +1015,8 @@ export default function EditBookV2() {
                     onTestPageTransition={testPageTransition}
                     showPageTransitionEditor={showTransitionEditor}
                   />
+                ) : leftTab === 'shapes' ? (
+                  <ShapeSidebar onAddShape={handleAddShapeFromPalette} />
                 ) : (
                   <PageSidebar
                     pages={safeV2.pages}
@@ -1000,7 +1049,14 @@ export default function EditBookV2() {
 
             <nav className="z-10 flex w-14 shrink-0 flex-col items-center gap-3 border-r border-slate-700 bg-slate-900 py-4 shadow-inner">
               <ToolButton icon={<FiType size={18} />} label="Texto" onClick={addText} />
-              <ToolButton icon={<FiSquare size={18} />} label="Forma" onClick={addShape} />
+              <ToolButton
+                icon={<FiSquare size={18} />}
+                label="Forma"
+                onClick={() => {
+                  setLeftTab('shapes');
+                  setShowTransitionEditor(false);
+                }}
+              />
             </nav>
 
             <section
@@ -1056,7 +1112,7 @@ export default function EditBookV2() {
             <BottomDock
               pageNodes={nodes}
               selectedNodeId={selectedNodeId}
-              onSelectNode={setSelectedNodeId}
+              onSelectNode={handleTimelineSelectNode}
               currentStep={currentStep}
               onStepChange={setCurrentStep}
               isPlaying={isPlaying}

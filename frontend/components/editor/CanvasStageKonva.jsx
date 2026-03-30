@@ -36,6 +36,10 @@ const QUICK_FONT_OPTIONS = [
   'Trebuchet MS',
   'Courier New',
 ];
+const CONTEXT_MENU_WIDTH = 260;
+const CONTEXT_MENU_HEIGHT = 420;
+const CONTEXT_MENU_GAP = 16;
+const CONTEXT_MENU_SCREEN_PADDING = 8;
 
 function getSafeClientRect(node) {
   try {
@@ -43,6 +47,26 @@ function getSafeClientRect(node) {
   } catch {
     return null;
   }
+}
+
+function resolveContextMenuPositionFromViewportBox(box) {
+  if (!box) return null;
+  let x = box.x + box.width + CONTEXT_MENU_GAP;
+  let y = box.y;
+
+  if (x + CONTEXT_MENU_WIDTH > window.innerWidth - CONTEXT_MENU_SCREEN_PADDING) {
+    x = box.x - CONTEXT_MENU_WIDTH - CONTEXT_MENU_GAP;
+  }
+  if (x < CONTEXT_MENU_SCREEN_PADDING) {
+    x = CONTEXT_MENU_SCREEN_PADDING;
+  }
+  if (y + CONTEXT_MENU_HEIGHT > window.innerHeight - CONTEXT_MENU_SCREEN_PADDING) {
+    y = window.innerHeight - CONTEXT_MENU_HEIGHT - CONTEXT_MENU_SCREEN_PADDING;
+  }
+  if (y < CONTEXT_MENU_SCREEN_PADDING) {
+    y = CONTEXT_MENU_SCREEN_PADDING;
+  }
+  return { x, y };
 }
 
 function getLineGuideStops({ stage, layer, skipId, canvasW, canvasH }) {
@@ -212,7 +236,7 @@ function ImageNode({
   t,
   visual,
   isPreviewMode,
-  setSelectedId,
+  onSelectNode,
   commitNode,
   elementAnimationTest,
   timelinePlayback,
@@ -411,8 +435,8 @@ function ImageNode({
       image={img}
       opacity={visual?.opacity}
       draggable={!isPreviewMode}
-      onClick={() => !isPreviewMode && setSelectedId?.(id)}
-      onTap={() => !isPreviewMode && setSelectedId?.(id)}
+      onClick={(e) => !isPreviewMode && onSelectNode?.(id, e)}
+      onTap={(e) => !isPreviewMode && onSelectNode?.(id, e)}
       onDragEnd={(e) => {
         commitNode(id, { transform: { ...node.transform, x: e.target.x(), y: e.target.y() } });
       }}
@@ -595,7 +619,7 @@ function RichTextNode({
   props,
   visual,
   isPreviewMode,
-  setSelectedId,
+  onSelectNode,
   commitNode,
   elementAnimationTest,
   timelinePlayback,
@@ -814,16 +838,16 @@ function RichTextNode({
       rotation={t.rotation}
       opacity={visual.opacity}
       draggable={!isPreviewMode}
-      onClick={() => !isPreviewMode && setSelectedId?.(id)}
-      onTap={() => !isPreviewMode && setSelectedId?.(id)}
+      onClick={(e) => !isPreviewMode && onSelectNode?.(id, e)}
+      onTap={(e) => !isPreviewMode && onSelectNode?.(id, e)}
       onDblClick={() => {
         if (isPreviewMode) return;
-        setSelectedId?.(id);
+        onSelectNode?.(id);
         onStartInlineTextEdit?.(id);
       }}
       onDblTap={() => {
         if (isPreviewMode) return;
-        setSelectedId?.(id);
+        onSelectNode?.(id);
         onStartInlineTextEdit?.(id);
       }}
       onDragEnd={(e) => {
@@ -880,7 +904,7 @@ function ShapeNode({
   t,
   visual,
   isPreviewMode,
-  setSelectedId,
+  onSelectNode,
   commitNode,
   elementAnimationTest,
   timelinePlayback,
@@ -1086,16 +1110,16 @@ function ShapeNode({
     shadowOffsetY: visual.shadowOffsetY,
     shadowOpacity: visual.shadowOpacity,
     draggable: !isPreviewMode,
-    onClick: () => !isPreviewMode && setSelectedId?.(id),
-    onTap: () => !isPreviewMode && setSelectedId?.(id),
+    onClick: (e) => !isPreviewMode && onSelectNode?.(id, e),
+    onTap: (e) => !isPreviewMode && onSelectNode?.(id, e),
     onDblClick: () => {
       if (isPreviewMode) return;
-      setSelectedId?.(id);
+      onSelectNode?.(id);
       onStartInlineTextEdit?.(id);
     },
     onDblTap: () => {
       if (isPreviewMode) return;
-      setSelectedId?.(id);
+      onSelectNode?.(id);
       onStartInlineTextEdit?.(id);
     },
     onDragEnd: (e) => {
@@ -1163,6 +1187,101 @@ function ShapeNode({
     );
   }
 
+  if (shapeType === 'star') {
+    const cx = t.x + t.width / 2;
+    const cy = t.y + t.height / 2;
+    const outer = Math.min(t.width, t.height) / 2;
+    const inner = outer * 0.45;
+    const points = [];
+    for (let i = 0; i < 10; i += 1) {
+      const angle = (-Math.PI / 2) + (i * Math.PI) / 5;
+      const r = i % 2 === 0 ? outer : inner;
+      points.push(cx + Math.cos(angle) * r, cy + Math.sin(angle) * r);
+    }
+    return (
+      <Group>
+        <Line
+          key={id}
+          {...commonShapeProps}
+          points={points}
+          closed
+        />
+        {textNode}
+      </Group>
+    );
+  }
+
+  if (shapeType === 'arrow') {
+    return (
+      <Group>
+        <Line
+          key={id}
+          {...commonShapeProps}
+          points={[
+            t.x,
+            t.y + t.height / 2,
+            t.x + t.width - Math.max(20, t.width * 0.28),
+            t.y + t.height / 2,
+            t.x + t.width - Math.max(20, t.width * 0.28),
+            t.y + t.height * 0.25,
+            t.x + t.width,
+            t.y + t.height / 2,
+            t.x + t.width - Math.max(20, t.width * 0.28),
+            t.y + t.height * 0.75,
+            t.x + t.width - Math.max(20, t.width * 0.28),
+            t.y + t.height / 2,
+            t.x,
+            t.y + t.height / 2,
+          ]}
+          closed
+          lineJoin="round"
+        />
+        {textNode}
+      </Group>
+    );
+  }
+
+  if (shapeType === 'diamond') {
+    return (
+      <Group>
+        <Line
+          key={id}
+          {...commonShapeProps}
+          points={[
+            t.x + t.width / 2, t.y,
+            t.x + t.width, t.y + t.height / 2,
+            t.x + t.width / 2, t.y + t.height,
+            t.x, t.y + t.height / 2,
+          ]}
+          closed
+        />
+        {textNode}
+      </Group>
+    );
+  }
+
+  if (shapeType === 'hexagon') {
+    const side = Math.min(t.width * 0.25, t.height * 0.28);
+    return (
+      <Group>
+        <Line
+          key={id}
+          {...commonShapeProps}
+          points={[
+            t.x + side, t.y,
+            t.x + t.width - side, t.y,
+            t.x + t.width, t.y + t.height / 2,
+            t.x + t.width - side, t.y + t.height,
+            t.x + side, t.y + t.height,
+            t.x, t.y + t.height / 2,
+          ]}
+          closed
+        />
+        {textNode}
+      </Group>
+    );
+  }
+
   if (shapeType === 'line') {
     return (
       <Line
@@ -1213,11 +1332,13 @@ export default function CanvasStageKonva({
   const stageRef = useRef(null);
   const transformerRef = useRef(null);
   const contentLayerRef = useRef(null);
+  const inlineTextareaRef = useRef(null);
   const draggingRef = useRef(false);
 
   const [guides, setGuides] = useState({ vertical: [], horizontal: [] });
   const [contextMenu, setContextMenu] = useState(null);
   const [canUsePortal, setCanUsePortal] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]);
   /** Edição inline: só { mode, nodeId, value }; posição/tipografia vêm do nó + pan/zoom. */
   const [inlineEditor, setInlineEditor] = useState(null);
 
@@ -1271,6 +1392,34 @@ export default function CanvasStageKonva({
     };
   }, [canvasW, canvasH]);
 
+  useEffect(() => {
+    if (!selectedId) {
+      setSelectedIds([]);
+      return;
+    }
+    const sid = String(selectedId);
+    setSelectedIds((prev) => (prev.includes(sid) ? prev : [sid]));
+  }, [selectedId]);
+
+  const handleSelectNode = useCallback((nodeId, konvaEvt) => {
+    const sid = String(nodeId || '');
+    if (!sid) return;
+    const evt = konvaEvt?.evt;
+    const hasCtrl = Boolean(evt?.ctrlKey || evt?.metaKey);
+    if (!hasCtrl) {
+      setSelectedIds([sid]);
+      setSelectedId?.(sid);
+      return;
+    }
+    setSelectedIds((prev) => {
+      const has = prev.includes(sid);
+      const next = has ? prev.filter((id) => id !== sid) : [...prev, sid];
+      const primary = next[next.length - 1] || null;
+      setSelectedId?.(primary);
+      return next;
+    });
+  }, [setSelectedId]);
+
   // Sync Transformer selection
   useEffect(() => {
     const tr = transformerRef.current;
@@ -1281,20 +1430,22 @@ export default function CanvasStageKonva({
       tr.getLayer()?.batchDraw();
       return;
     }
-    if (!selectedId) {
+    if (!selectedIds.length) {
       tr.nodes([]);
       tr.getLayer()?.batchDraw();
       return;
     }
-    const selectedNode = stage.findOne(`#node-${selectedId}`);
-    if (selectedNode) {
-      tr.nodes([selectedNode]);
+    const selectedNodes = selectedIds
+      .map((id) => stage.findOne(`#node-${String(id)}`))
+      .filter(Boolean);
+    if (selectedNodes.length) {
+      tr.nodes(selectedNodes);
       tr.getLayer()?.batchDraw();
     } else {
       tr.nodes([]);
       tr.getLayer()?.batchDraw();
     }
-  }, [selectedId, isPreviewMode, timelineStep, inlineEditor?.nodeId]);
+  }, [selectedIds, isPreviewMode, timelineStep, inlineEditor?.nodeId]);
 
   const commitNode = useCallback(
     (id, patch) => {
@@ -1316,6 +1467,7 @@ export default function CanvasStageKonva({
       if (isPreviewMode) return;
       const target = e.target;
       if (target === target.getStage() || target?.name?.() === 'background') {
+        setSelectedIds([]);
         setSelectedId?.(null);
       }
     },
@@ -1371,8 +1523,32 @@ export default function CanvasStageKonva({
       setGuides(
         nextGuides.vertical.length || nextGuides.horizontal.length ? nextGuides : { vertical: [], horizontal: [] },
       );
+
+      // Reancora menu contextual ao nó durante drag (sem depender de commit no fim do drag).
+      const targetId = String(target?.id?.() || '').replace(/^node-/, '');
+      if (contextMenu?.nodeId && String(contextMenu.nodeId) === targetId) {
+        const targetRect = getSafeClientRect(target);
+        const containerRect = stage.container?.()?.getBoundingClientRect?.();
+        if (targetRect && containerRect) {
+          const anchored = resolveContextMenuPositionFromViewportBox({
+            x: containerRect.left + targetRect.x,
+            y: containerRect.top + targetRect.y,
+            width: targetRect.width,
+            height: targetRect.height,
+          });
+          if (anchored) {
+            setContextMenu((prev) => {
+              if (!prev || String(prev.nodeId) !== targetId) return prev;
+              const sameX = Math.abs(toNum(prev.x, 0) - anchored.x) < 0.5;
+              const sameY = Math.abs(toNum(prev.y, 0) - anchored.y) < 0.5;
+              if (sameX && sameY) return prev;
+              return { ...prev, x: anchored.x, y: anchored.y };
+            });
+          }
+        }
+      }
     },
-    [canvasW, canvasH, isPreviewMode],
+    [canvasW, canvasH, isPreviewMode, contextMenu?.nodeId],
   );
 
   const handleDragEnd = useCallback(() => {
@@ -1415,16 +1591,21 @@ export default function CanvasStageKonva({
       String(props?.textDecoration || 'none') === 'underline' ? 'underline' : 'none';
     const fontFamily = String(props?.fontFamily || 'Roboto');
 
-    const left = pan.x + t.x * scale;
-    const top = pan.y + t.y * scale;
-    const width = Math.max(24, t.width * scale);
-    const height = Math.max(20, t.height * scale);
+    const isShapeInline = inlineEditor.mode === 'shape';
+    const shapePadX = isShapeInline ? 8 * scale : 0;
+    const shapePadY = isShapeInline ? 6 * scale : 0;
+    const left = pan.x + t.x * scale + shapePadX;
+    const top = pan.y + t.y * scale + shapePadY;
+    const width = Math.max(24, t.width * scale - shapePadX * 2);
+    const height = Math.max(20, t.height * scale - shapePadY * 2);
+    const rotation = toNum(t.rotation, 0);
 
     return {
       left,
       top,
       width,
       height,
+      rotation,
       fontSize: Math.max(10, fs),
       fontFamily,
       fontWeight,
@@ -1466,6 +1647,27 @@ export default function CanvasStageKonva({
     }
     setInlineEditor(null);
   }, [inlineEditor, nodes, commitNode]);
+
+  const syncInlineTextareaMetrics = useCallback(() => {
+    const el = inlineTextareaRef.current;
+    if (!el || !inlineEditor) return;
+    if (inlineEditor.mode === 'text') {
+      el.style.paddingTop = '0px';
+      el.style.height = 'auto';
+      el.style.height = `${Math.max(el.scrollHeight, 20)}px`;
+      return;
+    }
+    // Em shape, simulamos o verticalAlign "middle" do Konva.
+    el.style.height = `${Math.max(el.clientHeight, 20)}px`;
+    el.style.paddingTop = '0px';
+    const freeSpace = Math.max(0, el.clientHeight - el.scrollHeight);
+    el.style.paddingTop = `${Math.floor(freeSpace / 2)}px`;
+  }, [inlineEditor]);
+
+  useEffect(() => {
+    if (!inlineEditor) return;
+    syncInlineTextareaMetrics();
+  }, [inlineEditor?.value, inlineEditor?.nodeId, inlineEditor?.mode, inlineEditorLayout?.height, syncInlineTextareaMetrics]);
 
   // O Transformer fica por cima do Group e intercepta o duplo clique. Tratamos no Stage (alvo = nó ou Transformer).
   useEffect(() => {
@@ -1573,20 +1775,41 @@ export default function CanvasStageKonva({
     panStartRef.current = null;
   }, []);
 
+  const getAnchoredContextMenuPosition = useCallback((nodeId) => {
+    if (!nodeId) return null;
+    const stage = stageRef.current;
+    if (!stage) return null;
+    const container = stage.container?.();
+    if (!container) return null;
+    const containerRect = container.getBoundingClientRect?.();
+    if (!containerRect) return null;
+    const konvaNode = stage.findOne(`#node-${String(nodeId)}`);
+    const box = getSafeClientRect(konvaNode);
+    if (!box) return null;
+
+    return resolveContextMenuPositionFromViewportBox({
+      x: containerRect.left + box.x,
+      y: containerRect.top + box.y,
+      width: box.width,
+      height: box.height,
+    });
+  }, []);
+
   const handleNodeContextMenu = useCallback(
     (e, nodeId) => {
       const wrap = stageWrapRef.current;
       if (!wrap) return;
       const clientX = Number(e?.evt?.clientX || 0);
       const clientY = Number(e?.evt?.clientY || 0);
+      const anchored = getAnchoredContextMenuPosition(nodeId);
       setSelectedId?.(nodeId);
       setContextMenu({
         nodeId: String(nodeId),
-        x: Math.max(8, Math.min(window.innerWidth - 260, clientX + 8)),
-        y: Math.max(8, Math.min(window.innerHeight - 420, clientY + 8)),
+        x: anchored?.x ?? Math.max(8, Math.min(window.innerWidth - CONTEXT_MENU_WIDTH, clientX + 8)),
+        y: anchored?.y ?? Math.max(8, Math.min(window.innerHeight - CONTEXT_MENU_HEIGHT, clientY + 8)),
       });
     },
-    [setSelectedId],
+    [setSelectedId, getAnchoredContextMenuPosition],
   );
 
   const handleStageContextMenu = useCallback(
@@ -1701,6 +1924,19 @@ export default function CanvasStageKonva({
     };
   }, [contextMenu]);
 
+  useEffect(() => {
+    if (!contextMenu?.nodeId) return;
+    const anchored = getAnchoredContextMenuPosition(contextMenu.nodeId);
+    if (!anchored) return;
+    setContextMenu((prev) => {
+      if (!prev || String(prev.nodeId) !== String(contextMenu.nodeId)) return prev;
+      const sameX = Math.abs(toNum(prev.x, 0) - anchored.x) < 0.5;
+      const sameY = Math.abs(toNum(prev.y, 0) - anchored.y) < 0.5;
+      if (sameX && sameY) return prev;
+      return { ...prev, x: anchored.x, y: anchored.y };
+    });
+  }, [contextMenu?.nodeId, getAnchoredContextMenuPosition, pan.x, pan.y, scale, viewport.width, viewport.height, nodes]);
+
   const konvaGifNodes = useMemo(() => {
     return nodesForStage.filter((n) => n?.type === 'image' && nodeIsAnimatedGif(n));
   }, [nodesForStage]);
@@ -1779,8 +2015,6 @@ export default function CanvasStageKonva({
           <button type="button" className="rounded bg-gray-800 px-2 py-1 hover:bg-gray-700" onClick={() => setZoom(1)}>
             100%
           </button>
-          <div className="ml-2 text-[10px] text-gray-400">Pan: segure Espaço e arraste (ou Shift)</div>
-          <div className="text-[10px] text-gray-500">Tambem funciona com botao direito</div>
         </div>
       )}
 
@@ -1851,25 +2085,30 @@ export default function CanvasStageKonva({
 
       {inlineEditor && inlineEditorLayout ? (
         <textarea
+          ref={inlineTextareaRef}
           aria-label="Editar texto no canvas"
           autoFocus
+          spellCheck={false}
           value={inlineEditor.value}
-          onChange={(e) =>
-            setInlineEditor((prev) => (prev ? { ...prev, value: e.target.value } : prev))
-          }
+          onChange={(e) => {
+            const nextValue = e.target.value;
+            setInlineEditor((prev) => (prev ? { ...prev, value: nextValue } : prev));
+            window.requestAnimationFrame(() => syncInlineTextareaMetrics());
+          }}
           onBlur={applyInlineEditor}
           onMouseDown={(e) => e.stopPropagation()}
           onContextMenu={(e) => {
             e.preventDefault();
             e.stopPropagation();
             if (!inlineEditor?.nodeId) return;
+            const anchored = getAnchoredContextMenuPosition(inlineEditor.nodeId);
             const clientX = e.clientX;
             const clientY = e.clientY;
             setSelectedId?.(inlineEditor.nodeId);
             setContextMenu({
               nodeId: String(inlineEditor.nodeId),
-              x: Math.max(8, Math.min(window.innerWidth - 260, clientX + 8)),
-              y: Math.max(8, Math.min(window.innerHeight - 420, clientY + 8)),
+              x: anchored?.x ?? Math.max(8, Math.min(window.innerWidth - CONTEXT_MENU_WIDTH, clientX + 8)),
+              y: anchored?.y ?? Math.max(8, Math.min(window.innerHeight - CONTEXT_MENU_HEIGHT, clientY + 8)),
             });
           }}
           onKeyDown={(e) => {
@@ -1888,7 +2127,7 @@ export default function CanvasStageKonva({
               applyInlineEditor();
             }
           }}
-          className="pointer-events-auto absolute z-[4] m-0 box-border rounded-none border border-black bg-white p-2 shadow-none outline-none"
+          className="pointer-events-auto absolute z-[4] m-0 box-border rounded-none border-0 bg-transparent p-0 shadow-none outline-none"
           style={{
             left: inlineEditorLayout.left,
             top: inlineEditorLayout.top,
@@ -1903,11 +2142,20 @@ export default function CanvasStageKonva({
             textAlign: inlineEditorLayout.textAlign,
             lineHeight: inlineEditorLayout.lineHeight,
             textDecoration: inlineEditorLayout.textDecoration,
-            overflow: inlineEditor.mode === 'text' ? 'auto' : 'hidden',
+            overflow: 'hidden',
             whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
+            overflowWrap: 'normal',
+            wordBreak: 'normal',
             caretColor: inlineEditorLayout.color,
             resize: 'none',
+            background: 'transparent',
+            border: 'none',
+            outline: 'none',
+            boxSizing: 'border-box',
+            padding: 0,
+            margin: 0,
+            transform: `rotate(${inlineEditorLayout.rotation}deg)`,
+            transformOrigin: 'left top',
           }}
         />
       ) : null}
@@ -1972,8 +2220,8 @@ export default function CanvasStageKonva({
               rotation={baseGifTransform.rotation}
               fill="rgba(0,0,0,0.001)"
               draggable={!isPreviewMode}
-              onClick={() => !isPreviewMode && setSelectedId?.(String(baseGifNode.id || ''))}
-              onTap={() => !isPreviewMode && setSelectedId?.(String(baseGifNode.id || ''))}
+              onClick={(e) => !isPreviewMode && handleSelectNode(String(baseGifNode.id || ''), e)}
+              onTap={(e) => !isPreviewMode && handleSelectNode(String(baseGifNode.id || ''), e)}
               onDragEnd={(e) => {
                 commitNode(String(baseGifNode.id || ''), {
                   transform: {
@@ -2005,7 +2253,7 @@ export default function CanvasStageKonva({
                   props={props}
                   visual={visual}
                   isPreviewMode={isPreviewMode}
-                  setSelectedId={setSelectedId}
+                  onSelectNode={handleSelectNode}
                   commitNode={commitNode}
                   elementAnimationTest={elementAnimationTest}
                   timelinePlayback={timelinePlayback}
@@ -2026,7 +2274,7 @@ export default function CanvasStageKonva({
                   t={t}
                   visual={visual}
                   isPreviewMode={isPreviewMode}
-                  setSelectedId={setSelectedId}
+                  onSelectNode={handleSelectNode}
                   commitNode={commitNode}
                   elementAnimationTest={elementAnimationTest}
                   timelinePlayback={timelinePlayback}
@@ -2043,7 +2291,7 @@ export default function CanvasStageKonva({
                   t={t}
                   visual={visual}
                   isPreviewMode={isPreviewMode}
-                  setSelectedId={setSelectedId}
+                  onSelectNode={handleSelectNode}
                   commitNode={commitNode}
                   elementAnimationTest={elementAnimationTest}
                   timelinePlayback={timelinePlayback}
@@ -2068,7 +2316,7 @@ export default function CanvasStageKonva({
                 stroke="#64748b"
                 dash={[6, 4]}
                 draggable={!isPreviewMode}
-                onClick={() => !isPreviewMode && setSelectedId?.(id)}
+                onClick={(e) => !isPreviewMode && handleSelectNode(id, e)}
                 onDragEnd={(e) => {
                   commitNode(id, { transform: { ...node.transform, x: e.target.x(), y: e.target.y() } });
                 }}
@@ -2105,26 +2353,45 @@ export default function CanvasStageKonva({
                 if (newBox.y + newBox.height > canvasH) return oldBox;
                 return newBox;
               }}
+              onTransform={() => {
+                if (!contextMenu?.nodeId || !selectedId) return;
+                if (String(contextMenu.nodeId) !== String(selectedId)) return;
+                const anchored = getAnchoredContextMenuPosition(selectedId);
+                if (!anchored) return;
+                setContextMenu((prev) => {
+                  if (!prev || String(prev.nodeId) !== String(selectedId)) return prev;
+                  const sameX = Math.abs(toNum(prev.x, 0) - anchored.x) < 0.5;
+                  const sameY = Math.abs(toNum(prev.y, 0) - anchored.y) < 0.5;
+                  if (sameX && sameY) return prev;
+                  return { ...prev, x: anchored.x, y: anchored.y };
+                });
+              }}
               onTransformEnd={() => {
                 const stage = stageRef.current;
-                if (!stage || !selectedId) return;
-                const n = stage.findOne(`#node-${selectedId}`);
-                if (!n) return;
-                const nodeObj = nodes.find((x) => String(x?.id) === String(selectedId));
-                if (!nodeObj) return;
-                const scaleX = n.scaleX();
-                const scaleY = n.scaleY();
-                n.scaleX(1);
-                n.scaleY(1);
-                commitNode(selectedId, {
-                  transform: {
-                    ...nodeObj.transform,
-                    x: n.x(),
-                    y: n.y(),
-                    rotation: n.rotation(),
-                    width: Math.max(1, n.width() * scaleX),
-                    height: Math.max(1, n.height() * scaleY),
-                  },
+                const tr = transformerRef.current;
+                if (!stage || !tr) return;
+                const targets = tr.nodes() || [];
+                if (!targets.length) return;
+                targets.forEach((n) => {
+                  const rawId = typeof n.id === 'function' ? n.id() : '';
+                  const nodeId = String(rawId || '').replace(/^node-/, '');
+                  if (!nodeId) return;
+                  const nodeObj = nodes.find((x) => String(x?.id) === nodeId);
+                  if (!nodeObj) return;
+                  const scaleX = n.scaleX();
+                  const scaleY = n.scaleY();
+                  n.scaleX(1);
+                  n.scaleY(1);
+                  commitNode(nodeId, {
+                    transform: {
+                      ...nodeObj.transform,
+                      x: n.x(),
+                      y: n.y(),
+                      rotation: n.rotation(),
+                      width: Math.max(1, n.width() * scaleX),
+                      height: Math.max(1, n.height() * scaleY),
+                    },
+                  });
                 });
               }}
             />
@@ -2209,6 +2476,18 @@ export default function CanvasStageKonva({
                     className="h-8 w-full cursor-pointer rounded border border-slate-700 bg-slate-950 p-1"
                   />
                 </div>
+                <div className="grid grid-cols-6 gap-1">
+                  {['#111111', '#ffffff', '#6366f1', '#4338ca', '#ef4444', '#22c55e'].map((sw) => (
+                    <button
+                      key={sw}
+                      type="button"
+                      title={sw}
+                      onClick={() => quickPatchNode({ props: { color: sw } })}
+                      className="h-6 w-full rounded border border-slate-700"
+                      style={{ backgroundColor: sw }}
+                    />
+                  ))}
+                </div>
                 <div className="grid grid-cols-3 gap-1.5">
                   {['left', 'center', 'right'].map((al) => (
                     <button
@@ -2252,7 +2531,7 @@ export default function CanvasStageKonva({
                         },
                       })
                     }
-                    className={`rounded px-2 py-1 text-xs ${
+                    className={`rounded px-2 py-1 text-xs italic ${
                       String(selectedNode?.props?.fontStyle || 'normal') === 'italic'
                         ? 'bg-indigo-600 text-white'
                         : 'bg-slate-800 text-slate-200 hover:bg-slate-700'

@@ -59,7 +59,7 @@ export default function ProTimeline({
   const timelineRef = useRef(null);
   const [draggingId, setDraggingId] = useState(null);
 
-  const { maxSteps, tracks } = useMemo(() => {
+  const { maxSteps, rows } = useMemo(() => {
     const stepsUsed = safeElements.map((e) =>
       Number.isFinite(Number(e?.step)) ? Number(e.step) : 0,
     );
@@ -79,39 +79,21 @@ export default function ProTimeline({
       return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
     });
 
-    const preparedTracks = entries.map(([trackName, data]) => {
-      const byStep = new Map();
+    const preparedRows = entries.flatMap(([trackName, data]) => {
       const itemsOrdered = [...(data.items || [])].sort(
         (a, b) => Number(a?.zIndex || 0) - Number(b?.zIndex || 0),
       );
-
-      for (const el of itemsOrdered) {
-        const step = clampInt(el?.step ?? 0, 0, max);
-        if (!byStep.has(step)) byStep.set(step, []);
-        byStep.get(step).push(el);
-      }
-
-      const indexById = new Map();
-      let maxStack = 1;
-      for (const [, stack] of byStep) {
-        maxStack = Math.max(maxStack, stack.length);
-        stack.forEach((el, idx) => {
-          indexById.set(String(el.id), idx);
-        });
-      }
-
-      const rowHeight = Math.max(52, maxStack * 34 + 10);
-
-      return {
-        trackName,
+      if (itemsOrdered.length === 0) return [];
+      return itemsOrdered.map((item, idx) => ({
+        rowId: `${trackName}-${String(item?.id || idx)}`,
+        trackName: idx === 0 ? trackName : `${trackName} ${idx + 1}`,
         icon: data.icon,
-        items: itemsOrdered,
-        rowHeight,
-        indexById,
-      };
+        item,
+        rowHeight: 52,
+      }));
     });
 
-    return { maxSteps: max, tracks: preparedTracks };
+    return { maxSteps: max, rows: preparedRows };
   }, [safeElements]);
 
   const steps = Array.from({ length: maxSteps + 1 }).map((_, i) => i);
@@ -191,15 +173,15 @@ export default function ProTimeline({
             Trilhas ({safeElements.length})
           </div>
           <div className="flex-1 overflow-y-auto">
-            {tracks.map((track) => (
+            {rows.map((row) => (
               <div
-                key={track.trackName}
+                key={row.rowId}
                 className="flex items-center justify-between border-b border-slate-800 px-3 transition-colors hover:bg-slate-800"
-                style={{ height: `${track.rowHeight}px` }}
+                style={{ height: `${row.rowHeight}px` }}
               >
                 <div className="flex items-center gap-2 text-xs font-medium text-slate-300">
-                  <span className="text-indigo-400">{track.icon}</span>
-                  {track.trackName}
+                  <span className="text-indigo-400">{row.icon}</span>
+                  {row.trackName}
                 </div>
               </div>
             ))}
@@ -233,14 +215,14 @@ export default function ProTimeline({
             <div className="absolute top-0 h-0 w-0 -translate-x-1/2 border-l-[5px] border-r-[5px] border-t-[6px] border-l-transparent border-r-transparent border-t-indigo-500" />
           </div>
           <div className="min-w-max pb-20">
-            {tracks.length === 0 ? (
+            {rows.length === 0 ? (
               <div className="p-4 text-xs text-slate-500">Nenhum elemento no canvas.</div>
             ) : (
-              tracks.map((track) => (
+              rows.map((row) => (
                 <div
-                  key={track.trackName}
+                  key={row.rowId}
                   className="relative flex border-b border-slate-800"
-                  style={{ height: `${track.rowHeight}px` }}
+                  style={{ height: `${row.rowHeight}px` }}
                 >
                   {steps.map((s) => (
                     <div
@@ -251,9 +233,9 @@ export default function ProTimeline({
                       style={{ width: `${STEP_WIDTH}px` }}
                     />
                   ))}
-                  {track.items.map((el) => {
+                  {(() => {
+                    const el = row.item;
                     const step = clampInt(el?.step ?? 0, 0, maxSteps);
-                    const stackIndex = track.indexById.get(String(el?.id)) || 0;
                     const isSelected = selectedElement && String(el?.id) === String(selectedElement);
                     const isDragging = draggingId === el.id;
                     const previewUrl = getImagePreviewUrl(el);
@@ -270,7 +252,7 @@ export default function ProTimeline({
                         className="absolute flex h-8 cursor-grab items-center overflow-hidden rounded-md border transition-all active:cursor-grabbing"
                         style={{
                           left: `${step * STEP_WIDTH + 4}px`,
-                          top: `${6 + stackIndex * 32}px`,
+                          top: '10px',
                           width: `${STEP_WIDTH - 8}px`,
                           zIndex: isDragging ? 50 : isSelected ? 10 : 1,
                           backgroundColor: isSelected ? '#4f46e5' : '#334155',
@@ -293,7 +275,7 @@ export default function ProTimeline({
                         </div>
                       </div>
                     );
-                  })}
+                  })()}
                 </div>
               ))
             )}

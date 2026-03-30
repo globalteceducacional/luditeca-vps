@@ -435,6 +435,10 @@ export default function PropertiesInspector({
 
   const transform = selectedNode.transform || {};
   const props = selectedNode.props || {};
+  const shapeProps =
+    props.shapeProperties && typeof props.shapeProperties === 'object' && !Array.isArray(props.shapeProperties)
+      ? props.shapeProperties
+      : {};
   const isText = selectedNode.type === 'text';
   const isImage = selectedNode.type === 'image';
   const isShape = selectedNode.type === 'shape';
@@ -610,6 +614,115 @@ export default function PropertiesInspector({
             </label>
           </div>
         </section>
+
+        {isShape ? (
+          <section>
+            <h3 className="mb-3 text-xs font-semibold text-slate-300">
+              Forma
+            </h3>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="col-span-2 flex flex-col gap-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                  Tipo da forma
+                </span>
+                <select
+                  className="w-full rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-200 transition-colors focus:border-indigo-500 focus:outline-none"
+                  value={String(shapeProps.type || 'rectangle')}
+                  onChange={(e) =>
+                    onPatchNode(selectedNode.id, {
+                      props: {
+                        ...props,
+                        shapeProperties: {
+                          ...shapeProps,
+                          type: e.target.value,
+                        },
+                      },
+                    })
+                  }
+                >
+                  <option value="rectangle">Retangulo</option>
+                  <option value="circle">Circulo</option>
+                  <option value="triangle">Triangulo</option>
+                  <option value="star">Estrela</option>
+                  <option value="arrow">Seta</option>
+                  <option value="diamond">Losango</option>
+                  <option value="hexagon">Hexagono</option>
+                  <option value="line">Linha</option>
+                </select>
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                  Cor de fundo
+                </span>
+                <input
+                  type="color"
+                  value={String(shapeProps.fill || '#fcfdff')}
+                  onChange={(e) =>
+                    onPatchNode(selectedNode.id, {
+                      props: {
+                        ...props,
+                        shapeProperties: {
+                          ...shapeProps,
+                          fill: e.target.value,
+                        },
+                      },
+                    })
+                  }
+                  className="h-8 w-full cursor-pointer rounded border border-slate-700 bg-slate-900 p-1"
+                />
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                  Cor da borda
+                </span>
+                <input
+                  type="color"
+                  value={String(props.strokeColor || '#000000')}
+                  onChange={(e) =>
+                    onPatchNode(selectedNode.id, {
+                      props: { ...props, strokeColor: e.target.value },
+                    })
+                  }
+                  className="h-8 w-full cursor-pointer rounded border border-slate-700 bg-slate-900 p-1"
+                />
+              </label>
+
+              <PropGridInput
+                label="Espessura da borda"
+                value={toNum(props.strokeWidth, 2)}
+                min={0}
+                max={24}
+                step={1}
+                onChange={(e) =>
+                  onPatchNode(selectedNode.id, {
+                    props: { ...props, strokeWidth: Math.max(0, toNum(e.target.value, 2)) },
+                  })
+                }
+              />
+
+              <PropGridInput
+                label="Raio dos cantos"
+                value={toNum(shapeProps.borderRadius, 0)}
+                min={0}
+                max={120}
+                step={1}
+                onChange={(e) =>
+                  onPatchNode(selectedNode.id, {
+                    props: {
+                      ...props,
+                      shapeProperties: {
+                        ...shapeProps,
+                        borderRadius: Math.max(0, toNum(e.target.value, 0)),
+                      },
+                    },
+                  })
+                }
+              />
+            </div>
+          </section>
+        ) : null}
 
         <section>
           <h3 className="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-300">
