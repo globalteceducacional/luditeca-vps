@@ -1668,15 +1668,11 @@ export async function runImportPptxEngine(req, res) {
     const importStamp = Date.now();
     if (!dryRun) {
       supabase = buildStorageClient(req);
-      importDebug('upload .pptx original (opcional)…', { bookId, importStamp });
-      await uploadOriginalPptx({
-        supabase,
-        userId,
+      // O .pptx original é usado apenas para processamento em memória.
+      // Não persistimos o arquivo no storage para evitar acúmulo desnecessário.
+      importDebug('upload do .pptx original desativado (uso temporário apenas)', {
         bookId,
-        importSessionId,
         importStamp,
-        fileName: originalName,
-        binary: fileBuffer,
       });
     }
 
@@ -1699,148 +1695,162 @@ export async function runImportPptxEngine(req, res) {
       const slideNumber = parseInt(slideXmlPath.match(/slide(\d+)\.xml/i)?.[1] || '0', 10);
       if (!slideNumber) continue;
 
-      const slideFile = zip.file(slideXmlPath);
-      if (!slideFile) continue;
-      const slideXml = await slideFile.async('text');
-      const parsedSlide = parseSlideXmlSafe(slideXml, xmlParser);
-      const slideTransition = extractSlideTransitionFromParsed(parsedSlide);
-      const shapeAnimBySpid = extractShapeEntranceAnimations(parsedSlide);
-      const animatedShapeCount = Object.keys(shapeAnimBySpid || {}).length;
-      if (animatedShapeCount > 0) {
-        importDiagnostics.slidesWithTimingAnimations += 1;
-        importDiagnostics.totalAnimatedShapesDetected += animatedShapeCount;
-      }
-      if (slideTransition?.type && slideTransition.type !== 'none') {
-        if (slideTransition?.via === 'child') {
-          importDiagnostics.transitionsByChild += 1;
-        } else if (slideTransition?.via === 'attr') {
-          importDiagnostics.transitionsByAttr += 1;
+      try {
+        const slideFile = zip.file(slideXmlPath);
+        if (!slideFile) continue;
+        const slideXml = await slideFile.async('text');
+        const parsedSlide = parseSlideXmlSafe(slideXml, xmlParser);
+        const slideTransition = extractSlideTransitionFromParsed(parsedSlide);
+        const shapeAnimBySpid = extractShapeEntranceAnimations(parsedSlide);
+        const animatedShapeCount = Object.keys(shapeAnimBySpid || {}).length;
+        if (animatedShapeCount > 0) {
+          importDiagnostics.slidesWithTimingAnimations += 1;
+          importDiagnostics.totalAnimatedShapesDetected += animatedShapeCount;
         }
-      } else {
-        importDiagnostics.transitionsNone += 1;
-      }
-      const shapeElements = buildShapeElementsFromParsedSlide(
-        parsedSlide,
-        slideCx,
-        slideCy,
-        slideNumber,
-        String(importStamp),
-        shapeAnimBySpid,
-        importDiagnostics.ignoredItems,
-      );
-      const textElementsRaw = buildTextElementsFromParsedSlide(
-        parsedSlide,
-        slideCx,
-        slideCy,
-        slideNumber,
-        String(importStamp),
-        shapeAnimBySpid,
-        importDiagnostics.ignoredItems,
-      );
-      const textElements = normalizeTextElementsFonts(textElementsRaw, themeFonts);
-
-      const relPath = `ppt/slides/_rels/slide${slideNumber}.xml.rels`;
-      const relFile = zip.file(relPath);
-      let binary = null;
-      let chosenName = null;
-
-      if (relFile) {
-        const relXml = await relFile.async('text');
-        const relData = xmlParser.parse(relXml);
-        const relationships = normalizeRels(relData?.Relationships?.Relationship);
-        const imageRels = relationships.filter(
-          (rel) => typeof rel?.Type === 'string' && rel.Type.includes('/image') && rel.Target,
+        if (slideTransition?.type && slideTransition.type !== 'none') {
+          if (slideTransition?.via === 'child') {
+            importDiagnostics.transitionsByChild += 1;
+          } else if (slideTransition?.via === 'attr') {
+            importDiagnostics.transitionsByAttr += 1;
+          }
+        } else {
+          importDiagnostics.transitionsNone += 1;
+        }
+        const shapeElements = buildShapeElementsFromParsedSlide(
+          parsedSlide,
+          slideCx,
+          slideCy,
+          slideNumber,
+          String(importStamp),
+          shapeAnimBySpid,
+          importDiagnostics.ignoredItems,
         );
+        const textElementsRaw = buildTextElementsFromParsedSlide(
+          parsedSlide,
+          slideCx,
+          slideCy,
+          slideNumber,
+          String(importStamp),
+          shapeAnimBySpid,
+          importDiagnostics.ignoredItems,
+        );
+        const textElements = normalizeTextElementsFonts(textElementsRaw, themeFonts);
 
-        let bestSize = 0;
-        for (const rel of imageRels) {
-          const normalizedTarget = resolveSlideRelMediaPath(rel.Target);
-          if (!normalizedTarget) continue;
-          const mediaFile = zip.file(normalizedTarget);
-          if (!mediaFile) continue;
-          const buf = Buffer.from(await mediaFile.async('uint8array'));
-          if (buf.length >= bestSize) {
-            bestSize = buf.length;
-            binary = buf;
-            chosenName = path.posix.basename(normalizedTarget);
+        const relPath = `ppt/slides/_rels/slide${slideNumber}.xml.rels`;
+        const relFile = zip.file(relPath);
+        let binary = null;
+        let chosenName = null;
+
+        if (relFile) {
+          const relXml = await relFile.async('text');
+          const relData = xmlParser.parse(relXml);
+          const relationships = normalizeRels(relData?.Relationships?.Relationship);
+          const imageRels = relationships.filter(
+            (rel) => typeof rel?.Type === 'string' && rel.Type.includes('/image') && rel.Target,
+          );
+
+          let bestSize = 0;
+          for (const rel of imageRels) {
+            const normalizedTarget = resolveSlideRelMediaPath(rel.Target);
+            if (!normalizedTarget) continue;
+            const mediaFile = zip.file(normalizedTarget);
+            if (!mediaFile) continue;
+            const buf = Buffer.from(await mediaFile.async('uint8array'));
+            if (buf.length >= bestSize) {
+              bestSize = buf.length;
+              binary = buf;
+              chosenName = path.posix.basename(normalizedTarget);
+            }
           }
         }
-      }
 
-      if (!binary && textElements.length === 0 && shapeElements.length === 0) {
-        pushIgnoredItem(importDiagnostics.ignoredItems, {
-          slideNumber,
-          category: 'slide',
-          reason: 'no_image_and_no_visible_elements',
-        });
-        importDebug(`slide ${slideNumber}: ignorado (sem imagem, texto ou forma)`);
-        continue;
-      }
-
-      const summary = {
-        slideNumber,
-        fileName: chosenName,
-        fileSize: binary ? binary.length : 0,
-        textCount: textElements.length,
-        shapeCount: shapeElements.length,
-      };
-      slideSummaries.push(summary);
-      discoveredSlides.push({
-        slideNumber,
-        fileName: chosenName || 'sem-imagem',
-        fileSize: binary ? binary.length : 0,
-      });
-
-      if (dryRun) {
-        continue;
-      }
-
-      let uploaded = null;
-      let uploadWarning = null;
-
-      if (binary) {
-        importDebug(`slide ${slideNumber}: upload imagem`, {
-          fileName: chosenName,
-          bytes: binary.length,
-          textos: textElements.length,
-          formas: shapeElements.length,
-        });
-        try {
-          uploaded = await uploadSlideImage({
-            supabase,
-            userId,
-            bookId,
-            importSessionId,
-            importStamp,
+        if (!binary && textElements.length === 0 && shapeElements.length === 0) {
+          pushIgnoredItem(importDiagnostics.ignoredItems, {
             slideNumber,
-            fileName: chosenName || `slide-${slideNumber}.png`,
-            binary,
+            category: 'slide',
+            reason: 'no_image_and_no_visible_elements',
           });
-          uploadedSlides.push(uploaded);
-        } catch (slideError) {
-          uploadWarning = {
-            slideNumber,
-            fileName: chosenName,
-            error: slideError?.message || 'Falha desconhecida no upload do slide',
-          };
-          warnings.push(uploadWarning);
-          importDebug('slide com aviso (continua importação)', uploadWarning);
+          importDebug(`slide ${slideNumber}: ignorado (sem imagem, texto ou forma)`);
+          continue;
         }
-      } else {
-        importDebug(`slide ${slideNumber}: só texto (sem imagem de fundo)`, {
-          textos: textElements.length,
-          formas: shapeElements.length,
+
+        const summary = {
+          slideNumber,
+          fileName: chosenName,
+          fileSize: binary ? binary.length : 0,
+          textCount: textElements.length,
+          shapeCount: shapeElements.length,
+        };
+        slideSummaries.push(summary);
+        discoveredSlides.push({
+          slideNumber,
+          fileName: chosenName || 'sem-imagem',
+          fileSize: binary ? binary.length : 0,
+        });
+
+        if (dryRun) {
+          continue;
+        }
+
+        let uploaded = null;
+        let uploadWarning = null;
+
+        if (binary) {
+          importDebug(`slide ${slideNumber}: upload imagem`, {
+            fileName: chosenName,
+            bytes: binary.length,
+            textos: textElements.length,
+            formas: shapeElements.length,
+          });
+          try {
+            uploaded = await uploadSlideImage({
+              supabase,
+              userId,
+              bookId,
+              importSessionId,
+              importStamp,
+              slideNumber,
+              fileName: chosenName || `slide-${slideNumber}.png`,
+              binary,
+            });
+            uploadedSlides.push(uploaded);
+          } catch (slideError) {
+            uploadWarning = {
+              slideNumber,
+              fileName: chosenName,
+              error: slideError?.message || 'Falha desconhecida no upload do slide',
+            };
+            warnings.push(uploadWarning);
+            importDebug('slide com aviso (continua importação)', uploadWarning);
+          }
+        } else {
+          importDebug(`slide ${slideNumber}: só texto (sem imagem de fundo)`, {
+            textos: textElements.length,
+            formas: shapeElements.length,
+          });
+        }
+
+        slidePayloads.push({
+          slideNumber,
+          uploaded,
+          textElements,
+          shapeElements,
+          uploadWarning,
+          transition: slideTransition,
+        });
+      } catch (slideUnhandledError) {
+        const warning = {
+          slideNumber,
+          fileName: null,
+          error:
+            slideUnhandledError?.message ||
+            'Falha inesperada ao processar o slide.',
+        };
+        warnings.push(warning);
+        importDebugError('falha inesperada no slide (continua importação)', slideUnhandledError, {
+          slideNumber,
         });
       }
-
-      slidePayloads.push({
-        slideNumber,
-        uploaded,
-        textElements,
-        shapeElements,
-        uploadWarning,
-        transition: slideTransition,
-      });
     }
 
     importDebug('loop slides concluído', {

@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { FiBook, FiUser, FiTag, FiLogOut, FiMenu, FiX, FiChevronLeft, FiChevronRight, FiSettings, FiUsers } from 'react-icons/fi';
@@ -22,7 +22,7 @@ export default function Layout({ children }) {
     }
   }, [router.pathname]);
 
-  // Guard global de navegaÃ§Ã£o por role (evita acesso ao CMS por aluno/professor)
+  // Guard global de navegação por role (evita acesso ao CMS por aluno/professor)
   useEffect(() => {
     if (!user?.role) return;
     const isAppOnly = user.role === ROLES.aluno || user.role === ROLES.professor;
@@ -74,7 +74,7 @@ export default function Layout({ children }) {
 
           <Link href="/admin/users" className={`flex items-center ${collapsed ? 'justify-center' : 'px-3'} p-3 rounded-lg ${router.pathname.startsWith('/admin/users') ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100'}`}>
             <FiUsers className={collapsed ? "mx-auto" : "mr-2"} size={collapsed ? 26 : 20} />
-            {!collapsed && <span className="truncate">UsuÃ¡rios</span>}
+            {!collapsed && <span className="truncate">Usuários</span>}
           </Link>
         </>
       )}
@@ -126,7 +126,7 @@ export default function Layout({ children }) {
                 </div>
                 <div className="ml-2 truncate">
                   <p className="text-sm font-medium text-gray-700 truncate">
-                    {user?.user_metadata?.name || user?.email || 'UsuÃ¡rio'}
+                    {user?.user_metadata?.name || user?.email || 'Usuário'}
                   </p>
                 </div>
               </div>
@@ -219,7 +219,7 @@ export default function Layout({ children }) {
                   </div>
                   <div className="ml-3 truncate">
                     <p className="text-sm font-medium text-gray-700 truncate">
-                      {user?.user_metadata?.name || user?.email || 'UsuÃ¡rio'}
+                      {user?.user_metadata?.name || user?.email || 'Usuário'}
                     </p>
                   </div>
                 </div>

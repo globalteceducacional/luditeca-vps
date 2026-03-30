@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { FiPlus, FiEdit, FiTrash2 } from 'react-icons/fi';
@@ -20,7 +20,7 @@ export default function Categories() {
   const [deleteLoading, setDeleteLoading] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Verificar autenticaÃ§Ã£o
+  // Verificar autenticação
   useEffect(() => {
     if (!authLoading && !user) {
       router.push('/login');
@@ -53,13 +53,13 @@ export default function Categories() {
       const categoriesWithImages = data.map(category => {
         let imageUrl = null;
         
-        // Verificar se existe image_url e nÃ£o estÃ¡ vazio
+        // Verificar se existe image_url e não está vazio
         if (category.image_url && category.image_url.trim() !== '') {
           // Se for uma URL completa, usar diretamente
           if (category.image_url.startsWith('http')) {
             imageUrl = category.image_url;
           } else {
-            // Caso contrÃ¡rio, obter do bucket 'categories'
+            // Caso contrário, obter do bucket 'categories'
             imageUrl = getFileUrl('categories', category.image_url);
           }
         }
@@ -84,9 +84,9 @@ export default function Categories() {
     }
   };
   
-  // FunÃ§Ã£o para excluir uma categoria
+  // Função para excluir uma categoria
   const handleDeleteCategory = async (id) => {
-    if (window.confirm('Tem certeza que deseja excluir esta categoria? Esta aÃ§Ã£o nÃ£o pode ser desfeita.')) {
+    if (window.confirm('Tem certeza que deseja excluir esta categoria? Esta ação não pode ser desfeita.')) {
       try {
         setDeleteLoading(id);
         const { error } = await deleteCategory(id);
@@ -106,7 +106,7 @@ export default function Categories() {
     }
   };
   
-  // FunÃ§Ã£o para criar uma nova categoria
+  // Função para criar uma nova categoria
   const handleCreateCategory = () => {
     router.push('/categories/new');
   };
