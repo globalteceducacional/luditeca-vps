@@ -1,8 +1,9 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { prisma } from '../lib/prisma.js';
-import { assertBucket, copyObject, deleteObject, listAllKeys, listObjects, presignedGetUrl, presignedPutUrl, putObject, } from '../lib/s3.js';
+import { assertBucket, copyObject, deleteObject, listAllKeys, listObjects, objectExists, presignedGetUrl, presignedPutUrl, putObject, } from '../lib/s3.js';
 import { requireCmsEditor } from '../plugins/auth.js';
+import { generateThumbnail, getImageMeta, isSupportedImageType } from '../lib/imageProcessor.js';
 const MEDIA_BUCKET_MAP = {
     image: 'covers',
     background: 'covers',
@@ -72,10 +73,8 @@ function userFsBase(uid, root) {
 }
 function extType(name) {
     const ext = name.split('.').pop()?.toLowerCase() || '';
-    if (['jpg', 'jpeg', 'png', 'webp', 'svg'].includes(ext))
+    if (['jpg', 'jpeg', 'png', 'webp', 'svg', 'gif'].includes(ext))
         return 'image';
-    if (ext === 'gif')
-        return 'gif';
     if (['mp3', 'wav', 'ogg'].includes(ext))
         return 'audio';
     if (['mp4', 'webm', 'mov'].includes(ext))
@@ -83,6 +82,33 @@ function extType(name) {
     if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt'].includes(ext))
         return 'document';
     return 'other';
+}
+/** Mesma convenção do upload: `dir/.thumbs/{basename}.thumb.png`. */
+function companionThumbnailKey(mediaKey) {
+    const norm = String(mediaKey || '').replace(/\\/g, '/');
+    const dir = path.posix.dirname(norm);
+    const base = path.posix.basename(norm);
+    return `${dir}/.thumbs/${base}.thumb.png`;
+}
+function eligibleForThumbnail(filePath, fileName) {
+    const norm = String(filePath || '').replace(/\\/g, '/');
+    if (norm.includes('/.thumbs/'))
+        return false;
+    return extType(fileName) === 'image';
+}
+async function attachThumbnailFields(bucket, filePath, fileName) {
+    if (!eligibleForThumbnail(filePath, fileName))
+        return {};
+    const thumbKey = companionThumbnailKey(filePath);
+    if (!(await objectExists(bucket, thumbKey)))
+        return {};
+    try {
+        const thumbUrl = await presignedGetUrl(bucket, thumbKey, 3600);
+        return { thumbStorageKey: thumbKey, ...(thumbUrl ? { thumbUrl } : {}) };
+    }
+    catch {
+        return {};
+    }
 }
 export async function registerMediaRoutes(app) {
     /**
@@ -131,6 +157,7 @@ export async function registerMediaRoutes(app) {
                     url = null;
                 }
                 const fileName = row.fileName || path.posix.basename(row.filePath);
+                const thumbs = await attachThumbnailFields(bucket, row.filePath, fileName);
                 return {
                     id: row.id.toString(),
                     name: fileName,
@@ -140,6 +167,7 @@ export async function registerMediaRoutes(app) {
                     // Chave real no storage (usar sempre que possível)
                     storageKey: row.filePath,
                     url,
+                    ...thumbs,
                     metadata: {
                         file_size: Number(row.fileSize),
                         created_at: row.createdAt.toISOString(),
@@ -202,12 +230,14 @@ export async function registerMediaRoutes(app) {
                 url = null;
             }
             const meta = metaByPath.get(fullPath);
+            const thumbs = await attachThumbnailFields(bucket, fullPath, file.name);
             return {
                 id: file.id,
                 name: file.name,
                 type,
                 path: toRel(fullPath),
                 url,
+                ...thumbs,
                 metadata: meta
                     ? {
                         file_size: Number(meta.fileSize),
@@ -320,6 +350,26 @@ export async function registerMediaRoutes(app) {
         const stamp = crypto.randomUUID();
         const key = `${baseDir}/${stamp}-${safeName}`;
         await putObject(bucket, key, buf, ct);
+        // Gerar thumbnail PNG para imagens (inclui 1.º frame de GIF animado).
+        let thumbKey = null;
+        let imageMeta = null;
+        if (isSupportedImageType(ct)) {
+            try {
+                const [thumbBuf, meta] = await Promise.all([
+                    generateThumbnail(buf, ct, { width: 400, height: 300 }),
+                    getImageMeta(buf),
+                ]);
+                if (thumbBuf) {
+                    thumbKey = `${baseDir}/.thumbs/${stamp}-${safeName}.thumb.png`;
+                    await putObject(bucket, thumbKey, thumbBuf, 'image/png');
+                }
+                if (meta)
+                    imageMeta = { width: meta.width, height: meta.height };
+            }
+            catch {
+                /* thumbnail é best-effort; nunca bloqueia o upload */
+            }
+        }
         try {
             await prisma.mediaFile.create({
                 data: {
@@ -337,18 +387,37 @@ export async function registerMediaRoutes(app) {
             /* metadados opcionais */
         }
         let url = null;
+        let thumbUrl = null;
         try {
             url = await presignedGetUrl(bucket, key, 3600);
         }
         catch {
             url = null;
         }
+        if (thumbKey) {
+            try {
+                thumbUrl = await presignedGetUrl(bucket, thumbKey, 3600);
+            }
+            catch {
+                thumbUrl = null;
+            }
+        }
         const effectiveRoot = bookId && root === 'library'
             ? `books/${bookId.toString()}`
             : root;
         const basePrefix = `${userFsBase(uid, effectiveRoot)}/`;
         const relPath = key.startsWith(basePrefix) ? key.slice(basePrefix.length) : key;
-        return reply.send({ data: { path: relPath, url, name: safeName }, error: null, bucket });
+        return reply.send({
+            data: {
+                path: relPath,
+                url,
+                name: safeName,
+                thumbUrl: thumbUrl ?? undefined,
+                ...(imageMeta ? { width: imageMeta.width, height: imageMeta.height } : {}),
+            },
+            error: null,
+            bucket,
+        });
     });
     /**
      * Substitui um arquivo existente mantendo o mesmo caminho.
@@ -409,6 +478,28 @@ export async function registerMediaRoutes(app) {
         if (!buf)
             return reply.code(400).send({ error: 'Ficheiro em falta.' });
         await putObject(bucket, key, buf, ct);
+        if (isSupportedImageType(ct)) {
+            try {
+                const thumbBuf = await generateThumbnail(buf, ct, { width: 400, height: 300 });
+                if (thumbBuf) {
+                    const tKey = companionThumbnailKey(key);
+                    await putObject(bucket, tKey, thumbBuf, 'image/png');
+                }
+            }
+            catch {
+                /* miniatura best-effort */
+            }
+        }
+        else {
+            try {
+                const tKey = companionThumbnailKey(key);
+                if (await objectExists(bucket, tKey))
+                    await deleteObject(bucket, tKey);
+            }
+            catch {
+                /* ignore */
+            }
+        }
         const metadataUpdate = {
             fileName: path.posix.basename(key),
             fileType: ct,

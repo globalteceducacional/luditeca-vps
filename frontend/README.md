@@ -115,13 +115,15 @@ npm run build
 luditeca-front/
 ├── components/
 │   └── editor/
-│       ├── CanvasEditor.js    # Editor principal
-│       ├── MediaLibrary.js    # Biblioteca de mídia
-│       └── StepContoler.js        # Controle de StepContoler
+│       ├── CanvasStageKonva.jsx   # Editor principal (Konva)
+│       ├── ProTimeline.js
+│       ├── v2/                    # panels/, media/, hooks/, lib/ — ver editor/v2/README.md
+│       └── canvas/                # Utilitários de snap/viewport
 ├── pages/
 │   └── books/
 │       └── [id]/
-│           └── edit.js        # Página de edição
+│           ├── edit.js            # Reexporta edit-v2
+│           └── edit-v2.jsx        # Página de edição do livro
 └── README.md
 ```
 

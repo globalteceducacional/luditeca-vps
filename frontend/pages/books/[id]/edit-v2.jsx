@@ -8,8 +8,11 @@ import {
   FiChevronRight,
   FiGrid,
   FiImage,
+  FiLayers,
+  FiList,
   FiSave,
   FiSquare,
+  FiSliders,
   FiType,
   FiUpload,
 } from 'react-icons/fi';
@@ -17,11 +20,17 @@ import { toast } from 'react-hot-toast';
 
 import EditorLayout from '../../../components/EditorLayout';
 import RulersOverlay from '../../../components/editor/RulersOverlay';
-import BottomDock from '../../../components/editor/v2/BottomDock';
-import LayerManagerPanel from '../../../components/editor/v2/LayerManagerPanel';
-import PageSidebar from '../../../components/editor/v2/PageSidebar';
-import PropertiesInspector from '../../../components/editor/v2/PropertiesInspector';
-import ShapeSidebar from '../../../components/editor/v2/ShapeSidebar';
+import BottomDock from '../../../components/editor/v2/panels/BottomDock';
+import {
+  endEditorMetric,
+  reportEditorMetric,
+  startEditorMetric,
+} from '../../../components/editor/v2/lib/editorMetrics';
+import useEditorState from '../../../components/editor/v2/hooks/useEditorState';
+import LayerManagerPanel from '../../../components/editor/v2/panels/LayerManagerPanel';
+import PageSidebar from '../../../components/editor/v2/panels/PageSidebar';
+import PropertiesInspector from '../../../components/editor/v2/panels/PropertiesInspector';
+import ShapeSidebar from '../../../components/editor/v2/panels/ShapeSidebar';
 import { useAuth } from '../../../contexts/auth';
 import { getAuthors } from '../../../lib/authors';
 import { getBook, updateBook } from '../../../lib/books';
@@ -38,6 +47,14 @@ const CanvasStageKonva = dynamic(
   () => import('../../../components/editor/CanvasStageKonva'),
   { ssr: false },
 );
+
+const LEFT_PANELS = [
+  { id: 'pages', label: 'Páginas', icon: FiList },
+  { id: 'media', label: 'Mídia', icon: FiImage },
+  { id: 'properties', label: 'Propriedades', icon: FiSliders },
+  { id: 'layers', label: 'Camadas', icon: FiLayers },
+  { id: 'shapes', label: 'Formas', icon: FiSquare },
+];
 
 function ensurePagesV2(v2) {
   if (!isPagesV2(v2)) return { version: 2, canvas: { width: 1280, height: 720 }, pages: [] };
@@ -219,11 +236,6 @@ export default function EditBookV2() {
   const prevStepForPlaybackRef = useRef(null);
   const isResizingBottomRef = useRef(false);
   const resizeStartRef = useRef(null);
-  const historyRef = useRef({ undo: [], redo: [] });
-  const isApplyingHistoryRef = useRef(false);
-  const currentPageRef = useRef(0);
-  const selectedNodeIdRef = useRef(null);
-  const clipboardRef = useRef(null);
   const saveBookRef = useRef(null);
 
   const safeV2 = useMemo(() => ensurePagesV2(pagesV2), [pagesV2]);
@@ -240,22 +252,32 @@ export default function EditBookV2() {
     });
   }, [currentPage, safeV2.pages]);
 
-  useEffect(() => {
-    currentPageRef.current = currentPage;
-  }, [currentPage]);
-
-  useEffect(() => {
-    selectedNodeIdRef.current = selectedNodeId;
-  }, [selectedNodeId]);
-
-  const pushUndoSnapshot = useCallback((pageIndex, pageSnapshot) => {
-    if (!pageSnapshot) return;
-    historyRef.current.undo.push({ pageIndex, page: deepClone(pageSnapshot) });
-    if (historyRef.current.undo.length > 80) {
-      historyRef.current.undo.shift();
-    }
-    historyRef.current.redo = [];
-  }, []);
+  const {
+    historyRef,
+    isApplyingHistoryRef,
+    currentPageRef,
+    selectedNodeIdRef,
+    clipboardRef,
+    pushUndoSnapshot,
+    patchPage,
+    patchNode,
+    updateNodeStep,
+    deleteNode,
+    duplicateNodeToCurrentPage,
+    addPage,
+    deletePage,
+    undo,
+    redo,
+  } = useEditorState({
+    pagesV2,
+    setPagesV2,
+    currentPage,
+    setCurrentPage,
+    selectedNodeId,
+    setSelectedNodeId,
+    setIsModified,
+    ensurePagesV2,
+  });
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/login');
@@ -352,26 +374,6 @@ export default function EditBookV2() {
     setMediaType('audio');
     setLeftTab('media');
   }, []);
-  const patchPage = useCallback((idx, patcher) => {
-    setPagesV2((prev) => {
-      const base = ensurePagesV2(prev);
-      const next = deepClone(base);
-      if (!next.pages[idx]) return next;
-      if (!isApplyingHistoryRef.current) {
-        pushUndoSnapshot(idx, base.pages[idx]);
-      }
-      next.pages[idx] = patcher(next.pages[idx]);
-      return next;
-    });
-    setIsModified(true);
-  }, [pushUndoSnapshot]);
-
-  const patchNode = useCallback((nodeId, patch) => {
-    patchPage(currentPage, (p) => {
-      p.nodes = (p.nodes || []).map((n) => (String(n.id) === String(nodeId) ? { ...n, ...patch } : n));
-      return p;
-    });
-  }, [currentPage, patchPage]);
 
   const patchCurrentPageTransition = useCallback(
     (transitionPatch) => {
@@ -447,11 +449,6 @@ export default function EditBookV2() {
     setShowTransitionEditor(true);
   }, []);
 
-  const updateNodeStep = useCallback((nodeId, nextStep) => {
-    const safeStep = Math.max(0, Number.isFinite(Number(nextStep)) ? Math.trunc(Number(nextStep)) : 0);
-    patchNode(nodeId, { step: safeStep });
-  }, [patchNode]);
-
   const handleTimelineSelectNode = useCallback((nodeId) => {
     const target = nodes.find((n) => String(n?.id) === String(nodeId));
     setSelectedNodeId(nodeId);
@@ -465,58 +462,6 @@ export default function EditBookV2() {
       setCurrentStep(targetStep);
     }
   }, [nodes]);
-
-  const deleteNode = useCallback((nodeId) => {
-    patchPage(currentPage, (p) => {
-      p.nodes = (p.nodes || []).filter((n) => String(n.id) !== String(nodeId));
-      return p;
-    });
-    if (String(selectedNodeId) === String(nodeId)) setSelectedNodeId(null);
-  }, [currentPage, patchPage, selectedNodeId]);
-
-  const duplicateNodeToCurrentPage = useCallback((nodeLike) => {
-    if (!nodeLike) return;
-    const copy = deepClone(nodeLike);
-    copy.id = String(Date.now());
-    if (copy.transform) {
-      copy.transform = {
-        ...copy.transform,
-        x: Number(copy.transform.x || 0) + 24,
-        y: Number(copy.transform.y || 0) + 24,
-      };
-    }
-    patchPage(currentPageRef.current, (p) => {
-      const maxZ = Math.max(0, ...(p.nodes || []).map((n) => Number(n.zIndex || 0)));
-      copy.zIndex = maxZ + 1;
-      p.nodes = [...(p.nodes || []), copy];
-      return p;
-    });
-    setSelectedNodeId(copy.id);
-  }, [patchPage]);
-
-  const addPage = useCallback(() => {
-    setPagesV2((prev) => {
-      const base = ensurePagesV2(prev);
-      const next = JSON.parse(JSON.stringify(base));
-      next.pages.push({ id: String(Date.now()), background: null, nodes: [], meta: { orientation: 'landscape' } });
-      return next;
-    });
-    setCurrentPage((v) => v + 1);
-    setIsModified(true);
-  }, []);
-
-  const deletePage = useCallback(() => {
-    setPagesV2((prev) => {
-      const base = ensurePagesV2(prev);
-      if (base.pages.length <= 1) return base;
-      const next = JSON.parse(JSON.stringify(base));
-      next.pages.splice(currentPage, 1);
-      return next;
-    });
-    setCurrentPage((v) => Math.max(0, v - 1));
-    setSelectedNodeId(null);
-    setIsModified(true);
-  }, [currentPage]);
 
   const addText = useCallback(() => {
     const node = makeTextNode();
@@ -551,16 +496,6 @@ export default function EditBookV2() {
     const normalizedType = String(file?.type || '').toLowerCase();
     const isAudio = normalizedType === 'audio';
     const isVideo = normalizedType === 'video';
-    const nameProbe = String(file?.name || file?.path || '');
-    const urlProbe = String(file?.url || '');
-    const mimeProbe = String(file?.fileType || file?.metadata?.mime || '').toLowerCase();
-    const isGifMedia =
-      normalizedType === 'gif' ||
-      (!isAudio &&
-        !isVideo &&
-        (mimeProbe === 'image/gif' ||
-          /\.gif(?:$|[?#])/i.test(nameProbe) ||
-          /\.gif(?:$|[?#])/i.test(urlProbe)));
     const bucketFromFile =
       typeof file?.bucket === 'string' && file.bucket.trim()
         ? file.bucket.trim()
@@ -578,7 +513,27 @@ export default function EditBookV2() {
       : null;
     const basePath = explicitStorageKey || fallbackPath;
 
-    const fileVisualType = isGifMedia ? 'gif' : normalizedType;
+    const videoMeta =
+      file && typeof file === 'object' && file.editorMeta && typeof file.editorMeta === 'object'
+        ? (file.editorMeta.video || {})
+        : {};
+    const imageMeta =
+      file && typeof file === 'object' && file.editorMeta && typeof file.editorMeta === 'object'
+        ? (file.editorMeta.image || null)
+        : null;
+    const videoStartAt = Math.max(0, Number(videoMeta?.startAt) || 0);
+    const videoEndAt = Math.max(0, Number(videoMeta?.endAt) || 0);
+    const videoPlaybackRate = Math.max(0.25, Math.min(2, Number(videoMeta?.playbackRate) || 1));
+    const videoVolume = Math.max(0, Math.min(1, Number(videoMeta?.volume) || 1));
+    const videoMuted = videoMeta?.muted !== undefined ? Boolean(videoMeta.muted) : true;
+    const videoLoop = videoMeta?.loop !== undefined ? Boolean(videoMeta.loop) : false;
+
+    const sourceName = String(file?.name || '').trim();
+    const looksLikeGif =
+      !isVideo &&
+      !isAudio &&
+      (/\.gif$/i.test(sourceName) ||
+        String(file?.mimeType || file?.mimetype || file?.contentType || '').toLowerCase() === 'image/gif');
 
     if (!isAudio) {
       const node = {
@@ -590,17 +545,21 @@ export default function EditBookV2() {
         props: {
           content: String(file?.url || ''),
           ...(basePath ? { storage: { bucket: bucketFromFile, filePath: basePath } } : {}),
-          ...(isGifMedia ? { mediaKind: 'gif' } : {}),
+          ...(sourceName && !isVideo ? { librarySourceName: sourceName } : {}),
+          ...(looksLikeGif ? { mediaKind: 'gif' } : {}),
+          // Ajustes visuais (brilho/contraste/saturação) gravados no metadado da biblioteca.
+          ...(imageMeta && !isVideo ? { imageAdjustments: imageMeta } : {}),
           ...(isVideo
             ? {
                 mediaKind: 'video',
                 poster: '',
                 controls: true,
                 autoplay: false,
-                muted: true,
-                loop: false,
-                startAt: 0,
-                volume: 1,
+                muted: videoMuted,
+                loop: videoLoop,
+                startAt: videoStartAt,
+                endAt: videoEndAt > videoStartAt ? videoEndAt : 0,
+                volume: videoVolume,
                 objectFit: 'cover',
                 bookVideoLayout: 'standard',
                 videoCornerRadius: 12,
@@ -608,7 +567,7 @@ export default function EditBookV2() {
                 videoCaption: '',
                 videoPlaceholderFill: '#111827',
                 showPlayBadge: true,
-                playbackRate: 1,
+                playbackRate: videoPlaybackRate,
               }
             : {}),
         },
@@ -713,31 +672,11 @@ export default function EditBookV2() {
       if (isMod && (key === 'z' || key === 'y')) {
         event.preventDefault();
         const shouldRedo = key === 'y' || (key === 'z' && event.shiftKey);
-        const fromKey = shouldRedo ? 'redo' : 'undo';
-        const toKey = shouldRedo ? 'undo' : 'redo';
-        const entry = historyRef.current[fromKey].pop();
-        if (!entry) return;
-
-        setPagesV2((prev) => {
-          const base = ensurePagesV2(prev);
-          if (!base.pages?.[entry.pageIndex]) return base;
-          const next = deepClone(base);
-          const beforeTarget = deepClone(base.pages[entry.pageIndex]);
-          historyRef.current[toKey].push({ pageIndex: entry.pageIndex, page: beforeTarget });
-          if (historyRef.current[toKey].length > 80) {
-            historyRef.current[toKey].shift();
-          }
-          isApplyingHistoryRef.current = true;
-          next.pages[entry.pageIndex] = deepClone(entry.page);
-          return next;
-        });
-
-        setCurrentPage(entry.pageIndex);
-        setSelectedNodeId(null);
-        setIsModified(true);
-        Promise.resolve().then(() => {
-          isApplyingHistoryRef.current = false;
-        });
+        if (shouldRedo) {
+          void redo();
+        } else {
+          void undo();
+        }
         return;
       }
 
@@ -769,7 +708,7 @@ export default function EditBookV2() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [pagesV2, deleteNode, duplicateNodeToCurrentPage, nodes, patchNode]);
+  }, [pagesV2, deleteNode, duplicateNodeToCurrentPage, nodes, patchNode, undo, redo]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -827,6 +766,7 @@ export default function EditBookV2() {
 
   const saveBook = useCallback(async () => {
     if (!book || !id || !pagesV2) return;
+    const started = startEditorMetric();
     setSaving(true);
     const payload = {
       ...book,
@@ -859,6 +799,14 @@ export default function EditBookV2() {
             }
           : prev,
       );
+      reportEditorMetric('book.save.success', endEditorMetric(started), {
+        pages: Array.isArray(pagesV2?.pages) ? pagesV2.pages.length : 0,
+      });
+    } else {
+      toast.error(String(error?.message || 'Não foi possível salvar o projeto.'));
+      reportEditorMetric('book.save.error', endEditorMetric(started), {
+        pages: Array.isArray(pagesV2?.pages) ? pagesV2.pages.length : 0,
+      });
     }
   }, [book, id, pagesV2, title, description, authorId, categoryId, coverImage]);
 
@@ -1142,62 +1090,30 @@ export default function EditBookV2() {
             {!leftCollapsed ? (
               <aside className="relative z-10 flex h-full min-h-0 w-[280px] shrink-0 flex-col border-r border-slate-700 bg-slate-800 shadow-[2px_0_8px_rgba(0,0,0,0.1)]">
                 <div className="shrink-0 border-b border-slate-700 px-3 py-2">
-                  <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap pb-1">
-                    <button
-                      type="button"
-                      onClick={() => setLeftTab('pages')}
-                      className={`shrink-0 rounded px-2.5 py-1 text-xs font-semibold ${
-                        leftTab === 'pages'
-                          ? 'bg-indigo-600 text-white'
-                          : 'bg-slate-700 text-slate-200 hover:bg-slate-600'
-                      }`}
-                    >
-                      Paginas
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setLeftTab('media')}
-                      className={`shrink-0 rounded px-2.5 py-1 text-xs font-semibold ${
-                        leftTab === 'media'
-                          ? 'bg-indigo-600 text-white'
-                          : 'bg-slate-700 text-slate-200 hover:bg-slate-600'
-                      }`}
-                    >
-                      Midia
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setLeftTab('properties')}
-                      className={`shrink-0 rounded px-2.5 py-1 text-xs font-semibold ${
-                        leftTab === 'properties'
-                          ? 'bg-indigo-600 text-white'
-                          : 'bg-slate-700 text-slate-200 hover:bg-slate-600'
-                      }`}
-                    >
-                      Propriedades
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setLeftTab('layers')}
-                      className={`shrink-0 rounded px-2.5 py-1 text-xs font-semibold ${
-                        leftTab === 'layers'
-                          ? 'bg-indigo-600 text-white'
-                          : 'bg-slate-700 text-slate-200 hover:bg-slate-600'
-                      }`}
-                    >
-                      Camadas
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setLeftTab('shapes')}
-                      className={`shrink-0 rounded px-2.5 py-1 text-xs font-semibold ${
-                        leftTab === 'shapes'
-                          ? 'bg-indigo-600 text-white'
-                          : 'bg-slate-700 text-slate-200 hover:bg-slate-600'
-                      }`}
-                    >
-                      Formas
-                    </button>
+                  <div className="grid grid-cols-5 gap-1.5 pb-1">
+                    {LEFT_PANELS.map((panel) => {
+                      const Icon = panel.icon;
+                      const active = leftTab === panel.id;
+                      return (
+                        <button
+                          key={panel.id}
+                          type="button"
+                          title={panel.label}
+                          onClick={() => setLeftTab(panel.id)}
+                          className={`inline-flex min-w-0 flex-col items-center justify-center gap-1 rounded-md px-1 py-1.5 text-[10px] font-semibold transition-colors ${
+                            active
+                              ? 'bg-indigo-600 text-white shadow-sm'
+                              : 'bg-slate-700 text-slate-200 hover:bg-slate-600'
+                          }`}
+                        >
+                          <Icon size={13} />
+                          <span className="block w-full truncate text-center leading-tight">{panel.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                    {LEFT_PANELS.find((p) => p.id === leftTab)?.label || 'Painel'}
                   </div>
                 </div>
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -1282,6 +1198,7 @@ export default function EditBookV2() {
                   <CanvasStageKonva
                     pagesV2={safeV2}
                     pageIndex={currentPage}
+                    bookId={id}
                     onChange={(next) => {
                       setPagesV2((prev) => {
                         if (!isApplyingHistoryRef.current) {

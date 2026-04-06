@@ -11,6 +11,7 @@ import {
   FiVideo,
   FiVolume2,
 } from 'react-icons/fi';
+import { MAX_TIMELINE_STEP, MIN_VISIBLE_TIMELINE_STEPS } from './editorConstants';
 
 function clampInt(n, min, max) {
   const v = Number.isFinite(Number(n)) ? Math.trunc(Number(n)) : 0;
@@ -44,6 +45,34 @@ function getImagePreviewUrl(el) {
   if (!el || el.type !== 'image') return '';
   const src = String(el?.content || '').trim();
   return src || '';
+}
+
+function normalizeTimelineElement(raw, idx) {
+  if (!raw || typeof raw !== 'object') {
+    return {
+      id: `el-${idx}`,
+      type: 'shape',
+      content: '',
+      step: 0,
+      zIndex: idx + 1,
+    };
+  }
+  if (raw?.props && typeof raw.props === 'object') {
+    return {
+      id: String(raw?.id || `el-${idx}`),
+      type: String(raw?.type || 'shape'),
+      content: raw?.props?.content ?? '',
+      step: Number.isFinite(Number(raw?.step)) ? Number(raw.step) : 0,
+      zIndex: Number.isFinite(Number(raw?.zIndex)) ? Number(raw.zIndex) : idx + 1,
+    };
+  }
+  return {
+    id: String(raw?.id || `el-${idx}`),
+    type: String(raw?.type || 'shape'),
+    content: raw?.content ?? '',
+    step: Number.isFinite(Number(raw?.step)) ? Number(raw.step) : 0,
+    zIndex: Number.isFinite(Number(raw?.zIndex)) ? Number(raw.zIndex) : idx + 1,
+  };
 }
 
 /** Largura de coluna e densidade da UI conforme viewport (timeline em telas pequenas). */
@@ -99,12 +128,14 @@ export default function ProTimeline({
   onPlayPause,
   onStepBack,
   onStepForward,
-  elements,
+  nodes,
+  elements, // compat legada temporária
   onElementSelect,
   selectedElement,
   onUpdateElementStep,
 }) {
-  const safeElements = Array.isArray(elements) ? elements : [];
+  const source = Array.isArray(nodes) ? nodes : Array.isArray(elements) ? elements : [];
+  const safeElements = source.map((el, idx) => normalizeTimelineElement(el, idx));
   const timelineRef = useRef(null);
   const [draggingId, setDraggingId] = useState(null);
   const { stepWidth: STEP_WIDTH, trackSidebarClass, rowHeight: ROW_HEIGHT_BASE, compactHeader } =
@@ -116,7 +147,7 @@ export default function ProTimeline({
     );
     const m = stepsUsed.length ? Math.max(0, ...stepsUsed) : 0;
     /** Sempre mostrar varias colunas (0..N); antes, com tudo na etapa 0, surgia so "00/00" e parecia nao haver etapas. */
-    const max = Math.min(20, Math.max(m, 5));
+    const max = Math.min(MAX_TIMELINE_STEP, Math.max(m, MIN_VISIBLE_TIMELINE_STEPS));
     const grouped = {};
     for (const el of safeElements) {
       const { name, icon } = getTrackInfo(el);

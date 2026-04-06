@@ -5,6 +5,7 @@ import {
   DeleteObjectCommand,
   ListObjectsV2Command,
   CopyObjectCommand,
+  HeadObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import path from 'node:path';
@@ -99,6 +100,25 @@ export async function putObject(
       CacheControl: '3600',
     }),
   );
+}
+
+/** Verifica se o objeto existe (stat local ou HEAD no S3). */
+export async function objectExists(bucket: string, key: string): Promise<boolean> {
+  const safeKey = ensureSafeKey(key);
+  if (STORAGE_DRIVER === 'local') {
+    try {
+      await fs.access(localObjectPath(bucket, safeKey));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  try {
+    await client().send(new HeadObjectCommand({ Bucket: bucket, Key: safeKey }));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function deleteObject(bucket: string, key: string) {

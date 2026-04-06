@@ -1,195 +1,24 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Stage, Layer, Rect, Text, Group, Line, Ellipse, Image as KonvaImage, Transformer } from 'react-konva';
+import useImage from 'use-image';
 import { createPortal } from 'react-dom';
 import Konva from 'konva';
 import { useResolvedStorageUrl } from '../../lib/useResolvedStorageUrl';
-
-function toNum(v, fallback) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-function clamp(n, min, max) {
-  return Math.max(min, Math.min(max, n));
-}
-
-function round2(n) {
-  return Math.round(Number(n || 0) * 100) / 100;
-}
-
-const QUICK_FONT_OPTIONS = [
-  'Roboto',
-  'Open Sans',
-  'Poppins',
-  'Nunito',
-  'Merriweather',
-  'Montserrat',
-  'Lato',
-  'Inter',
-  'Century Gothic',
-  'Bookman Old Style',
-  'Arial',
-  'Verdana',
-  'Tahoma',
-  'Times New Roman',
-  'Georgia',
-  'Trebuchet MS',
-  'Courier New',
-];
-const CONTEXT_MENU_WIDTH = 260;
-const CONTEXT_MENU_HEIGHT = 420;
-const CONTEXT_MENU_GAP = 16;
-const CONTEXT_MENU_SCREEN_PADDING = 8;
-
-function getSafeClientRect(node) {
-  try {
-    return node?.getClientRect ? node.getClientRect() : null;
-  } catch {
-    return null;
-  }
-}
-
-function resolveContextMenuPositionFromViewportBox(box) {
-  if (!box) return null;
-  let x = box.x + box.width + CONTEXT_MENU_GAP;
-  let y = box.y;
-
-  if (x + CONTEXT_MENU_WIDTH > window.innerWidth - CONTEXT_MENU_SCREEN_PADDING) {
-    x = box.x - CONTEXT_MENU_WIDTH - CONTEXT_MENU_GAP;
-  }
-  if (x < CONTEXT_MENU_SCREEN_PADDING) {
-    x = CONTEXT_MENU_SCREEN_PADDING;
-  }
-  if (y + CONTEXT_MENU_HEIGHT > window.innerHeight - CONTEXT_MENU_SCREEN_PADDING) {
-    y = window.innerHeight - CONTEXT_MENU_HEIGHT - CONTEXT_MENU_SCREEN_PADDING;
-  }
-  if (y < CONTEXT_MENU_SCREEN_PADDING) {
-    y = CONTEXT_MENU_SCREEN_PADDING;
-  }
-  return { x, y };
-}
-
-function getLineGuideStops({ stage, layer, skipId, canvasW, canvasH }) {
-  const vertical = [0, canvasW / 2, canvasW];
-  const horizontal = [0, canvasH / 2, canvasH];
-
-  const all = stage?.find?.('.selectable') || [];
-  all.forEach((n) => {
-    if (!n || !layer) return;
-    const id = String(n?.id?.() || '');
-    if (skipId && id === skipId) return;
-    // ignora shapes "internos" (texto dentro da forma não é selectable)
-    const rect = getSafeClientRect(n);
-    if (!rect) return;
-    vertical.push(rect.x, rect.x + rect.width / 2, rect.x + rect.width);
-    horizontal.push(rect.y, rect.y + rect.height / 2, rect.y + rect.height);
-  });
-
-  return { vertical, horizontal };
-}
-
-function getObjectSnappingEdges(node) {
-  const rect = getSafeClientRect(node);
-  if (!rect) return { vertical: [], horizontal: [] };
-
-  return {
-    vertical: [
-      { guide: rect.x, offset: 0, snap: 'start' },
-      { guide: rect.x + rect.width / 2, offset: rect.width / 2, snap: 'center' },
-      { guide: rect.x + rect.width, offset: rect.width, snap: 'end' },
-    ],
-    horizontal: [
-      { guide: rect.y, offset: 0, snap: 'start' },
-      { guide: rect.y + rect.height / 2, offset: rect.height / 2, snap: 'center' },
-      { guide: rect.y + rect.height, offset: rect.height, snap: 'end' },
-    ],
-  };
-}
-
-function getGuides(lineGuideStops, itemBounds, tolerance = 6) {
-  /** @type {Array<{orientation:'V'|'H', guide:number, diff:number, offset:number}>} */
-  const guides = [];
-
-  lineGuideStops.vertical.forEach((lg) => {
-    itemBounds.vertical.forEach((it) => {
-      const diff = Math.abs(lg - it.guide);
-      if (diff <= tolerance) {
-        guides.push({ orientation: 'V', guide: lg, diff, offset: it.offset });
-      }
-    });
-  });
-
-  lineGuideStops.horizontal.forEach((lg) => {
-    itemBounds.horizontal.forEach((it) => {
-      const diff = Math.abs(lg - it.guide);
-      if (diff <= tolerance) {
-        guides.push({ orientation: 'H', guide: lg, diff, offset: it.offset });
-      }
-    });
-  });
-
-  const v = guides.filter((g) => g.orientation === 'V').sort((a, b) => a.diff - b.diff)[0] || null;
-  const h = guides.filter((g) => g.orientation === 'H').sort((a, b) => a.diff - b.diff)[0] || null;
-  return { v, h };
-}
-
-/** Pequena folga para o pan não ficar preso quando o canvas cabe exactamente na área útil. */
-const PAN_VIEW_SLACK_PX = 120;
-
-function clampPanToViewport(pan, viewport, canvasW, canvasH, scale) {
-  const contentW = canvasW * scale;
-  const contentH = canvasH * scale;
-  const slack = PAN_VIEW_SLACK_PX;
-  const minX = Math.min(0, viewport.width - contentW) - slack;
-  const minY = Math.min(0, viewport.height - contentH) - slack;
-  const maxX = Math.max(0, viewport.width - contentW) + slack;
-  const maxY = Math.max(0, viewport.height - contentH) + slack;
-  return {
-    x: clamp(pan.x, minX, maxX),
-    y: clamp(pan.y, minY, maxY),
-  };
-}
-
-function useHtmlImage(url) {
-  const [image, setImage] = useState(null);
-  useEffect(() => {
-    if (!url) {
-      setImage(null);
-      return;
-    }
-    const img = new window.Image();
-    /** Sem crossOrigin por defeito: presigned S3/CDN sem Access-Control-Allow-Origin falha e o GIF nem aparece. */
-    img.onload = () => setImage(img);
-    img.onerror = () => setImage(null);
-    img.src = url;
-    return () => {
-      img.onload = null;
-      img.onerror = null;
-      img.src = '';
-    };
-  }, [url]);
-  return image;
-}
-
-/**
- * Com `storage.filePath`, a URL em `content` pode ser presign expirado (import/minio);
- * renova via API antes de carregar no Image().
- */
-function useStorageBackedImageUrl(url, storage) {
-  const resolved = useResolvedStorageUrl(url, storage);
-  return useHtmlImage(resolved);
-}
-
-function isGifUrl(url) {
-  const s = String(url || '');
-  if (/\.gif(?:$|[?#])/i.test(s)) return true;
-  if (/[?&]format=gif(?:&|$)/i.test(s)) return true;
-  return false;
-}
-
-function isGifMediaKind(v) {
-  return String(v || '').toLowerCase() === 'gif';
-}
+import { clamp, round2, toNum } from '../../lib/editorUtils';
+import { EDITOR_FONT_OPTIONS, MAX_TIMELINE_STEP } from './editorConstants';
+import { readMediaMetaMap } from './v2/media/mediaLibraryUtils';
+import {
+  clampPanToViewport,
+  CONTEXT_MENU_GAP,
+  CONTEXT_MENU_HEIGHT,
+  CONTEXT_MENU_SCREEN_PADDING,
+  CONTEXT_MENU_WIDTH,
+  getGuides,
+  getLineGuideStops,
+  getObjectSnappingEdges,
+  getSafeClientRect,
+  resolveContextMenuPositionFromViewportBox,
+} from './canvas/snapViewportUtils';
 
 function isNodeHidden(node) {
   return Boolean(node?.props?.hidden);
@@ -199,20 +28,120 @@ function isNodeLocked(node) {
   return Boolean(node?.props?.locked);
 }
 
-function nodeIsAnimatedGif(node) {
-  const p = node?.props || {};
-  if (isGifMediaKind(p.mediaKind)) return true;
-  return isGifUrl(p.content);
+/** URLs com extensão .gif visível (presign muitas vezes não tem). */
+function isLikelyAnimatedGifUrl(url) {
+  return /\.gif(?:$|[?#])/i.test(String(url || '').trim());
 }
 
-function backgroundIsAnimatedGif(bgUrl, bgRaw) {
-  if (bgRaw && typeof bgRaw === 'object' && isGifMediaKind(bgRaw.mediaKind)) return true;
-  const storedPath =
-    bgRaw && typeof bgRaw === 'object' && typeof bgRaw.storage?.filePath === 'string'
-      ? bgRaw.storage.filePath
-      : '';
-  if (storedPath && isGifUrl(storedPath)) return true;
-  return isGifUrl(bgUrl);
+function isGifStoragePath(filePath) {
+  const fp = String(filePath || '').trim();
+  if (!fp) return false;
+  const base = fp.split('/').pop() || fp;
+  if (/\.gif$/i.test(base)) return true;
+  // Caminho completo (presign por vezes sem extensão no último segmento)
+  return /\.gif(?:$|[?#])/i.test(fp);
+}
+
+/**
+ * Deteta GIF animado: `mediaKind`, URL, `storage.filePath`, nome de ficheiro da biblioteca ou MIME.
+ * URLs presignadas muitas vezes não contêm `.gif` — o nome vindo do drag/drop cobre esse caso.
+ */
+function isAnimatedGifContent(url, storage, mediaKind, fileHint = null) {
+  if (String(mediaKind || '').toLowerCase() === 'gif') return true;
+  if (isLikelyAnimatedGifUrl(url)) return true;
+  if (storage && isGifStoragePath(typeof storage?.filePath === 'string' ? storage.filePath : '')) return true;
+  const hintName = fileHint && typeof fileHint.name === 'string' ? fileHint.name.trim() : '';
+  if (hintName && /\.gif(?:$|[?#])/i.test(hintName)) return true;
+  const hintMime = fileHint && typeof fileHint.mimeType === 'string' ? fileHint.mimeType.trim().toLowerCase() : '';
+  if (hintMime === 'image/gif') return true;
+  return false;
+}
+
+/**
+ * Converte os ajustes de imagem (escala CSS) para os valores que os filtros nativos Konva esperam.
+ * brightness: CSS 1=neutro → Konva.Filters.Brighten: 0=neutro (-1..1)
+ * contrast:   CSS 1=neutro → Konva.Filters.Contrast:  0=neutro (-100..100)
+ * saturation: CSS 1=neutro → Konva.Filters.HSL: saturation 0=neutro (-2..10)
+ */
+function buildKonvaFilters(adj) {
+  if (!adj) return null;
+  const bv = clamp(Number(adj.brightness ?? 1), 0.2, 3);
+  const cv = clamp(Number(adj.contrast ?? 1), 0.2, 3);
+  const sv = clamp(Number(adj.saturation ?? 1), 0, 3);
+  const bChanged = Math.abs(bv - 1) > 0.01;
+  const cChanged = Math.abs(cv - 1) > 0.01;
+  const sChanged = Math.abs(sv - 1) > 0.01;
+  if (!bChanged && !cChanged && !sChanged) return null;
+  return {
+    filters: [
+      ...(bChanged ? [Konva.Filters.Brighten] : []),
+      ...(cChanged ? [Konva.Filters.Contrast] : []),
+      ...(sChanged ? [Konva.Filters.HSL] : []),
+    ],
+    brightness: bChanged ? clamp(bv - 1, -1, 1) : 0,
+    contrast: cChanged ? clamp((cv - 1) * 100, -100, 100) : 0,
+    saturation: sChanged ? clamp(sv - 1, -2, 10) : 0,
+  };
+}
+
+/**
+ * Deriva a chave do mediaMetaMap para este nó (igual ao usado em PageSidebar).
+ * Retorna '' se não houver dados suficientes.
+ */
+function nodeMediaMetaKey(props) {
+  const storageKey = typeof props?.storage?.filePath === 'string' ? props.storage.filePath.trim() : '';
+  const bucket = typeof props?.storage?.bucket === 'string' ? props.storage.bucket.trim() : '';
+  if (storageKey) return `${bucket}:${storageKey}`;
+  return '';
+}
+
+/** Nó imagem que é GIF no canvas (precisa de RAF; filtros Konva + cache congelam o GIF). */
+function isCanvasImageGifNode(node) {
+  if (String(node?.type) !== 'image') return false;
+  const p = node?.props || {};
+  return isAnimatedGifContent(String(p?.content || ''), p?.storage, p?.mediaKind, {
+    name: typeof p?.librarySourceName === 'string' ? p.librarySourceName : '',
+  });
+}
+
+/**
+ * Imagens estáticas: `use-image` (com decode). GIF animado no canvas: <img> sem decode — o pacote use-image
+ * chama decode() e no Chrome isso tende a fixar o GIF no 1.º frame em drawImage/repaint.
+ */
+function useStaticStorageBackedImage(url, storage, mediaKind, fileHint = null) {
+  const resolved = useResolvedStorageUrl(String(url || ''), storage);
+  const isGif = isAnimatedGifContent(String(url || ''), storage, mediaKind, fileHint);
+
+  const [gifImg, setGifImg] = useState(null);
+  useLayoutEffect(() => {
+    if (!isGif || !resolved) {
+      setGifImg(null);
+      return undefined;
+    }
+    const el = document.createElement('img');
+    const onLoad = () => setGifImg(el);
+    const onErr = () => setGifImg(null);
+    el.addEventListener('load', onLoad);
+    el.addEventListener('error', onErr);
+    // CORS: evita canvas "tainted" (toDataURL / toBlob). O storage deve enviar Access-Control-Allow-Origin.
+    if (/^https?:\/\//i.test(String(resolved))) {
+      el.crossOrigin = 'anonymous';
+    }
+    el.src = resolved;
+    return () => {
+      el.removeEventListener('load', onLoad);
+      el.removeEventListener('error', onErr);
+      el.src = '';
+      setGifImg(null);
+    };
+  }, [isGif, resolved]);
+
+  const [normalImg] = useImage(isGif ? '' : resolved || '');
+  return isGif ? gifImg : normalImg ?? null;
+}
+
+function useStorageBackedImageUrl(url, storage, mediaKind, fileHint = null) {
+  return useStaticStorageBackedImage(url, storage, mediaKind, fileHint);
 }
 
 function ImageNode({
@@ -225,12 +154,64 @@ function ImageNode({
   commitNode,
   elementAnimationTest,
   timelinePlayback,
+  mediaMetaMap,
 }) {
   const props = node?.props || {};
-  const img = useStorageBackedImageUrl(String(props?.content || ''), props?.storage);
+  const gifHint = useMemo(
+    () => ({
+      name: typeof props?.librarySourceName === 'string' ? props.librarySourceName : '',
+    }),
+    [props?.librarySourceName],
+  );
+  const img = useStaticStorageBackedImage(
+    String(props?.content || ''),
+    props?.storage,
+    props?.mediaKind,
+    gifHint,
+  );
   const locked = isNodeLocked(node);
 
+  const isGifNode = isAnimatedGifContent(
+    String(props?.content || ''),
+    props?.storage,
+    props?.mediaKind,
+    gifHint,
+  );
+
+  // Ajustes visuais: props do nó têm precedência; fallback para mediaMetaMap (biblioteca).
+  const rawAdjustments = useMemo(() => {
+    if (props?.imageAdjustments) return props.imageAdjustments;
+    const metaKey = nodeMediaMetaKey(props);
+    if (metaKey && mediaMetaMap) {
+      return mediaMetaMap[metaKey]?.image ?? null;
+    }
+    return null;
+  }, [props, mediaMetaMap]);
+
+  // GIF + Konva.cache() + filtros = bitmap estático; no editor priorizamos animação (sem filtros no canvas).
+  const konvaFilters = isGifNode ? null : buildKonvaFilters(rawAdjustments);
+
   const imgRef = useRef(null);
+
+  useEffect(() => {
+    const k = imgRef.current;
+    if (!k) return;
+    if (konvaFilters && img) {
+      k.filters(konvaFilters.filters);
+      if (konvaFilters.brightness !== 0) k.brightness(konvaFilters.brightness);
+      if (konvaFilters.contrast !== 0) k.contrast(konvaFilters.contrast);
+      if (konvaFilters.saturation !== 0) k.saturation(konvaFilters.saturation);
+      k.cache();
+    } else {
+      k.filters([]);
+      try {
+        k.clearCache();
+      } catch {
+        /* ignore */
+      }
+    }
+    k.imageSmoothingEnabled = true;
+  }, [img, konvaFilters, rawAdjustments]);
 
   useEffect(() => {
     let anim = '';
@@ -619,6 +600,9 @@ function SelectedVideoFloatingPreview({ node }) {
   const posterResolved = useResolvedStorageUrl(String(props.poster || ''), props.posterStorage);
   const videoRef = useRef(null);
   const startAt = toNum(props.startAt, 0);
+  const endAtRaw = toNum(props.endAt, NaN);
+  const hasEndAt = Number.isFinite(endAtRaw) && endAtRaw > startAt;
+  const endAt = hasEndAt ? endAtRaw : 0;
   const muted = Boolean(props.muted);
   const loop = Boolean(props.loop);
   const volume = clamp(toNum(props.volume, 1), 0, 1);
@@ -649,6 +633,27 @@ function SelectedVideoFloatingPreview({ node }) {
     const v = videoRef.current;
     if (v) v.playbackRate = playbackRate;
   }, [playbackRate]);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !hasEndAt) return;
+    const onTime = () => {
+      if (v.currentTime < endAt) return;
+      if (loop) {
+        try {
+          v.currentTime = Math.max(0, startAt);
+          const p = v.play();
+          if (p && typeof p.catch === 'function') p.catch(() => {});
+        } catch {
+          /* noop */
+        }
+        return;
+      }
+      v.pause();
+    };
+    v.addEventListener('timeupdate', onTime);
+    return () => v.removeEventListener('timeupdate', onTime);
+  }, [endAt, hasEndAt, loop, startAt]);
 
   if (!resolved) {
     return (
@@ -798,14 +803,27 @@ function parseRichSpans(raw, spans, globalWeight, globalStyle) {
   return out;
 }
 
+/**
+ * Mede a largura de um trecho de texto usando Konva.Text.measureSize (nativo Konva),
+ * evitando criar elementos canvas temporários.
+ */
 function measureTextWidth(text, fontSize, fontFamily, bold, italic) {
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return text.length * fontSize * 0.55;
-  const weight = bold ? 'bold' : 'normal';
-  const style = italic ? 'italic' : 'normal';
-  ctx.font = `${style} ${weight} ${fontSize}px ${fontFamily}`;
-  return ctx.measureText(text).width;
+  try {
+    const fontStyle = italic ? 'italic' : 'normal';
+    const fontVariant = 'normal';
+    const fontWeight = bold ? 'bold' : 'normal';
+    const size = Konva.Text.measureSize(String(text || ''), {
+      fontSize: Math.max(1, fontSize),
+      fontFamily: fontFamily || 'sans-serif',
+      fontStyle,
+      fontVariant,
+      fontWeight,
+    });
+    return size.width;
+  } catch {
+    // Fallback caso Konva.Text.measureSize não esteja disponível.
+    return String(text || '').length * Math.max(1, fontSize) * 0.55;
+  }
 }
 
 function splitByWords(segmentText) {
@@ -1551,6 +1569,7 @@ function ShapeNode({
 export default function CanvasStageKonva({
   pagesV2,
   pageIndex,
+  bookId,
   onChange,
   selectedId,
   setSelectedId,
@@ -1567,6 +1586,16 @@ export default function CanvasStageKonva({
   const canvasH = toNum(pagesV2?.canvas?.height, 720);
   const page = pagesV2?.pages?.[pageIndex] || null;
   const nodes = Array.isArray(page?.nodes) ? page.nodes : [];
+
+  // Ler mediaMetaMap do localStorage de forma reativa (re-lê quando bookId muda ou no foco da aba).
+  const [mediaMetaMap, setMediaMetaMap] = useState(() => readMediaMetaMap(bookId));
+  useEffect(() => {
+    setMediaMetaMap(readMediaMetaMap(bookId));
+    const onFocus = () => setMediaMetaMap(readMediaMetaMap(bookId));
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [bookId]);
+
   const selectedVideoNode = useMemo(() => {
     if (!selectedId) return null;
     const n = nodes.find((x) => String(x?.id) === String(selectedId));
@@ -1599,7 +1628,8 @@ export default function CanvasStageKonva({
       ? { x: clamp(toNum(bgRaw.position.x, 0.5), 0, 1), y: clamp(toNum(bgRaw.position.y, 0.5), 0, 1) }
       : { x: 0.5, y: 0.5 };
   const bgScale = typeof bgRaw === 'object' ? Math.max(0.5, Math.min(3, toNum(bgRaw?.scale, 1))) : 1;
-  const bgImage = useStorageBackedImageUrl(bgUrl, bgStorage);
+  const bgMediaKind = typeof bgRaw === 'object' && bgRaw?.mediaKind != null ? bgRaw.mediaKind : undefined;
+  const bgImage = useStorageBackedImageUrl(bgUrl, bgStorage, bgMediaKind);
 
   // Viewport fit + zoom/pan
   const [fitScale, setFitScale] = useState(1);
@@ -2149,30 +2179,28 @@ export default function CanvasStageKonva({
     );
   }, [sorted, timelineStep]);
 
-  const baseGifNode = useMemo(() => {
-    return sortedForTimeline.find((n) => {
-      if (n?.type !== 'image') return false;
-      if (!nodeIsAnimatedGif(n)) return false;
-      const t = getNodeTransform(n);
-      const coversCanvas =
-        t.x <= 1 && t.y <= 1 && t.width >= canvasW - 1 && t.height >= canvasH - 1;
-      return coversCanvas && toNum(n?.zIndex, 0) <= 0;
-    }) || null;
-  }, [sortedForTimeline, canvasW, canvasH]);
+  const needsGifCanvasTicker = useMemo(() => {
+    const bgAnimates = isAnimatedGifContent(bgUrl, bgStorage, bgMediaKind) && Boolean(bgImage);
+    const nodeAnimates = sortedForTimeline.some((n) => isCanvasImageGifNode(n));
+    return bgAnimates || nodeAnimates;
+  }, [bgUrl, bgStorage, bgMediaKind, bgImage, sortedForTimeline]);
 
-  const baseGifProps = baseGifNode?.props || {};
-  const baseGifUrl = useResolvedStorageUrl(
-    String(baseGifProps?.content || ''),
-    baseGifProps?.storage,
-  );
-  const baseGifTransform = baseGifNode ? getNodeTransform(baseGifNode) : null;
-  const htmlBaseGifActive = Boolean(baseGifNode && baseGifUrl && baseGifTransform);
-
-  const nodesForStage = useMemo(() => {
-    if (!htmlBaseGifActive || !baseGifNode) return sortedForTimeline;
-    const skipId = String(baseGifNode.id || '');
-    return sortedForTimeline.filter((n) => String(n?.id || '') !== skipId);
-  }, [sortedForTimeline, htmlBaseGifActive, baseGifNode]);
+  useEffect(() => {
+    if (!needsGifCanvasTicker) return;
+    let rafId = 0;
+    let cancelled = false;
+    const tick = () => {
+      if (cancelled) return;
+      const layer = contentLayerRef.current;
+      if (layer) layer.batchDraw();
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(rafId);
+    };
+  }, [needsGifCanvasTicker, pan.x, pan.y, scale]);
 
   const gridGuides = useMemo(() => {
     if (!showGrid || gridSize < 8) return { vertical: [], horizontal: [] };
@@ -2211,7 +2239,7 @@ export default function CanvasStageKonva({
     if (!contextMenu) return;
     const close = () => setContextMenu(null);
     const onKeyDown = (ev) => {
-      if (ev.key === 'Escape') close();
+      if (ev.key === 'Escape') setContextMenu(null);
     };
     window.addEventListener('mousedown', close);
     window.addEventListener('keydown', onKeyDown);
@@ -2234,10 +2262,6 @@ export default function CanvasStageKonva({
     });
   }, [contextMenu?.nodeId, getAnchoredContextMenuPosition, pan.x, pan.y, scale, viewport.width, viewport.height, nodes]);
 
-  const konvaGifNodes = useMemo(() => {
-    return nodesForStage.filter((n) => n?.type === 'image' && nodeIsAnimatedGif(n));
-  }, [nodesForStage]);
-
   const bgDraw = useMemo(() => {
     if (!bgImage) return null;
     const iw = toNum(bgImage.width, 0);
@@ -2255,40 +2279,6 @@ export default function CanvasStageKonva({
     const y = -rangeY * bgPosition.y;
     return { x, y, width: drawW, height: drawH };
   }, [bgImage, canvasW, canvasH, bgScale, bgPosition.x, bgPosition.y]);
-
-  /** GIF no fundo: Konva/canvas costuma mostrar 1 frame; <img> HTML anima nativamente (camada sob o Stage). */
-  const htmlGifBackgroundActive = useMemo(
-    () => backgroundIsAnimatedGif(bgUrl, bgRaw) && Boolean(bgUrl && bgDraw && bgImage),
-    [bgUrl, bgRaw, bgDraw, bgImage],
-  );
-
-  const hasGifOnPage = useMemo(() => {
-    // Limitador de performance: com muitos GIFs, o redraw por frame trava UI.
-    // Mantemos animação “ativa” no canvas apenas se existir no máximo 1 GIF Konva.
-    const shouldAnimateKonvaGifs = konvaGifNodes.length > 0 && konvaGifNodes.length <= 1;
-    if (shouldAnimateKonvaGifs) return true;
-    // background GIF só precisa de redraw quando NÃO estamos usando HTML layer.
-    if (backgroundIsAnimatedGif(bgUrl, bgRaw) && !htmlGifBackgroundActive) return true;
-    return false;
-  }, [bgUrl, bgRaw, konvaGifNodes.length, htmlGifBackgroundActive]);
-
-  /** GIF no canvas: o browser so avanca frames se drawImage for chamado de novo; Konva.Animation vazio nao garante batchDraw. */
-  useEffect(() => {
-    if (!hasGifOnPage) return undefined;
-    let raf = 0;
-    let stopped = false;
-    const tick = () => {
-      if (stopped) return;
-      const layer = contentLayerRef.current;
-      if (layer) layer.batchDraw();
-      raf = window.requestAnimationFrame(tick);
-    };
-    raf = window.requestAnimationFrame(tick);
-    return () => {
-      stopped = true;
-      window.cancelAnimationFrame(raf);
-    };
-  }, [hasGifOnPage]);
 
   return (
     <div
@@ -2326,66 +2316,6 @@ export default function CanvasStageKonva({
 
       {!isPreviewMode && selectedVideoNode ? (
         <SelectedVideoFloatingPreview key={String(selectedVideoNode.id)} node={selectedVideoNode} />
-      ) : null}
-
-      {htmlGifBackgroundActive && bgUrl && bgDraw ? (
-        <div className="pointer-events-none absolute inset-0 z-[1] overflow-hidden" aria-hidden>
-          <div className="absolute left-0 top-0" style={{ width: viewport.width, height: viewport.height }}>
-            <div
-              className="absolute"
-              style={{
-                transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
-                transformOrigin: '0 0',
-                width: canvasW,
-                height: canvasH,
-              }}
-            >
-              <div className="absolute left-0 top-0 bg-white" style={{ width: canvasW, height: canvasH }} />
-              <img
-                src={bgUrl}
-                alt=""
-                draggable={false}
-                className="absolute select-none"
-                style={{
-                  left: bgDraw.x,
-                  top: bgDraw.y,
-                  width: bgDraw.width,
-                  height: bgDraw.height,
-                  objectFit: 'fill',
-                }}
-              />
-            </div>
-          </div>
-        </div>
-      ) : null}
-      {htmlBaseGifActive && baseGifTransform ? (
-        <div className="pointer-events-none absolute inset-0 z-[1] overflow-hidden" aria-hidden>
-          <div className="absolute left-0 top-0" style={{ width: viewport.width, height: viewport.height }}>
-            <div
-              className="absolute"
-              style={{
-                transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
-                transformOrigin: '0 0',
-                width: canvasW,
-                height: canvasH,
-              }}
-            >
-              <img
-                src={baseGifUrl}
-                alt=""
-                draggable={false}
-                className="absolute select-none"
-                style={{
-                  left: baseGifTransform.x,
-                  top: baseGifTransform.y,
-                  width: baseGifTransform.width,
-                  height: baseGifTransform.height,
-                  objectFit: 'fill',
-                }}
-              />
-            </div>
-          </div>
-        </div>
       ) : null}
 
       {inlineEditor && inlineEditorLayout ? (
@@ -2485,54 +2415,16 @@ export default function CanvasStageKonva({
           onDragMove={handleDragMove}
           onDragEnd={handleDragEnd}
         >
-          {htmlGifBackgroundActive || htmlBaseGifActive ? (
-            <Rect
-              x={0}
-              y={0}
-              width={canvasW}
-              height={canvasH}
-              fill="rgba(0,0,0,0.001)"
-              name="background"
-            />
-          ) : (
-            <>
-              <Rect x={0} y={0} width={canvasW} height={canvasH} fill="#ffffff" name="background" />
-              {bgImage && bgDraw ? (
-                <KonvaImage
-                  image={bgImage}
-                  x={bgDraw.x}
-                  y={bgDraw.y}
-                  width={bgDraw.width}
-                  height={bgDraw.height}
-                  listening={false}
-                  perfectDrawEnabled={false}
-                />
-              ) : null}
-            </>
-          )}
-
-          {htmlBaseGifActive && baseGifNode && baseGifTransform ? (
-            <Rect
-              id={`node-${String(baseGifNode.id || '')}`}
-              name="selectable"
-              x={baseGifTransform.x}
-              y={baseGifTransform.y}
-              width={baseGifTransform.width}
-              height={baseGifTransform.height}
-              rotation={baseGifTransform.rotation}
-              fill="rgba(0,0,0,0.001)"
-              draggable={!isPreviewMode && !isNodeLocked(baseGifNode)}
-              onClick={(e) => !isPreviewMode && handleSelectNode(String(baseGifNode.id || ''), e)}
-              onTap={(e) => !isPreviewMode && handleSelectNode(String(baseGifNode.id || ''), e)}
-              onDragEnd={(e) => {
-                commitNode(String(baseGifNode.id || ''), {
-                  transform: {
-                    ...baseGifNode.transform,
-                    x: e.target.x(),
-                    y: e.target.y(),
-                  },
-                });
-              }}
+          <Rect x={0} y={0} width={canvasW} height={canvasH} fill="#ffffff" name="background" />
+          {bgImage && bgDraw ? (
+            <KonvaImage
+              image={bgImage}
+              x={bgDraw.x}
+              y={bgDraw.y}
+              width={bgDraw.width}
+              height={bgDraw.height}
+              listening={false}
+              perfectDrawEnabled={false}
             />
           ) : null}
 
@@ -2561,7 +2453,7 @@ export default function CanvasStageKonva({
             ))
             : null}
 
-          {nodesForStage.map((node) => {
+          {sortedForTimeline.map((node) => {
             const id = String(node?.id || '');
             const type = String(node?.type || '');
             const t = getNodeTransform(node);
@@ -2605,6 +2497,7 @@ export default function CanvasStageKonva({
                   commitNode={commitNode}
                   elementAnimationTest={elementAnimationTest}
                   timelinePlayback={timelinePlayback}
+                  mediaMetaMap={mediaMetaMap}
                 />
               );
             }
@@ -2794,7 +2687,7 @@ export default function CanvasStageKonva({
                     onChange={(e) => quickPatchNode({ props: { fontFamily: e.target.value } })}
                     className="col-span-2 rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-100"
                   >
-                    {QUICK_FONT_OPTIONS.map((font) => (
+                    {EDITOR_FONT_OPTIONS.map((font) => (
                       <option key={font} value={font}>
                         {font}
                       </option>
@@ -3041,11 +2934,11 @@ export default function CanvasStageKonva({
               <input
                 type="number"
                 min={0}
-                max={20}
+                max={MAX_TIMELINE_STEP}
                 step={1}
                 value={selectedStep}
                 onChange={(e) => {
-                  const v = Math.max(0, Math.min(20, Math.trunc(toNum(e.target.value, 0))));
+                  const v = Math.max(0, Math.min(MAX_TIMELINE_STEP, Math.trunc(toNum(e.target.value, 0))));
                   quickPatchNode({ step: v });
                 }}
                 className="w-14 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-right text-xs text-slate-100"

@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command, CopyObjectCommand, } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command, CopyObjectCommand, HeadObjectCommand, } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
@@ -76,6 +76,26 @@ export async function putObject(bucket, key, body, contentType) {
         ContentType: contentType,
         CacheControl: '3600',
     }));
+}
+/** Verifica se o objeto existe (stat local ou HEAD no S3). */
+export async function objectExists(bucket, key) {
+    const safeKey = ensureSafeKey(key);
+    if (STORAGE_DRIVER === 'local') {
+        try {
+            await fs.access(localObjectPath(bucket, safeKey));
+            return true;
+        }
+        catch {
+            return false;
+        }
+    }
+    try {
+        await client().send(new HeadObjectCommand({ Bucket: bucket, Key: safeKey }));
+        return true;
+    }
+    catch {
+        return false;
+    }
 }
 export async function deleteObject(bucket, key) {
     if (STORAGE_DRIVER === 'local') {

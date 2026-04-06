@@ -1,7 +1,4 @@
-function toNum(v, fallback) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : fallback;
-}
+import { toNum } from '../editorUtils';
 
 export function isPagesV2(v) {
   if (!v || typeof v !== 'object') return false;

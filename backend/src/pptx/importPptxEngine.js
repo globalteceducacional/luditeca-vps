@@ -1372,11 +1372,6 @@ function getMimeFromExtension(ext) {
   return 'application/octet-stream';
 }
 
-function mediaKindFromPath(filePath) {
-  const ext = path.extname(String(filePath || '')).toLowerCase();
-  return ext === '.gif' ? 'gif' : 'image';
-}
-
 function buildStorageClient(req) {
   return makeStorageClient();
 }
@@ -1907,7 +1902,6 @@ export async function runImportPptxEngine(req, res) {
           (a, b) => Number(a?.zIndex || 0) - Number(b?.zIndex || 0),
         );
         if (!uploaded) return mergedElements;
-        const mk = mediaKindFromPath(uploaded.targetPath);
         const imageEl = {
           id: `${importStamp}-img-${slideNumber}`,
           type: 'image',
@@ -1917,7 +1911,6 @@ export async function runImportPptxEngine(req, res) {
             filePath: uploaded.targetPath,
             ...(importSessionId ? { importSessionId } : {}),
           },
-          ...(mk === 'gif' ? { mediaKind: 'gif' } : {}),
           position: { x: 0, y: 0 },
           size: { width: CANVAS_WIDTH, height: CANVAS_HEIGHT },
           zIndex: 0,

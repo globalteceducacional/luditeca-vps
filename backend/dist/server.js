@@ -9,7 +9,6 @@ import { registerAuthRoutes } from './routes/authRoutes.js';
 import { registerBookRoutes } from './routes/bookRoutes.js';
 import { registerAuthorRoutes } from './routes/authorRoutes.js';
 import { registerCategoryRoutes } from './routes/categoryRoutes.js';
-import { registerStorageRoutes } from './routes/storageRoutes.js';
 import { registerMediaRoutes } from './routes/mediaRoutes.js';
 import { registerImportPptxRoute } from './routes/importPptxRoute.js';
 import { registerUserRoutes } from './routes/userRoutes.js';
@@ -90,7 +89,6 @@ async function main() {
     await registerBookRoutes(app);
     await registerAuthorRoutes(app);
     await registerCategoryRoutes(app);
-    await registerStorageRoutes(app);
     await registerMediaRoutes(app);
     await registerImportPptxRoute(app);
     await registerUserRoutes(app);
