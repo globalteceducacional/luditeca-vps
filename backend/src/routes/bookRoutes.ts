@@ -113,13 +113,19 @@ async function hydratePagesV2MediaUrls(v2: unknown, cache: Map<string, string>) 
 
     const nodes = Array.isArray(page.nodes) ? page.nodes : [];
     for (const node of nodes) {
-      if (!isRecord(node) || node.type !== 'image') continue;
+      if (!isRecord(node) || (node.type !== 'image' && node.type !== 'video')) continue;
       const props = isRecord(node.props) ? node.props : null;
       if (!props) continue;
       const nodeStorage = props.storage ?? parseStorageFromUrl(props.content);
       const signedNode = await resolveStorageUrl(cache, nodeStorage);
       if (signedNode) props.content = signedNode;
       if (!props.storage && nodeStorage) props.storage = nodeStorage;
+      if (node.type === 'video') {
+        const posterStorage = props.posterStorage ?? parseStorageFromUrl(props.poster);
+        const signedPoster = await resolveStorageUrl(cache, posterStorage);
+        if (signedPoster) props.poster = signedPoster;
+        if (!props.posterStorage && posterStorage) props.posterStorage = posterStorage;
+      }
       node.props = props;
     }
   }
@@ -273,7 +279,7 @@ function remapImportedStorageInPagesV2(v2: unknown, remap: ImportRemapCtx) {
       if (!node || typeof node !== 'object') continue;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const n: any = node;
-      if (n.type !== 'image') continue;
+      if (n.type !== 'image' && n.type !== 'video') continue;
       const props = n.props && typeof n.props === 'object' ? { ...n.props } : {};
       const storage = props.storage;
       if (
@@ -286,6 +292,20 @@ function remapImportedStorageInPagesV2(v2: unknown, remap: ImportRemapCtx) {
         if (hit) {
           props.storage = { bucket: hit.bucket, filePath: hit.to };
           props.content = '';
+          n.props = props;
+        }
+      }
+      if (
+        n.type === 'video' &&
+        props.posterStorage &&
+        props.posterStorage.importSessionId === remap.importSessionId &&
+        props.posterStorage.bucket &&
+        props.posterStorage.filePath
+      ) {
+        const hitPoster = byFrom.get(`${props.posterStorage.bucket}:${props.posterStorage.filePath}`);
+        if (hitPoster) {
+          props.posterStorage = { bucket: hitPoster.bucket, filePath: hitPoster.to };
+          props.poster = '';
           n.props = props;
         }
       }

@@ -29,6 +29,19 @@ function parseBookId(request) {
         return null;
     }
 }
+/** Chave completa no storage: dono (prefixo uid/) ou ficheiro do livro (mediaFile.bookId = livro do pedido). */
+async function canAccessStorageObject(uid, bucket, objectKey, request) {
+    if (!objectKey || objectKey.includes('..'))
+        return false;
+    if (objectKey.startsWith(`${uid}/`))
+        return true;
+    const linked = await prisma.mediaFile.findFirst({
+        where: { bucketName: bucket, filePath: objectKey },
+        select: { bookId: true },
+    });
+    const bid = parseBookId(request);
+    return Boolean(linked?.bookId != null && bid != null && linked.bookId === bid);
+}
 function normalizeRel(v) {
     return String(v || '')
         .replace(/\\/g, '/')
@@ -90,6 +103,55 @@ export async function registerMediaRoutes(app) {
         const relPath = request.query.path || '';
         const recursive = String(request.query.recursive || '').toLowerCase() === 'true';
         const bookId = parseBookId(request);
+        // Modo compartilhado por livro: lista todos os assets vinculados ao bookId,
+        // independentemente de quem fez o upload/importação.
+        if (bookId && root === 'library') {
+            const rows = await prisma.mediaFile.findMany({
+                where: { bookId, bucketName: bucket },
+                orderBy: { createdAt: 'desc' },
+            });
+            const byPath = new Map();
+            for (const row of rows) {
+                if (!byPath.has(row.filePath)) {
+                    byPath.set(row.filePath, row);
+                }
+            }
+            const files = Array.from(byPath.values()).filter((row) => {
+                if (!relPath)
+                    return true;
+                const safeRel = assertSafeRelPath(relPath);
+                return row.filePath.includes(safeRel);
+            });
+            const fileItems = await Promise.all(files.map(async (row) => {
+                let url = null;
+                try {
+                    url = await presignedGetUrl(bucket, row.filePath, 3600);
+                }
+                catch {
+                    url = null;
+                }
+                const fileName = row.fileName || path.posix.basename(row.filePath);
+                return {
+                    id: row.id.toString(),
+                    name: fileName,
+                    type: extType(fileName),
+                    // Compat com o frontend atual (path relativo "virtual" da tela)
+                    path: fileName,
+                    // Chave real no storage (usar sempre que possível)
+                    storageKey: row.filePath,
+                    url,
+                    metadata: {
+                        file_size: Number(row.fileSize),
+                        created_at: row.createdAt.toISOString(),
+                        user_id: row.userId,
+                    },
+                    user_id: row.userId,
+                    updated_at: row.updatedAt.toISOString(),
+                    size: Number(row.fileSize),
+                };
+            }));
+            return reply.send({ data: fileItems, error: null, bucket });
+        }
         let prefix;
         try {
             const effectiveRoot = bookId && root === 'library'
@@ -177,7 +239,17 @@ export async function registerMediaRoutes(app) {
         if (!key) {
             return reply.code(400).send({ error: 'key obrigatorio.' });
         }
-        if (!key.startsWith(`${uid}/`)) {
+        let allowed = key.startsWith(`${uid}/`);
+        if (!allowed) {
+            // Permite acesso a mídia vinculada a livro (compartilhada entre editores),
+            // mesmo que o arquivo tenha sido enviado por outro usuário.
+            const linkedMedia = await prisma.mediaFile.findFirst({
+                where: { bucketName: bucket, filePath: key, bookId: { not: null } },
+                select: { id: true },
+            });
+            allowed = Boolean(linkedMedia);
+        }
+        if (!allowed) {
             return reply.code(403).send({ error: 'Acesso negado.' });
         }
         try {
@@ -293,24 +365,37 @@ export async function registerMediaRoutes(app) {
         }
         const uid = request.user.id;
         const root = request.query.root || 'library';
-        const relPathRaw = request.query.path || '';
+        const relPathRaw = String(request.query.path || '').trim();
+        const rawObjectKey = String(request.query.key || '').trim();
         const bookId = parseBookId(request);
-        if (!relPathRaw) {
-            return reply.code(400).send({ error: 'path obrigatório.' });
-        }
         let key;
-        try {
-            const effectiveRoot = bookId && root === 'library'
-                ? `books/${bookId.toString()}`
-                : root;
-            const base = userFsBase(uid, effectiveRoot);
-            const rel = assertSafeRelPath(relPathRaw);
-            if (!rel)
-                return reply.code(400).send({ error: 'path inválido.' });
-            key = `${base}/${rel}`;
+        let responseRelPath;
+        if (rawObjectKey) {
+            const ok = await canAccessStorageObject(uid, bucket, rawObjectKey, request);
+            if (!ok) {
+                return reply.code(403).send({ error: 'Acesso negado.' });
+            }
+            key = rawObjectKey;
+            responseRelPath = path.posix.basename(key);
         }
-        catch (e) {
-            return reply.code(400).send({ error: e.message });
+        else {
+            if (!relPathRaw) {
+                return reply.code(400).send({ error: 'path obrigatório.' });
+            }
+            try {
+                const effectiveRoot = bookId && root === 'library'
+                    ? `books/${bookId.toString()}`
+                    : root;
+                const base = userFsBase(uid, effectiveRoot);
+                const rel = assertSafeRelPath(relPathRaw);
+                if (!rel)
+                    return reply.code(400).send({ error: 'path inválido.' });
+                key = `${base}/${rel}`;
+                responseRelPath = relPathRaw;
+            }
+            catch (e) {
+                return reply.code(400).send({ error: e.message });
+            }
         }
         const parts = request.parts();
         let buf = null;
@@ -331,7 +416,9 @@ export async function registerMediaRoutes(app) {
             updatedAt: new Date(),
         };
         const updated = await prisma.mediaFile.updateMany({
-            where: { userId: uid, bucketName: bucket, filePath: key },
+            where: rawObjectKey
+                ? { bucketName: bucket, filePath: key }
+                : { userId: uid, bucketName: bucket, filePath: key },
             data: metadataUpdate,
         });
         if (updated.count === 0) {
@@ -355,7 +442,7 @@ export async function registerMediaRoutes(app) {
             url = null;
         }
         return reply.send({
-            data: { path: relPathRaw, url, name: path.posix.basename(key) },
+            data: { path: responseRelPath, url, name: path.posix.basename(key) },
             error: null,
             bucket,
         });
@@ -400,24 +487,83 @@ export async function registerMediaRoutes(app) {
         }
         const uid = request.user.id;
         const root = request.query.root || 'library';
-        const relPath = request.query.path || '';
-        const bookId = parseBookId(request);
-        if (!relPath)
-            return reply.code(400).send({ error: 'path obrigatório.' });
+        const relPath = String(request.query.path || '').trim();
+        const rawObjectKey = String(request.query.key || '').trim();
         let key;
+        if (rawObjectKey) {
+            const ok = await canAccessStorageObject(uid, bucket, rawObjectKey, request);
+            if (!ok) {
+                return reply.code(403).send({ error: 'Acesso negado.' });
+            }
+            key = rawObjectKey;
+        }
+        else {
+            if (!relPath)
+                return reply.code(400).send({ error: 'path obrigatório.' });
+            const bookId = parseBookId(request);
+            try {
+                const effectiveRoot = bookId && root === 'library'
+                    ? `books/${bookId.toString()}`
+                    : root;
+                const base = userFsBase(uid, effectiveRoot);
+                const rel = assertSafeRelPath(relPath);
+                key = `${base}/${rel}`;
+            }
+            catch (e) {
+                return reply.code(400).send({ error: e.message });
+            }
+        }
         try {
-            const effectiveRoot = bookId && root === 'library'
-                ? `books/${bookId.toString()}`
-                : root;
-            const base = userFsBase(uid, effectiveRoot);
-            const rel = assertSafeRelPath(relPath);
-            key = `${base}/${rel}`;
+            await deleteObject(bucket, key);
+        }
+        catch (e) {
+            return reply.code(500).send({ error: e.message || 'Falha ao apagar no storage.' });
+        }
+        await prisma.mediaFile.deleteMany({ where: { bucketName: bucket, filePath: key } });
+        return reply.send({ ok: true });
+    });
+    app.post('/media/rename', { preHandler: requireCmsEditor }, async (request, reply) => {
+        const mediaType = (request.body?.mediaType || 'image');
+        const bucket = MEDIA_BUCKET_MAP[mediaType] || MEDIA_BUCKET_MAP.image;
+        try {
+            assertBucket(bucket);
         }
         catch (e) {
             return reply.code(400).send({ error: e.message });
         }
-        await deleteObject(bucket, key);
-        await prisma.mediaFile.deleteMany({ where: { userId: uid, bucketName: bucket, filePath: key } });
+        const uid = request.user.id;
+        const root = request.body?.root || 'library';
+        const relPath = String(request.body?.path || '').trim();
+        const rawObjectKey = String(request.body?.key || '').trim();
+        const fileName = sanitizeFileName(String(request.body?.fileName || '').trim());
+        if (!fileName)
+            return reply.code(400).send({ error: 'fileName obrigatório.' });
+        let key;
+        if (rawObjectKey) {
+            const ok = await canAccessStorageObject(uid, bucket, rawObjectKey, request);
+            if (!ok)
+                return reply.code(403).send({ error: 'Acesso negado.' });
+            key = rawObjectKey;
+        }
+        else {
+            if (!relPath)
+                return reply.code(400).send({ error: 'path obrigatório.' });
+            const bookId = parseBookId(request);
+            try {
+                const effectiveRoot = bookId && root === 'library'
+                    ? `books/${bookId.toString()}`
+                    : root;
+                const base = userFsBase(uid, effectiveRoot);
+                key = `${base}/${assertSafeRelPath(relPath)}`;
+            }
+            catch (e) {
+                return reply.code(400).send({ error: e.message });
+            }
+        }
+        await prisma.mediaFile.updateMany({
+            where: { bucketName: bucket, filePath: key },
+            data: { fileName, updatedAt: new Date() },
+        });
         return reply.send({ ok: true });
     });
     app.post('/media/move', { preHandler: requireCmsEditor }, async (request, reply) => {
@@ -432,27 +578,47 @@ export async function registerMediaRoutes(app) {
         const uid = request.user.id;
         const root = request.body?.root || 'library';
         const bookId = parseBookId(request);
-        const fromRel = request.body?.from || '';
-        const toRel = request.body?.to || '';
-        if (!fromRel || !toRel)
+        const fromRel = String(request.body?.from || '').trim();
+        const toRel = String(request.body?.to || '').trim();
+        const rawFromKey = String(request.body?.fromKey || '').trim();
+        const rawToKey = String(request.body?.toKey || '').trim();
+        if ((!fromRel || !toRel) && (!rawFromKey || !rawToKey)) {
             return reply.code(400).send({ error: 'from e to obrigatórios.' });
+        }
         let fromKey;
         let toKey;
-        try {
-            const effectiveRoot = bookId && root === 'library'
-                ? `books/${bookId.toString()}`
-                : root;
-            const base = userFsBase(uid, effectiveRoot);
-            fromKey = `${base}/${assertSafeRelPath(fromRel)}`;
-            toKey = `${base}/${assertSafeRelPath(toRel)}`;
+        if (rawFromKey && rawToKey) {
+            const ok = await canAccessStorageObject(uid, bucket, rawFromKey, request);
+            if (!ok) {
+                return reply.code(403).send({ error: 'Acesso negado.' });
+            }
+            const fromDir = path.posix.dirname(rawFromKey);
+            const toDir = path.posix.dirname(rawToKey);
+            if (!fromDir || fromDir === '.' || fromDir !== toDir) {
+                return reply.code(400).send({ error: 'A renomeação deve manter a mesma pasta.' });
+            }
+            fromKey = rawFromKey;
+            toKey = `${fromDir}/${sanitizeFileName(path.posix.basename(rawToKey))}`;
         }
-        catch (e) {
-            return reply.code(400).send({ error: e.message });
+        else {
+            try {
+                const effectiveRoot = bookId && root === 'library'
+                    ? `books/${bookId.toString()}`
+                    : root;
+                const base = userFsBase(uid, effectiveRoot);
+                fromKey = `${base}/${assertSafeRelPath(fromRel)}`;
+                toKey = `${base}/${assertSafeRelPath(toRel)}`;
+            }
+            catch (e) {
+                return reply.code(400).send({ error: e.message });
+            }
         }
         await copyObject(bucket, fromKey, toKey);
         await deleteObject(bucket, fromKey);
         await prisma.mediaFile.updateMany({
-            where: { userId: uid, bucketName: bucket, filePath: fromKey },
+            where: rawFromKey
+                ? { bucketName: bucket, filePath: fromKey }
+                : { userId: uid, bucketName: bucket, filePath: fromKey },
             data: { filePath: toKey, fileName: path.posix.basename(toKey) },
         });
         return reply.send({ ok: true });

@@ -175,8 +175,14 @@ const MediaLibrary = ({ onSelect, mediaType = 'image', bookId = null, bucketOver
       setLoading(true);
       setError(null);
 
-      // Delete file from storage
-      await storageDeleteObjectWithRoot(bucketName, { path: file.path, root, headers: rootHeaders });
+      const objectKey =
+        typeof file.storageKey === 'string' && file.storageKey.trim() ? file.storageKey.trim() : '';
+      await storageDeleteObjectWithRoot(bucketName, {
+        path: objectKey ? '' : file.path,
+        objectKey: objectKey || undefined,
+        root,
+        headers: rootHeaders,
+      });
 
       // Reload files after deletion
       loadFiles();

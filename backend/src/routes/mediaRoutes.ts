@@ -50,6 +50,23 @@ function parseBookId(request: { query?: any; headers?: any }) {
   }
 }
 
+/** Chave completa no storage: dono (prefixo uid/) ou ficheiro do livro (mediaFile.bookId = livro do pedido). */
+async function canAccessStorageObject(
+  uid: string,
+  bucket: string,
+  objectKey: string,
+  request: { query?: any; headers?: any },
+): Promise<boolean> {
+  if (!objectKey || objectKey.includes('..')) return false;
+  if (objectKey.startsWith(`${uid}/`)) return true;
+  const linked = await prisma.mediaFile.findFirst({
+    where: { bucketName: bucket, filePath: objectKey },
+    select: { bookId: true },
+  });
+  const bid = parseBookId(request);
+  return Boolean(linked?.bookId != null && bid != null && linked.bookId === bid);
+}
+
 function normalizeRel(v: string) {
   return String(v || '')
     .replace(/\\/g, '/')
@@ -389,7 +406,7 @@ export async function registerMediaRoutes(app: FastifyInstance) {
    * Útil para "editar/substituir imagem" sem quebrar referências já salvas.
    */
   app.post<{
-    Querystring: { mediaType?: MediaType; root?: string; path?: string; bookId?: string };
+    Querystring: { mediaType?: MediaType; root?: string; path?: string; bookId?: string; key?: string };
   }>('/media/replace', { preHandler: requireCmsEditor }, async (request, reply) => {
     const mediaType = (request.query.mediaType || 'image') as MediaType;
     const bucket = MEDIA_BUCKET_MAP[mediaType] || MEDIA_BUCKET_MAP.image;
@@ -401,24 +418,36 @@ export async function registerMediaRoutes(app: FastifyInstance) {
 
     const uid = request.user!.id;
     const root = request.query.root || 'library';
-    const relPathRaw = request.query.path || '';
+    const relPathRaw = String(request.query.path || '').trim();
+    const rawObjectKey = String(request.query.key || '').trim();
     const bookId = parseBookId(request);
-    if (!relPathRaw) {
-      return reply.code(400).send({ error: 'path obrigatório.' });
-    }
 
     let key: string;
-    try {
-      const effectiveRoot =
-        bookId && root === 'library'
-          ? `books/${bookId.toString()}`
-          : root;
-      const base = userFsBase(uid, effectiveRoot);
-      const rel = assertSafeRelPath(relPathRaw);
-      if (!rel) return reply.code(400).send({ error: 'path inválido.' });
-      key = `${base}/${rel}`;
-    } catch (e) {
-      return reply.code(400).send({ error: (e as Error).message });
+    let responseRelPath: string;
+    if (rawObjectKey) {
+      const ok = await canAccessStorageObject(uid, bucket, rawObjectKey, request);
+      if (!ok) {
+        return reply.code(403).send({ error: 'Acesso negado.' });
+      }
+      key = rawObjectKey;
+      responseRelPath = path.posix.basename(key);
+    } else {
+      if (!relPathRaw) {
+        return reply.code(400).send({ error: 'path obrigatório.' });
+      }
+      try {
+        const effectiveRoot =
+          bookId && root === 'library'
+            ? `books/${bookId.toString()}`
+            : root;
+        const base = userFsBase(uid, effectiveRoot);
+        const rel = assertSafeRelPath(relPathRaw);
+        if (!rel) return reply.code(400).send({ error: 'path inválido.' });
+        key = `${base}/${rel}`;
+        responseRelPath = relPathRaw;
+      } catch (e) {
+        return reply.code(400).send({ error: (e as Error).message });
+      }
     }
 
     const parts = request.parts();
@@ -440,7 +469,9 @@ export async function registerMediaRoutes(app: FastifyInstance) {
       updatedAt: new Date(),
     };
     const updated = await prisma.mediaFile.updateMany({
-      where: { userId: uid, bucketName: bucket, filePath: key },
+      where: rawObjectKey
+        ? { bucketName: bucket, filePath: key }
+        : { userId: uid, bucketName: bucket, filePath: key },
       data: metadataUpdate,
     });
     if (updated.count === 0) {
@@ -465,7 +496,7 @@ export async function registerMediaRoutes(app: FastifyInstance) {
     }
 
     return reply.send({
-      data: { path: relPathRaw, url, name: path.posix.basename(key) },
+      data: { path: responseRelPath, url, name: path.posix.basename(key) },
       error: null,
       bucket,
     });
@@ -507,7 +538,7 @@ export async function registerMediaRoutes(app: FastifyInstance) {
   );
 
   app.delete<{
-    Querystring: { mediaType?: MediaType; root?: string; path?: string; bookId?: string };
+    Querystring: { mediaType?: MediaType; root?: string; path?: string; bookId?: string; key?: string };
   }>('/media/object', { preHandler: requireCmsEditor }, async (request, reply) => {
     const mediaType = (request.query.mediaType || 'image') as MediaType;
     const bucket = MEDIA_BUCKET_MAP[mediaType] || MEDIA_BUCKET_MAP.image;
@@ -518,29 +549,96 @@ export async function registerMediaRoutes(app: FastifyInstance) {
     }
     const uid = request.user!.id;
     const root = request.query.root || 'library';
-    const relPath = request.query.path || '';
-    const bookId = parseBookId(request);
-    if (!relPath) return reply.code(400).send({ error: 'path obrigatório.' });
+    const relPath = String(request.query.path || '').trim();
+    const rawObjectKey = String(request.query.key || '').trim();
 
     let key: string;
+    if (rawObjectKey) {
+      const ok = await canAccessStorageObject(uid, bucket, rawObjectKey, request);
+      if (!ok) {
+        return reply.code(403).send({ error: 'Acesso negado.' });
+      }
+      key = rawObjectKey;
+    } else {
+      if (!relPath) return reply.code(400).send({ error: 'path obrigatório.' });
+      const bookId = parseBookId(request);
+      try {
+        const effectiveRoot =
+          bookId && root === 'library'
+            ? `books/${bookId.toString()}`
+            : root;
+        const base = userFsBase(uid, effectiveRoot);
+        const rel = assertSafeRelPath(relPath);
+        key = `${base}/${rel}`;
+      } catch (e) {
+        return reply.code(400).send({ error: (e as Error).message });
+      }
+    }
+
     try {
-      const effectiveRoot =
-        bookId && root === 'library'
-          ? `books/${bookId.toString()}`
-          : root;
-      const base = userFsBase(uid, effectiveRoot);
-      const rel = assertSafeRelPath(relPath);
-      key = `${base}/${rel}`;
+      await deleteObject(bucket, key);
+    } catch (e) {
+      return reply.code(500).send({ error: (e as Error).message || 'Falha ao apagar no storage.' });
+    }
+    await prisma.mediaFile.deleteMany({ where: { bucketName: bucket, filePath: key } });
+    return reply.send({ ok: true });
+  });
+
+  app.post<{
+    Body: { mediaType?: MediaType; root?: string; path?: string; fileName?: string; key?: string };
+  }>('/media/rename', { preHandler: requireCmsEditor }, async (request, reply) => {
+    const mediaType = (request.body?.mediaType || 'image') as MediaType;
+    const bucket = MEDIA_BUCKET_MAP[mediaType] || MEDIA_BUCKET_MAP.image;
+    try {
+      assertBucket(bucket);
     } catch (e) {
       return reply.code(400).send({ error: (e as Error).message });
     }
 
-    await deleteObject(bucket, key);
-    await prisma.mediaFile.deleteMany({ where: { userId: uid, bucketName: bucket, filePath: key } });
+    const uid = request.user!.id;
+    const root = request.body?.root || 'library';
+    const relPath = String(request.body?.path || '').trim();
+    const rawObjectKey = String(request.body?.key || '').trim();
+    const fileName = sanitizeFileName(String(request.body?.fileName || '').trim());
+    if (!fileName) return reply.code(400).send({ error: 'fileName obrigatório.' });
+
+    let key: string;
+    if (rawObjectKey) {
+      const ok = await canAccessStorageObject(uid, bucket, rawObjectKey, request);
+      if (!ok) return reply.code(403).send({ error: 'Acesso negado.' });
+      key = rawObjectKey;
+    } else {
+      if (!relPath) return reply.code(400).send({ error: 'path obrigatório.' });
+      const bookId = parseBookId(request);
+      try {
+        const effectiveRoot =
+          bookId && root === 'library'
+            ? `books/${bookId.toString()}`
+            : root;
+        const base = userFsBase(uid, effectiveRoot);
+        key = `${base}/${assertSafeRelPath(relPath)}`;
+      } catch (e) {
+        return reply.code(400).send({ error: (e as Error).message });
+      }
+    }
+
+    await prisma.mediaFile.updateMany({
+      where: { bucketName: bucket, filePath: key },
+      data: { fileName, updatedAt: new Date() },
+    });
     return reply.send({ ok: true });
   });
 
-  app.post<{ Body: { mediaType?: MediaType; root?: string; from?: string; to?: string } }>(
+  app.post<{
+    Body: {
+      mediaType?: MediaType;
+      root?: string;
+      from?: string;
+      to?: string;
+      fromKey?: string;
+      toKey?: string;
+    };
+  }>(
     '/media/move',
     { preHandler: requireCmsEditor },
     async (request, reply) => {
@@ -554,28 +652,48 @@ export async function registerMediaRoutes(app: FastifyInstance) {
       const uid = request.user!.id;
       const root = request.body?.root || 'library';
       const bookId = parseBookId(request);
-      const fromRel = request.body?.from || '';
-      const toRel = request.body?.to || '';
-      if (!fromRel || !toRel) return reply.code(400).send({ error: 'from e to obrigatórios.' });
+      const fromRel = String(request.body?.from || '').trim();
+      const toRel = String(request.body?.to || '').trim();
+      const rawFromKey = String(request.body?.fromKey || '').trim();
+      const rawToKey = String(request.body?.toKey || '').trim();
+      if ((!fromRel || !toRel) && (!rawFromKey || !rawToKey)) {
+        return reply.code(400).send({ error: 'from e to obrigatórios.' });
+      }
 
       let fromKey: string;
       let toKey: string;
-      try {
-        const effectiveRoot =
-          bookId && root === 'library'
-            ? `books/${bookId.toString()}`
-            : root;
-        const base = userFsBase(uid, effectiveRoot);
-        fromKey = `${base}/${assertSafeRelPath(fromRel)}`;
-        toKey = `${base}/${assertSafeRelPath(toRel)}`;
-      } catch (e) {
-        return reply.code(400).send({ error: (e as Error).message });
+      if (rawFromKey && rawToKey) {
+        const ok = await canAccessStorageObject(uid, bucket, rawFromKey, request);
+        if (!ok) {
+          return reply.code(403).send({ error: 'Acesso negado.' });
+        }
+        const fromDir = path.posix.dirname(rawFromKey);
+        const toDir = path.posix.dirname(rawToKey);
+        if (!fromDir || fromDir === '.' || fromDir !== toDir) {
+          return reply.code(400).send({ error: 'A renomeação deve manter a mesma pasta.' });
+        }
+        fromKey = rawFromKey;
+        toKey = `${fromDir}/${sanitizeFileName(path.posix.basename(rawToKey))}`;
+      } else {
+        try {
+          const effectiveRoot =
+            bookId && root === 'library'
+              ? `books/${bookId.toString()}`
+              : root;
+          const base = userFsBase(uid, effectiveRoot);
+          fromKey = `${base}/${assertSafeRelPath(fromRel)}`;
+          toKey = `${base}/${assertSafeRelPath(toRel)}`;
+        } catch (e) {
+          return reply.code(400).send({ error: (e as Error).message });
+        }
       }
 
       await copyObject(bucket, fromKey, toKey);
       await deleteObject(bucket, fromKey);
       await prisma.mediaFile.updateMany({
-        where: { userId: uid, bucketName: bucket, filePath: fromKey },
+        where: rawFromKey
+          ? { bucketName: bucket, filePath: fromKey }
+          : { userId: uid, bucketName: bucket, filePath: fromKey },
         data: { filePath: toKey, fileName: path.posix.basename(toKey) },
       });
       return reply.send({ ok: true });

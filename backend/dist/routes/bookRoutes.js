@@ -98,7 +98,7 @@ async function hydratePagesV2MediaUrls(v2, cache) {
         }
         const nodes = Array.isArray(page.nodes) ? page.nodes : [];
         for (const node of nodes) {
-            if (!isRecord(node) || node.type !== 'image')
+            if (!isRecord(node) || (node.type !== 'image' && node.type !== 'video'))
                 continue;
             const props = isRecord(node.props) ? node.props : null;
             if (!props)
@@ -109,6 +109,14 @@ async function hydratePagesV2MediaUrls(v2, cache) {
                 props.content = signedNode;
             if (!props.storage && nodeStorage)
                 props.storage = nodeStorage;
+            if (node.type === 'video') {
+                const posterStorage = props.posterStorage ?? parseStorageFromUrl(props.poster);
+                const signedPoster = await resolveStorageUrl(cache, posterStorage);
+                if (signedPoster)
+                    props.poster = signedPoster;
+                if (!props.posterStorage && posterStorage)
+                    props.posterStorage = posterStorage;
+            }
             node.props = props;
         }
     }
@@ -223,7 +231,7 @@ function remapImportedStorageInPagesV2(v2, remap) {
                 continue;
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const n = node;
-            if (n.type !== 'image')
+            if (n.type !== 'image' && n.type !== 'video')
                 continue;
             const props = n.props && typeof n.props === 'object' ? { ...n.props } : {};
             const storage = props.storage;
@@ -235,6 +243,18 @@ function remapImportedStorageInPagesV2(v2, remap) {
                 if (hit) {
                     props.storage = { bucket: hit.bucket, filePath: hit.to };
                     props.content = '';
+                    n.props = props;
+                }
+            }
+            if (n.type === 'video' &&
+                props.posterStorage &&
+                props.posterStorage.importSessionId === remap.importSessionId &&
+                props.posterStorage.bucket &&
+                props.posterStorage.filePath) {
+                const hitPoster = byFrom.get(`${props.posterStorage.bucket}:${props.posterStorage.filePath}`);
+                if (hitPoster) {
+                    props.posterStorage = { bucket: hitPoster.bucket, filePath: hitPoster.to };
+                    props.poster = '';
                     n.props = props;
                 }
             }

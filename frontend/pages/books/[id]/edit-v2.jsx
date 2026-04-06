@@ -18,6 +18,7 @@ import { toast } from 'react-hot-toast';
 import EditorLayout from '../../../components/EditorLayout';
 import RulersOverlay from '../../../components/editor/RulersOverlay';
 import BottomDock from '../../../components/editor/v2/BottomDock';
+import LayerManagerPanel from '../../../components/editor/v2/LayerManagerPanel';
 import PageSidebar from '../../../components/editor/v2/PageSidebar';
 import PropertiesInspector from '../../../components/editor/v2/PropertiesInspector';
 import ShapeSidebar from '../../../components/editor/v2/ShapeSidebar';
@@ -49,6 +50,39 @@ function ensurePagesV2(v2) {
   return v2;
 }
 
+/** Altura mínima do canvas e máxima da timeline para o split não travar em telas baixas/estreitas. */
+function computeWorkspaceSplitLayout() {
+  if (typeof window === 'undefined') {
+    return { minCanvasPx: 200, maxBottomPx: 520 };
+  }
+  const vh = window.innerHeight;
+  const vw = window.innerWidth;
+  const HEADER_PX = 56;
+  const SEP_PX = 12;
+  const mainArea = Math.max(0, vh - HEADER_PX);
+  const MIN_BOTTOM = 120;
+
+  let minCanvasPx = 360;
+  if (vw < 480) minCanvasPx = 96;
+  else if (vw < 640) minCanvasPx = 140;
+  else if (vw < 900) minCanvasPx = 200;
+  else if (vw < 1200) minCanvasPx = 260;
+  else if (vw < 1600) minCanvasPx = 300;
+
+  if (mainArea < 560) {
+    minCanvasPx = Math.min(minCanvasPx, Math.max(72, Math.floor(mainArea * 0.22)));
+  }
+
+  let maxBottomPx = mainArea - minCanvasPx - SEP_PX;
+  if (maxBottomPx < MIN_BOTTOM) {
+    minCanvasPx = Math.max(40, mainArea - SEP_PX - MIN_BOTTOM);
+    maxBottomPx = mainArea - minCanvasPx - SEP_PX;
+  }
+  maxBottomPx = Math.min(520, Math.max(80, maxBottomPx));
+  minCanvasPx = Math.min(minCanvasPx, Math.max(40, mainArea - SEP_PX - maxBottomPx));
+  return { minCanvasPx, maxBottomPx };
+}
+
 function deepClone(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -56,6 +90,11 @@ function deepClone(value) {
 function isTypingTarget(target) {
   if (!target || typeof target.closest !== 'function') return false;
   return Boolean(target.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]'));
+}
+
+function getDraftStorageKey(bookId) {
+  if (!bookId) return '';
+  return `luditeca:editor:v2:draft:${String(bookId)}`;
 }
 
 function makeTextNode() {
@@ -147,6 +186,8 @@ export default function EditBookV2() {
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [leftTab, setLeftTab] = useState('pages');
   const [mediaType, setMediaType] = useState('image');
+  const [snapToGrid, setSnapToGrid] = useState(true);
+  const [splitLayout, setSplitLayout] = useState({ minCanvasPx: 360, maxBottomPx: 520 });
   const [bottomHeight, setBottomHeight] = useState(280);
   const [currentStep, setCurrentStep] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -183,6 +224,7 @@ export default function EditBookV2() {
   const currentPageRef = useRef(0);
   const selectedNodeIdRef = useRef(null);
   const clipboardRef = useRef(null);
+  const saveBookRef = useRef(null);
 
   const safeV2 = useMemo(() => ensurePagesV2(pagesV2), [pagesV2]);
   const page = safeV2.pages?.[currentPage] || safeV2.pages?.[0] || null;
@@ -310,7 +352,6 @@ export default function EditBookV2() {
     setMediaType('audio');
     setLeftTab('media');
   }, []);
-
   const patchPage = useCallback((idx, patcher) => {
     setPagesV2((prev) => {
       const base = ensurePagesV2(prev);
@@ -507,7 +548,27 @@ export default function EditBookV2() {
 
   const handlePickMedia = useCallback((file) => {
     if (!file) return;
-    const isAudio = String(file?.type || '').toLowerCase() === 'audio';
+    const normalizedType = String(file?.type || '').toLowerCase();
+    const isAudio = normalizedType === 'audio';
+    const isVideo = normalizedType === 'video';
+    const nameProbe = String(file?.name || file?.path || '');
+    const urlProbe = String(file?.url || '');
+    const mimeProbe = String(file?.fileType || file?.metadata?.mime || '').toLowerCase();
+    const isGifMedia =
+      normalizedType === 'gif' ||
+      (!isAudio &&
+        !isVideo &&
+        (mimeProbe === 'image/gif' ||
+          /\.gif(?:$|[?#])/i.test(nameProbe) ||
+          /\.gif(?:$|[?#])/i.test(urlProbe)));
+    const bucketFromFile =
+      typeof file?.bucket === 'string' && file.bucket.trim()
+        ? file.bucket.trim()
+        : isAudio
+          ? 'audios'
+          : isVideo
+            ? 'videos'
+            : 'pages';
     const explicitStorageKey =
       typeof file?.storageKey === 'string' && file.storageKey.trim()
         ? file.storageKey.trim()
@@ -517,19 +578,39 @@ export default function EditBookV2() {
       : null;
     const basePath = explicitStorageKey || fallbackPath;
 
-    const fileVisualType = String(file?.type || '').toLowerCase();
+    const fileVisualType = isGifMedia ? 'gif' : normalizedType;
 
     if (!isAudio) {
       const node = {
         id: String(Date.now()),
-        type: 'image',
+        type: isVideo ? 'video' : 'image',
         transform: { x: 100, y: 100, width: 260, height: 200, rotation: 0 },
         zIndex: 1,
         step: 0,
         props: {
           content: String(file?.url || ''),
-          ...(basePath ? { storage: { bucket: 'pages', filePath: basePath } } : {}),
-          ...(fileVisualType === 'gif' ? { mediaKind: 'gif' } : {}),
+          ...(basePath ? { storage: { bucket: bucketFromFile, filePath: basePath } } : {}),
+          ...(isGifMedia ? { mediaKind: 'gif' } : {}),
+          ...(isVideo
+            ? {
+                mediaKind: 'video',
+                poster: '',
+                controls: true,
+                autoplay: false,
+                muted: true,
+                loop: false,
+                startAt: 0,
+                volume: 1,
+                objectFit: 'cover',
+                bookVideoLayout: 'standard',
+                videoCornerRadius: 12,
+                title: '',
+                videoCaption: '',
+                videoPlaceholderFill: '#111827',
+                showPlayBadge: true,
+                playbackRate: 1,
+              }
+            : {}),
         },
       };
       patchPage(currentPage, (p) => {
@@ -544,10 +625,10 @@ export default function EditBookV2() {
     if (selectedNodeId) {
       const target = nodes.find((n) => String(n.id) === String(selectedNodeId));
       const targetType = String(target?.type || '');
-      if (targetType !== 'text' && targetType !== 'image') {
+      if (targetType !== 'text' && targetType !== 'image' && targetType !== 'video') {
         return;
       }
-      const audioStorage = basePath ? { bucket: 'audios', filePath: basePath } : null;
+      const audioStorage = basePath ? { bucket: bucketFromFile || 'audios', filePath: basePath } : null;
       patchNode(selectedNodeId, {
         props: {
           ...(nodes.find((n) => String(n.id) === String(selectedNodeId))?.props || {}),
@@ -657,12 +738,92 @@ export default function EditBookV2() {
         Promise.resolve().then(() => {
           isApplyingHistoryRef.current = false;
         });
+        return;
+      }
+
+      if (isMod && key === 's') {
+        event.preventDefault();
+        if (typeof saveBookRef.current === 'function') {
+          void saveBookRef.current();
+        }
+        return;
+      }
+
+      if (!selectedNodeIdRef.current) return;
+      if (isMod && key === ']') {
+        event.preventDefault();
+        const selectedId = selectedNodeIdRef.current;
+        const target = nodes.find((n) => String(n.id) === String(selectedId));
+        if (!target) return;
+        patchNode(selectedId, { zIndex: Math.max(0, Math.trunc(Number(target.zIndex || 0)) + 1) });
+        return;
+      }
+      if (isMod && key === '[') {
+        event.preventDefault();
+        const selectedId = selectedNodeIdRef.current;
+        const target = nodes.find((n) => String(n.id) === String(selectedId));
+        if (!target) return;
+        patchNode(selectedId, { zIndex: Math.max(0, Math.trunc(Number(target.zIndex || 0)) - 1) });
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [pagesV2, deleteNode, duplicateNodeToCurrentPage]);
+  }, [pagesV2, deleteNode, duplicateNodeToCurrentPage, nodes, patchNode]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const key = getDraftStorageKey(id);
+    if (!key) return;
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed || !isPagesV2(parsed.pages_v2)) return;
+      const wantsRestore = window.confirm(
+        'Encontramos um rascunho local não salvo deste livro. Deseja restaurar?',
+      );
+      if (!wantsRestore) {
+        window.localStorage.removeItem(key);
+        return;
+      }
+      setPagesV2(ensurePagesV2(parsed.pages_v2));
+      if (typeof parsed.title === 'string') setTitle(parsed.title);
+      if (typeof parsed.description === 'string') setDescription(parsed.description);
+      if (typeof parsed.author_id === 'string') setAuthorId(parsed.author_id);
+      if (typeof parsed.category_id === 'string') setCategoryId(parsed.category_id);
+      if (typeof parsed.cover_image === 'string') setCoverImage(parsed.cover_image);
+      setIsModified(true);
+      toast.success('Rascunho local restaurado.');
+    } catch {
+      // ignorar rascunho inválido
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!id || !pagesV2) return;
+    if (!isModified) return;
+    const key = getDraftStorageKey(id);
+    if (!key) return;
+    const timer = window.setTimeout(() => {
+      try {
+        const payload = {
+          title,
+          description,
+          author_id: authorId || '',
+          category_id: categoryId || '',
+          cover_image: coverImage || '',
+          pages_v2: ensurePagesV2(pagesV2),
+          savedAt: Date.now(),
+        };
+        window.localStorage.setItem(key, JSON.stringify(payload));
+      } catch {
+        // sem quota, apenas ignora
+      }
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [id, isModified, pagesV2, title, description, authorId, categoryId, coverImage]);
 
   const saveBook = useCallback(async () => {
     if (!book || !id || !pagesV2) return;
@@ -682,6 +843,10 @@ export default function EditBookV2() {
     setSaving(false);
     if (!error) {
       setIsModified(false);
+      if (typeof window !== 'undefined') {
+        const key = getDraftStorageKey(id);
+        if (key) window.localStorage.removeItem(key);
+      }
       setBook((prev) =>
         prev
           ? {
@@ -696,6 +861,10 @@ export default function EditBookV2() {
       );
     }
   }, [book, id, pagesV2, title, description, authorId, categoryId, coverImage]);
+
+  useEffect(() => {
+    saveBookRef.current = saveBook;
+  }, [saveBook]);
 
   const playPause = useCallback(() => {
     if (isPlaying) {
@@ -765,6 +934,17 @@ export default function EditBookV2() {
     }
   }, []);
 
+  useEffect(() => {
+    const update = () => setSplitLayout(computeWorkspaceSplitLayout());
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
+
+  useEffect(() => {
+    setBottomHeight((h) => Math.max(120, Math.min(splitLayout.maxBottomPx, h)));
+  }, [splitLayout.maxBottomPx]);
+
   const handleBottomResizeStart = useCallback((event) => {
     event.preventDefault();
     isResizingBottomRef.current = true;
@@ -774,7 +954,8 @@ export default function EditBookV2() {
     const onMove = (ev) => {
       if (!isResizingBottomRef.current || !resizeStartRef.current) return;
       const delta = resizeStartRef.current.y - ev.clientY;
-      const next = Math.max(180, Math.min(520, resizeStartRef.current.height + delta));
+      const maxPx = splitLayout.maxBottomPx;
+      const next = Math.max(120, Math.min(maxPx, resizeStartRef.current.height + delta));
       setBottomHeight(next);
     };
     const onUp = () => {
@@ -787,7 +968,7 @@ export default function EditBookV2() {
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
-  }, [bottomHeight]);
+  }, [bottomHeight, splitLayout.maxBottomPx]);
 
   if (loading) {
     return (
@@ -802,7 +983,7 @@ export default function EditBookV2() {
       <Head>
         <title>{title || 'Editor'} - Luditeca</title>
       </Head>
-      <div className="flex h-full flex-col overflow-hidden bg-slate-900 font-sans text-slate-300">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-900 font-sans text-slate-300">
         <header className="z-20 flex h-14 shrink-0 items-center justify-between border-b border-slate-700 bg-slate-800 px-4 shadow-sm">
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <button type="button" onClick={() => router.push('/books')} className="shrink-0 rounded-md bg-slate-700 p-2 text-slate-200 transition-colors hover:bg-slate-600" title="Voltar aos livros">
@@ -951,11 +1132,16 @@ export default function EditBookV2() {
             </div>
           </div>
         ) : (
-        <div className="grid min-h-0 flex-1 overflow-hidden" style={{ gridTemplateRows: `minmax(360px, 1fr) 8px ${bottomHeight}px` }}>
-          <main className="relative flex min-h-0 overflow-hidden">
+        <div
+          className="grid min-h-0 flex-1 overflow-hidden [isolation:isolate]"
+          style={{
+            gridTemplateRows: `minmax(${splitLayout.minCanvasPx}px, 1fr) 12px ${bottomHeight}px`,
+          }}
+        >
+          <main className="relative z-0 flex min-h-0 min-w-0 overflow-hidden">
             {!leftCollapsed ? (
-              <aside className="relative z-10 flex h-full w-[280px] shrink-0 flex-col border-r border-slate-700 bg-slate-800 shadow-[2px_0_8px_rgba(0,0,0,0.1)]">
-                <div className="border-b border-slate-700 px-3 py-2">
+              <aside className="relative z-10 flex h-full min-h-0 w-[280px] shrink-0 flex-col border-r border-slate-700 bg-slate-800 shadow-[2px_0_8px_rgba(0,0,0,0.1)]">
+                <div className="shrink-0 border-b border-slate-700 px-3 py-2">
                   <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap pb-1">
                     <button
                       type="button"
@@ -992,6 +1178,17 @@ export default function EditBookV2() {
                     </button>
                     <button
                       type="button"
+                      onClick={() => setLeftTab('layers')}
+                      className={`shrink-0 rounded px-2.5 py-1 text-xs font-semibold ${
+                        leftTab === 'layers'
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-slate-700 text-slate-200 hover:bg-slate-600'
+                      }`}
+                    >
+                      Camadas
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setLeftTab('shapes')}
                       className={`shrink-0 rounded px-2.5 py-1 text-xs font-semibold ${
                         leftTab === 'shapes'
@@ -1003,6 +1200,7 @@ export default function EditBookV2() {
                     </button>
                   </div>
                 </div>
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
                 {leftTab === 'properties' ? (
                   <PropertiesInspector
                     page={page}
@@ -1014,6 +1212,16 @@ export default function EditBookV2() {
                     onTestElementAnimation={testElementAnimation}
                     onTestPageTransition={testPageTransition}
                     showPageTransitionEditor={showTransitionEditor}
+                  />
+                ) : leftTab === 'layers' ? (
+                  <LayerManagerPanel
+                    nodes={nodes}
+                    selectedNodeId={selectedNodeId}
+                    onSelectNode={(nodeId) => {
+                      setSelectedNodeId(nodeId);
+                      setShowTransitionEditor(false);
+                    }}
+                    onPatchNode={patchNode}
                   />
                 ) : leftTab === 'shapes' ? (
                   <ShapeSidebar onAddShape={handleAddShapeFromPalette} />
@@ -1037,6 +1245,7 @@ export default function EditBookV2() {
                     showTabs={false}
                   />
                 )}
+                </div>
                 <button type="button" onClick={() => setLeftCollapsed(true)} className="absolute -right-4 top-1/2 flex h-8 w-4 -translate-y-1/2 items-center justify-center rounded-r-md border border-l-0 border-slate-700 bg-slate-800 text-slate-400 hover:text-white" title="Ocultar painel esquerdo">
                   <FiChevronLeft size={14} />
                 </button>
@@ -1094,6 +1303,9 @@ export default function EditBookV2() {
                     timelinePlayback={
                       isPlaying ? { nonce: playbackNonce, step: currentStep } : null
                     }
+                    showGrid={showRulers}
+                    snapToGrid={snapToGrid}
+                    gridSize={20}
                     onRequestPropertiesPanel={() => {
                       setLeftTab('properties');
                       setShowTransitionEditor(false);
@@ -1106,9 +1318,14 @@ export default function EditBookV2() {
 
           </main>
 
-          <div role="separator" aria-label="Redimensionar painel inferior" onPointerDown={handleBottomResizeStart} className="h-2 shrink-0 cursor-row-resize border-y border-slate-700 bg-slate-900 hover:bg-slate-800" />
+          <div
+            role="separator"
+            aria-label="Redimensionar painel inferior"
+            onPointerDown={handleBottomResizeStart}
+            className="h-3 shrink-0 cursor-row-resize touch-manipulation border-y border-slate-700 bg-slate-900 hover:bg-slate-800 active:bg-indigo-900/30"
+          />
 
-          <footer className="min-h-0 border-t border-slate-700 bg-slate-800">
+          <footer className="relative z-20 min-h-0 border-t border-slate-700 bg-slate-800">
             <BottomDock
               pageNodes={nodes}
               selectedNodeId={selectedNodeId}
@@ -1120,6 +1337,9 @@ export default function EditBookV2() {
               onStepBack={() => setCurrentStep((v) => Math.max(0, v - 1))}
               onStepForward={() => setCurrentStep((v) => v + 1)}
               onUpdateElementStep={updateNodeStep}
+              showGrid={showRulers}
+              snapToGrid={snapToGrid}
+              onToggleSnapToGrid={() => setSnapToGrid((v) => !v)}
             />
           </footer>
         </div>

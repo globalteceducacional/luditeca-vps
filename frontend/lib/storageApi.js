@@ -104,7 +104,7 @@ export function storageUploadWithProgressAndRoot(bucket, { path, file, root = 'l
 
 export async function storageReplaceWithRoot(
   bucket,
-  { path, file, root = 'library', headers = {} } = {},
+  { path, file, root = 'library', headers = {}, objectKey } = {},
 ) {
   const base = getApiBaseUrl();
   const token = getAccessToken();
@@ -114,14 +114,21 @@ export async function storageReplaceWithRoot(
   const mergedHeaders = { ...(headers || {}) };
   if (token) mergedHeaders.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(
-    `${base}/media/replace?mediaType=${encodeURIComponent(mediaType)}&root=${encodeURIComponent(root)}&path=${encodeURIComponent(path || '')}`,
-    {
-      method: 'POST',
-      headers: mergedHeaders,
-      body: form,
-    },
-  );
+  const q = new URLSearchParams();
+  q.set('mediaType', mediaType);
+  q.set('root', root);
+  const fullKey = typeof objectKey === 'string' && objectKey.trim() ? objectKey.trim() : '';
+  if (fullKey) {
+    q.set('key', fullKey);
+  } else {
+    q.set('path', path || '');
+  }
+
+  const res = await fetch(`${base}/media/replace?${q.toString()}`, {
+    method: 'POST',
+    headers: mergedHeaders,
+    body: form,
+  });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new Error(json.error || `Substituição falhou (${res.status})`);
@@ -133,12 +140,21 @@ export async function storageDeleteObject(bucket, path) {
   return storageDeleteObjectWithRoot(bucket, { path, root: 'library' });
 }
 
-export async function storageDeleteObjectWithRoot(bucket, { path, root = 'library', headers = {} } = {}) {
+export async function storageDeleteObjectWithRoot(
+  bucket,
+  { path, root = 'library', headers = {}, objectKey } = {},
+) {
   const mediaType = toMediaTypeFromBucket(bucket);
-  await apiFetch(
-    `/media/object?mediaType=${encodeURIComponent(mediaType)}&root=${encodeURIComponent(root)}&path=${encodeURIComponent(path)}`,
-    { method: 'DELETE', headers },
-  );
+  const q = new URLSearchParams();
+  q.set('mediaType', mediaType);
+  q.set('root', root);
+  const fullKey = typeof objectKey === 'string' && objectKey.trim() ? objectKey.trim() : '';
+  if (fullKey) {
+    q.set('key', fullKey);
+  } else {
+    q.set('path', path || '');
+  }
+  await apiFetch(`/media/object?${q.toString()}`, { method: 'DELETE', headers });
 }
 
 export async function storageCreateFolder(bucket, folderPath) {
@@ -158,16 +174,47 @@ export async function storageCreateFolderWithRoot(bucket, { folderPath, root = '
   });
 }
 
+export async function storageRenameWithRoot(
+  bucket,
+  { path, root = 'library', headers = {}, objectKey, fileName } = {},
+) {
+  const mediaType = toMediaTypeFromBucket(bucket);
+  await apiFetch(`/media/rename`, {
+    method: 'POST',
+    headers,
+    body: {
+      mediaType,
+      root,
+      path: path || '',
+      key: objectKey || '',
+      fileName: fileName || '',
+    },
+  });
+}
+
 export async function storageMove(bucket, from, to) {
   return storageMoveWithRoot(bucket, { from, to, root: 'library' });
 }
 
-export async function storageMoveWithRoot(bucket, { from, to, root = 'library', headers = {} } = {}) {
+export async function storageMoveWithRoot(
+  bucket,
+  { from, to, root = 'library', headers = {}, objectFromKey, objectToKey } = {},
+) {
   const mediaType = toMediaTypeFromBucket(bucket);
+  const body = { mediaType, root };
+  const fromKey = typeof objectFromKey === 'string' && objectFromKey.trim() ? objectFromKey.trim() : '';
+  const toKey = typeof objectToKey === 'string' && objectToKey.trim() ? objectToKey.trim() : '';
+  if (fromKey && toKey) {
+    body.fromKey = fromKey;
+    body.toKey = toKey;
+  } else {
+    body.from = from;
+    body.to = to;
+  }
   await apiFetch(`/media/move`, {
     method: 'POST',
     headers,
-    body: { mediaType, root, from, to },
+    body,
   });
 }
 

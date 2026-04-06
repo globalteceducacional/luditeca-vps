@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Stage, Layer, Rect, Text, Group, Line, Ellipse, Image as KonvaImage, Transformer } from 'react-konva';
 import { createPortal } from 'react-dom';
 import Konva from 'konva';
-import { storageSignedGetUrl } from '../../lib/storageApi';
+import { useResolvedStorageUrl } from '../../lib/useResolvedStorageUrl';
 
 function toNum(v, fallback) {
   const n = Number(v);
@@ -133,13 +133,17 @@ function getGuides(lineGuideStops, itemBounds, tolerance = 6) {
   return { v, h };
 }
 
+/** Pequena folga para o pan não ficar preso quando o canvas cabe exactamente na área útil. */
+const PAN_VIEW_SLACK_PX = 120;
+
 function clampPanToViewport(pan, viewport, canvasW, canvasH, scale) {
   const contentW = canvasW * scale;
   const contentH = canvasH * scale;
-  const minX = Math.min(0, viewport.width - contentW);
-  const minY = Math.min(0, viewport.height - contentH);
-  const maxX = Math.max(0, viewport.width - contentW);
-  const maxY = Math.max(0, viewport.height - contentH);
+  const slack = PAN_VIEW_SLACK_PX;
+  const minX = Math.min(0, viewport.width - contentW) - slack;
+  const minY = Math.min(0, viewport.height - contentH) - slack;
+  const maxX = Math.max(0, viewport.width - contentW) + slack;
+  const maxY = Math.max(0, viewport.height - contentH) + slack;
   return {
     x: clamp(pan.x, minX, maxX),
     y: clamp(pan.y, minY, maxY),
@@ -167,33 +171,6 @@ function useHtmlImage(url) {
   return image;
 }
 
-function useResolvedStorageUrl(url, storage) {
-  const filePath = typeof storage?.filePath === 'string' ? storage.filePath.trim() : '';
-  const bucket =
-    typeof storage?.bucket === 'string' && storage.bucket.trim() ? storage.bucket.trim() : 'pages';
-  const [resolved, setResolved] = useState(() => String(url || ''));
-  useEffect(() => {
-    const staticUrl = String(url || '');
-    if (!filePath) {
-      setResolved(staticUrl);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        const signed = await storageSignedGetUrl(bucket, filePath);
-        if (!cancelled) setResolved(signed || staticUrl);
-      } catch {
-        if (!cancelled) setResolved(staticUrl);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [url, filePath, bucket]);
-  return resolved;
-}
-
 /**
  * Com `storage.filePath`, a URL em `content` pode ser presign expirado (import/minio);
  * renova via API antes de carregar no Image().
@@ -212,6 +189,14 @@ function isGifUrl(url) {
 
 function isGifMediaKind(v) {
   return String(v || '').toLowerCase() === 'gif';
+}
+
+function isNodeHidden(node) {
+  return Boolean(node?.props?.hidden);
+}
+
+function isNodeLocked(node) {
+  return Boolean(node?.props?.locked);
 }
 
 function nodeIsAnimatedGif(node) {
@@ -243,6 +228,7 @@ function ImageNode({
 }) {
   const props = node?.props || {};
   const img = useStorageBackedImageUrl(String(props?.content || ''), props?.storage);
+  const locked = isNodeLocked(node);
 
   const imgRef = useRef(null);
 
@@ -434,13 +420,263 @@ function ImageNode({
       rotation={t.rotation}
       image={img}
       opacity={visual?.opacity}
-      draggable={!isPreviewMode}
+      draggable={!isPreviewMode && !locked}
       onClick={(e) => !isPreviewMode && onSelectNode?.(id, e)}
       onTap={(e) => !isPreviewMode && onSelectNode?.(id, e)}
       onDragEnd={(e) => {
         commitNode(id, { transform: { ...node.transform, x: e.target.x(), y: e.target.y() } });
       }}
     />
+  );
+}
+
+function VideoNode({
+  id,
+  node,
+  t,
+  visual,
+  isPreviewMode,
+  onSelectNode,
+  commitNode,
+}) {
+  const locked = isNodeLocked(node);
+  const p = node?.props || {};
+  const poster = useStorageBackedImageUrl(String(p.poster || ''), p.posterStorage);
+  const titleRaw = String(p.title || '').trim();
+  const label = titleRaw || 'Video';
+  const caption = String(p.videoCaption || '').trim();
+  const showTitleChrome = Boolean(titleRaw || caption);
+  const layout = ['standard', 'poster_card', 'minimal_chrome'].includes(p.bookVideoLayout)
+    ? p.bookVideoLayout
+    : 'standard';
+  const cr = Math.max(0, Math.min(48, toNum(p.videoCornerRadius, 12)));
+  const placeholderFill = String(p.videoPlaceholderFill || '#111827');
+  const showPlay = p.showPlayBadge !== false;
+  const headerH = layout === 'standard' ? 28 : 0;
+  const playR = layout === 'minimal_chrome' ? 12 : 16;
+  const playCenterX =
+    layout === 'poster_card' || layout === 'minimal_chrome'
+      ? t.width - playR * 2 - 10
+      : Math.max(playR + 4, t.width / 2 - playR);
+  const playCenterY =
+    layout === 'poster_card' || layout === 'minimal_chrome'
+      ? t.height - playR * 2 - 10
+      : Math.max(headerH + playR + 8, t.height / 2 - playR);
+  const rawStrokeW = toNum(visual?.strokeWidth, 0);
+  const effStrokeW = rawStrokeW > 0 ? Math.max(1, rawStrokeW) : 1;
+  const effStrokeColor =
+    visual?.stroke || (layout === 'minimal_chrome' ? '#94a3b8' : '#4b5563');
+  const playScale = playR / 16;
+  const playTri = [12 * playScale, 9 * playScale, 12 * playScale, 23 * playScale, 23 * playScale, 16 * playScale];
+
+  return (
+    <Group
+      id={`node-${id}`}
+      name="selectable"
+      x={t.x}
+      y={t.y}
+      width={t.width}
+      height={t.height}
+      rotation={t.rotation}
+      opacity={visual?.opacity}
+      draggable={!isPreviewMode && !locked}
+      onClick={(e) => !isPreviewMode && onSelectNode?.(id, e)}
+      onTap={(e) => !isPreviewMode && onSelectNode?.(id, e)}
+      onDragEnd={(e) => {
+        commitNode(id, { transform: { ...node.transform, x: e.target.x(), y: e.target.y() } });
+      }}
+    >
+      <Rect
+        width={t.width}
+        height={t.height}
+        cornerRadius={cr}
+        fill={layout === 'minimal_chrome' && poster ? 'rgba(15, 23, 42, 0.25)' : placeholderFill}
+        stroke={effStrokeColor}
+        strokeWidth={effStrokeW}
+        shadowColor={visual?.shadowColor}
+        shadowBlur={visual?.shadowBlur}
+        shadowOffsetX={visual?.shadowOffsetX}
+        shadowOffsetY={visual?.shadowOffsetY}
+        shadowOpacity={visual?.shadowOpacity}
+      />
+      {poster ? (
+        <KonvaImage
+          image={poster}
+          width={t.width}
+          height={t.height}
+          cornerRadius={cr}
+          perfectDrawEnabled={false}
+          listening={false}
+        />
+      ) : null}
+      {layout === 'standard' ? (
+        <>
+          <Rect
+            width={t.width}
+            height={headerH}
+            cornerRadius={[cr, cr, 0, 0]}
+            fill="rgba(15, 23, 42, 0.84)"
+            listening={false}
+          />
+          <Text
+            x={10}
+            y={8}
+            width={Math.max(20, t.width - 20)}
+            fontSize={11}
+            fontStyle="bold"
+            fill="#e2e8f0"
+            text={label}
+            ellipsis
+            listening={false}
+          />
+        </>
+      ) : null}
+      {layout === 'poster_card' && showTitleChrome ? (
+        <>
+          <Rect
+            x={0}
+            y={t.height - (titleRaw && caption ? 44 : 28)}
+            width={t.width}
+            height={titleRaw && caption ? 44 : 28}
+            cornerRadius={[0, 0, cr, cr]}
+            fill="rgba(2, 6, 23, 0.72)"
+            listening={false}
+          />
+          {titleRaw ? (
+            <Text
+              x={10}
+              y={t.height - (caption ? 40 : 22)}
+              width={Math.max(20, t.width - 20)}
+              fontSize={11}
+              fontStyle="bold"
+              fill="#f1f5f9"
+              text={titleRaw}
+              ellipsis
+              listening={false}
+            />
+          ) : null}
+          {caption ? (
+            <Text
+              x={10}
+              y={t.height - (titleRaw ? 18 : 20)}
+              width={Math.max(20, t.width - playR * 4)}
+              fontSize={titleRaw ? 9 : 10}
+              fill={titleRaw ? '#94a3b8' : '#f1f5f9'}
+              fontStyle={titleRaw ? 'normal' : 'bold'}
+              text={caption}
+              ellipsis
+              listening={false}
+            />
+          ) : null}
+        </>
+      ) : null}
+      {layout === 'minimal_chrome' && showTitleChrome ? (
+        <>
+          {titleRaw ? (
+            <Text
+              x={10}
+              y={t.height - (caption ? 34 : 18)}
+              width={Math.max(20, t.width - playR * 4 - 8)}
+              fontSize={10}
+              fontStyle="bold"
+              fill="#f8fafc"
+              text={titleRaw}
+              ellipsis
+              listening={false}
+            />
+          ) : null}
+          {caption ? (
+            <Text
+              x={10}
+              y={t.height - (titleRaw ? 14 : 16)}
+              width={Math.max(20, t.width - playR * 4 - 8)}
+              fontSize={titleRaw ? 8 : 9}
+              fill={titleRaw ? '#cbd5e1' : '#f8fafc'}
+              fontStyle={titleRaw ? 'normal' : 'bold'}
+              text={caption}
+              ellipsis
+              listening={false}
+            />
+          ) : null}
+        </>
+      ) : null}
+      {showPlay ? (
+        <Group x={playCenterX} y={playCenterY} listening={false}>
+          <Rect width={playR * 2} height={playR * 2} cornerRadius={playR} fill="rgba(2, 6, 23, 0.75)" />
+          <Line points={playTri} fill="#f8fafc" closed />
+        </Group>
+      ) : null}
+    </Group>
+  );
+}
+
+/** Preview HTML com URL assinada — o nó Konva continua só placeholder para arrastar/redimensionar. */
+function SelectedVideoFloatingPreview({ node }) {
+  const props = node?.props || {};
+  const content = String(props.content || '');
+  const storage = props.storage;
+  const resolved = useResolvedStorageUrl(content, storage);
+  const posterResolved = useResolvedStorageUrl(String(props.poster || ''), props.posterStorage);
+  const videoRef = useRef(null);
+  const startAt = toNum(props.startAt, 0);
+  const muted = Boolean(props.muted);
+  const loop = Boolean(props.loop);
+  const volume = clamp(toNum(props.volume, 1), 0, 1);
+  const objectFit = ['cover', 'contain', 'fill'].includes(props.objectFit) ? props.objectFit : 'cover';
+  const showControls = props.controls !== false;
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !resolved) return;
+    const onMeta = () => {
+      try {
+        v.currentTime = Math.max(0, startAt);
+      } catch {
+        /* seek pode falhar antes de metadata */
+      }
+    };
+    v.addEventListener('loadedmetadata', onMeta);
+    return () => v.removeEventListener('loadedmetadata', onMeta);
+  }, [resolved, startAt]);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (v) v.volume = volume;
+  }, [volume]);
+
+  const playbackRate = clamp(toNum(props.playbackRate, 1), 0.25, 2);
+  useEffect(() => {
+    const v = videoRef.current;
+    if (v) v.playbackRate = playbackRate;
+  }, [playbackRate]);
+
+  if (!resolved) {
+    return (
+      <div className="pointer-events-auto absolute right-3 bottom-3 z-[5] max-w-[min(20rem,90vw)] rounded border border-gray-700 bg-gray-950/90 px-3 py-2 text-xs text-gray-400 backdrop-blur">
+        A carregar URL do video…
+      </div>
+    );
+  }
+
+  return (
+    <div className="pointer-events-auto absolute right-3 bottom-3 z-[5] w-80 max-w-[min(20rem,90vw)] rounded border border-gray-700 bg-gray-950/90 p-2 shadow-lg backdrop-blur">
+      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">Preview do video</div>
+      <video
+        ref={videoRef}
+        key={resolved}
+        src={resolved}
+        poster={posterResolved || undefined}
+        controls={showControls}
+        playsInline
+        muted={muted}
+        loop={loop}
+        className="w-full rounded border border-gray-800 bg-black"
+        style={{ maxHeight: '12rem', objectFit }}
+      />
+      <p className="mt-1 text-[10px] leading-snug text-gray-500">
+        Volume e encaixe: painel Propriedades. No canvas use o quadro para posicao e tamanho.
+      </p>
+    </div>
   );
 }
 
@@ -645,6 +881,7 @@ function RichTextNode({
   const baseColor = String(props?.color || '#000000');
   const align = String(props?.textAlign || 'left');
   const letterSpacing = toNum(props?.letterSpacing, 0);
+  const locked = isNodeLocked(node);
 
   const groupRef = useRef(null);
 
@@ -837,7 +1074,7 @@ function RichTextNode({
       height={t.height}
       rotation={t.rotation}
       opacity={visual.opacity}
-      draggable={!isPreviewMode}
+      draggable={!isPreviewMode && !locked}
       onClick={(e) => !isPreviewMode && onSelectNode?.(id, e)}
       onTap={(e) => !isPreviewMode && onSelectNode?.(id, e)}
       onDblClick={() => {
@@ -1322,11 +1559,19 @@ export default function CanvasStageKonva({
   elementAnimationTest,
   timelinePlayback,
   onRequestPropertiesPanel,
+  showGrid = false,
+  snapToGrid = false,
+  gridSize = 20,
 }) {
   const canvasW = toNum(pagesV2?.canvas?.width, 1280);
   const canvasH = toNum(pagesV2?.canvas?.height, 720);
   const page = pagesV2?.pages?.[pageIndex] || null;
   const nodes = Array.isArray(page?.nodes) ? page.nodes : [];
+  const selectedVideoNode = useMemo(() => {
+    if (!selectedId) return null;
+    const n = nodes.find((x) => String(x?.id) === String(selectedId));
+    return n?.type === 'video' ? n : null;
+  }, [selectedId, nodes]);
 
   const stageWrapRef = useRef(null);
   const stageRef = useRef(null);
@@ -1361,9 +1606,6 @@ export default function CanvasStageKonva({
   const [zoom, setZoom] = useState(1); // 0.25..3
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [viewport, setViewport] = useState({ width: canvasW, height: canvasH });
-  const [isPanning, setIsPanning] = useState(false);
-  const panStartRef = useRef(null);
-  const suppressContextMenuRef = useRef(false);
 
   const scale = useMemo(() => clamp(fitScale * zoom, 0.1, 3), [fitScale, zoom]);
 
@@ -1404,6 +1646,8 @@ export default function CanvasStageKonva({
   const handleSelectNode = useCallback((nodeId, konvaEvt) => {
     const sid = String(nodeId || '');
     if (!sid) return;
+    const targetNode = nodes.find((n) => String(n?.id) === sid);
+    if (!targetNode || isNodeHidden(targetNode)) return;
     const evt = konvaEvt?.evt;
     const hasCtrl = Boolean(evt?.ctrlKey || evt?.metaKey);
     if (!hasCtrl) {
@@ -1418,7 +1662,7 @@ export default function CanvasStageKonva({
       setSelectedId?.(primary);
       return next;
     });
-  }, [setSelectedId]);
+  }, [setSelectedId, nodes]);
 
   // Sync Transformer selection
   useEffect(() => {
@@ -1438,14 +1682,20 @@ export default function CanvasStageKonva({
     const selectedNodes = selectedIds
       .map((id) => stage.findOne(`#node-${String(id)}`))
       .filter(Boolean);
-    if (selectedNodes.length) {
-      tr.nodes(selectedNodes);
+    const unlockedNodes = selectedNodes.filter((n) => {
+      const rawId = typeof n.id === 'function' ? n.id() : '';
+      const nodeId = String(rawId || '').replace(/^node-/, '');
+      const nodeData = nodes.find((x) => String(x?.id) === nodeId);
+      return nodeData && !isNodeLocked(nodeData) && !isNodeHidden(nodeData);
+    });
+    if (unlockedNodes.length) {
+      tr.nodes(unlockedNodes);
       tr.getLayer()?.batchDraw();
     } else {
       tr.nodes([]);
       tr.getLayer()?.batchDraw();
     }
-  }, [selectedIds, isPreviewMode, timelineStep, inlineEditor?.nodeId]);
+  }, [selectedIds, isPreviewMode, timelineStep, inlineEditor?.nodeId, nodes]);
 
   const commitNode = useCallback(
     (id, patch) => {
@@ -1519,6 +1769,22 @@ export default function CanvasStageKonva({
         nextGuides.horizontal.push({ y: h.guide });
       }
 
+      if (!v && !h && snapToGrid && gridSize > 1) {
+        const absPos = target.absolutePosition();
+        const snapX = Math.round(absPos.x / gridSize) * gridSize;
+        const snapY = Math.round(absPos.y / gridSize) * gridSize;
+        const snapTolerance = Math.max(4, Math.min(14, Math.round(gridSize * 0.35)));
+        if (Math.abs(snapX - absPos.x) <= snapTolerance) {
+          absPos.x = snapX;
+          nextGuides.vertical.push({ x: snapX, kind: 'grid' });
+        }
+        if (Math.abs(snapY - absPos.y) <= snapTolerance) {
+          absPos.y = snapY;
+          nextGuides.horizontal.push({ y: snapY, kind: 'grid' });
+        }
+        target.absolutePosition(absPos);
+      }
+
       // Evita render loop quando não há guias.
       setGuides(
         nextGuides.vertical.length || nextGuides.horizontal.length ? nextGuides : { vertical: [], horizontal: [] },
@@ -1548,7 +1814,7 @@ export default function CanvasStageKonva({
         }
       }
     },
-    [canvasW, canvasH, isPreviewMode, contextMenu?.nodeId],
+    [canvasW, canvasH, isPreviewMode, contextMenu?.nodeId, snapToGrid, gridSize],
   );
 
   const handleDragEnd = useCallback(() => {
@@ -1735,45 +2001,65 @@ export default function CanvasStageKonva({
     [zoom, isPreviewMode, scale, fitScale, pan, viewport, canvasW, canvasH],
   );
 
-  const handlePanStart = useCallback(
+  /**
+   * Pan da câmara só com o rato: botão do meio em qualquer sítio, ou botão esquerdo no fundo da página.
+   * Eventos no window para o arrasto continuar se o cursor sair do canvas.
+   */
+  const handleCameraPanStart = useCallback(
     (e) => {
       if (isPreviewMode) return;
-      // Pan: segurar Space (recomendado) OU Shift (fallback)
-      const isMiddleMouse = e?.evt?.button === 1 || e?.evt?.buttons === 4;
-      const isRightMouse = e?.evt?.button === 2 || e?.evt?.buttons === 2;
-      const isSelectableTarget = e?.target?.name?.() === 'selectable';
-      const hasSpace = Boolean(window.__LUDITECA_SPACE_PAN);
-      if (isRightMouse && isSelectableTarget) return;
-      if (!isMiddleMouse && !isRightMouse && !hasSpace && !e.evt?.shiftKey) return;
-      if (isRightMouse) {
-        suppressContextMenuRef.current = true;
+      const native = e?.evt;
+      if (!native) return;
+
+      const stage = e.target?.getStage?.();
+      const tgt = e.target;
+      const isMiddle = native.button === 1 || native.buttons === 4;
+      const isLeftOnPageBg =
+        (native.button === 0 || native.buttons === 1) &&
+        Boolean(stage) &&
+        (tgt === stage || tgt?.name?.() === 'background');
+
+      if (!isMiddle && !isLeftOnPageBg) return;
+
+      if (typeof native.preventDefault === 'function') {
+        native.preventDefault();
       }
-      setIsPanning(true);
-      panStartRef.current = {
-        x: e.evt.clientX,
-        y: e.evt.clientY,
-        panX: pan.x,
-        panY: pan.y,
+
+      const startX = native.clientX;
+      const startY = native.clientY;
+      const initialPanX = pan.x;
+      const initialPanY = pan.y;
+
+      const onMove = (ev) => {
+        const cx = Number(ev?.clientX);
+        const cy = Number(ev?.clientY);
+        if (!Number.isFinite(cx) || !Number.isFinite(cy)) return;
+        document.body.style.cursor = 'grabbing';
+        setPan(
+          clampPanToViewport(
+            { x: initialPanX + (cx - startX), y: initialPanY + (cy - startY) },
+            viewport,
+            canvasW,
+            canvasH,
+            scale,
+          ),
+        );
       };
-    },
-    [isPreviewMode, pan],
-  );
 
-  const handlePanMove = useCallback(
-    (e) => {
-      if (!isPanning) return;
-      const st = panStartRef.current;
-      if (!st) return;
-      const nextPan = { x: st.panX + (e.evt.clientX - st.x), y: st.panY + (e.evt.clientY - st.y) };
-      setPan(clampPanToViewport(nextPan, viewport, canvasW, canvasH, scale));
-    },
-    [isPanning, viewport, canvasW, canvasH, scale],
-  );
+      const onUp = () => {
+        document.body.style.cursor = '';
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        window.removeEventListener('blur', onUp);
+      };
 
-  const handlePanEnd = useCallback(() => {
-    setIsPanning(false);
-    panStartRef.current = null;
-  }, []);
+      document.body.style.cursor = 'grabbing';
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+      window.addEventListener('blur', onUp);
+    },
+    [isPreviewMode, pan.x, pan.y, viewport, canvasW, canvasH, scale],
+  );
 
   const getAnchoredContextMenuPosition = useCallback((nodeId) => {
     if (!nodeId) return null;
@@ -1815,10 +2101,6 @@ export default function CanvasStageKonva({
   const handleStageContextMenu = useCallback(
     (e) => {
       e.evt.preventDefault();
-      if (isPanning || suppressContextMenuRef.current) {
-        suppressContextMenuRef.current = false;
-        return;
-      }
       if (isPreviewMode) return;
 
       const stage = stageRef.current;
@@ -1831,7 +2113,7 @@ export default function CanvasStageKonva({
           if (selectedId) {
             const node = nodes.find((n) => String(n?.id) === String(selectedId));
             const t = String(node?.type || '');
-            if (t === 'text' || t === 'shape' || t === 'image') {
+            if (t === 'text' || t === 'shape' || t === 'image' || t === 'video') {
               handleNodeContextMenu(e, selectedId);
             }
           }
@@ -1848,7 +2130,7 @@ export default function CanvasStageKonva({
         target = target.getParent();
       }
     },
-    [isPanning, isPreviewMode, selectedId, nodes, handleNodeContextMenu],
+    [isPreviewMode, selectedId, nodes, handleNodeContextMenu],
   );
 
   const sorted = useMemo(() => {
@@ -1856,9 +2138,15 @@ export default function CanvasStageKonva({
   }, [nodes]);
 
   const sortedForTimeline = useMemo(() => {
-    if (timelineStep === undefined || timelineStep === null) return sorted;
+    if (timelineStep === undefined || timelineStep === null) {
+      return sorted.filter((n) => !isNodeHidden(n));
+    }
     const cap = Math.max(0, Math.trunc(Number(timelineStep)));
-    return sorted.filter((n) => (Number.isFinite(Number(n?.step)) ? Number(n.step) : 0) <= cap);
+    return sorted.filter(
+      (n) =>
+        !isNodeHidden(n) &&
+        (Number.isFinite(Number(n?.step)) ? Number(n.step) : 0) <= cap,
+    );
   }, [sorted, timelineStep]);
 
   const baseGifNode = useMemo(() => {
@@ -1885,6 +2173,15 @@ export default function CanvasStageKonva({
     const skipId = String(baseGifNode.id || '');
     return sortedForTimeline.filter((n) => String(n?.id || '') !== skipId);
   }, [sortedForTimeline, htmlBaseGifActive, baseGifNode]);
+
+  const gridGuides = useMemo(() => {
+    if (!showGrid || gridSize < 8) return { vertical: [], horizontal: [] };
+    const vertical = [];
+    const horizontal = [];
+    for (let x = gridSize; x < canvasW; x += gridSize) vertical.push(x);
+    for (let y = gridSize; y < canvasH; y += gridSize) horizontal.push(y);
+    return { vertical, horizontal };
+  }, [showGrid, gridSize, canvasW, canvasH]);
 
   const selectedNode = useMemo(() => {
     if (!contextMenu?.nodeId) return null;
@@ -1994,33 +2291,41 @@ export default function CanvasStageKonva({
   }, [hasGifOnPage]);
 
   return (
-    <div ref={stageWrapRef} className="relative h-full w-full overflow-hidden bg-gray-900">
+    <div
+      ref={stageWrapRef}
+      className="relative h-full w-full overflow-hidden bg-gray-900"
+      style={{ touchAction: 'none' }}
+    >
       {!isPreviewMode && (
-        <div className="absolute left-3 top-3 z-50 flex items-center gap-2 rounded border border-gray-700 bg-gray-950/70 px-3 py-2 text-xs text-gray-200 backdrop-blur">
-          <button
-            type="button"
-            className="rounded bg-gray-800 px-2 py-1 hover:bg-gray-700"
-            onClick={() => setZoom((z) => clamp(Math.round((z - 0.1) * 100) / 100, 0.25, 3))}
-          >
-            -
-          </button>
-          <div className="w-20 text-center">{Math.round(scale * 100)}%</div>
-          <button
-            type="button"
-            className="rounded bg-gray-800 px-2 py-1 hover:bg-gray-700"
-            onClick={() => setZoom((z) => clamp(Math.round((z + 0.1) * 100) / 100, 0.25, 3))}
-          >
-            +
-          </button>
-          <button type="button" className="rounded bg-gray-800 px-2 py-1 hover:bg-gray-700" onClick={() => setZoom(1)}>
-            100%
-          </button>
+        <div className="absolute left-3 top-3 z-50 flex max-w-[min(100%,24rem)] flex-col gap-1 rounded border border-gray-700 bg-gray-950/70 px-3 py-2 text-xs text-gray-200 backdrop-blur sm:max-w-none sm:flex-row sm:items-center sm:gap-2">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="rounded bg-gray-800 px-2 py-1 hover:bg-gray-700"
+              onClick={() => setZoom((z) => clamp(Math.round((z - 0.1) * 100) / 100, 0.25, 3))}
+            >
+              -
+            </button>
+            <div className="w-20 text-center">{Math.round(scale * 100)}%</div>
+            <button
+              type="button"
+              className="rounded bg-gray-800 px-2 py-1 hover:bg-gray-700"
+              onClick={() => setZoom((z) => clamp(Math.round((z + 0.1) * 100) / 100, 0.25, 3))}
+            >
+              +
+            </button>
+            <button type="button" className="rounded bg-gray-800 px-2 py-1 hover:bg-gray-700" onClick={() => setZoom(1)}>
+              100%
+            </button>
+          </div>
+          <p className="text-[10px] leading-snug text-gray-500 sm:max-w-[18rem] sm:border-l sm:border-gray-700 sm:pl-2">
+            Mover vista: botao do meio e arrastar, ou botao esquerdo no fundo branco da pagina. Rolagem: zoom.
+          </p>
         </div>
       )}
 
-      {/* Captura Space para pan (global, somente enquanto este componente estiver montado) */}
-      {!isPreviewMode ? (
-        <SpacePanCapture />
+      {!isPreviewMode && selectedVideoNode ? (
+        <SelectedVideoFloatingPreview key={String(selectedVideoNode.id)} node={selectedVideoNode} />
       ) : null}
 
       {htmlGifBackgroundActive && bgUrl && bgDraw ? (
@@ -2167,11 +2472,8 @@ export default function CanvasStageKonva({
         width={viewport.width}
         height={viewport.height}
         onMouseDown={handleStageMouseDown}
+        onMouseDownCapture={handleCameraPanStart}
         onWheel={handleWheel}
-        onMouseDownCapture={handlePanStart}
-        onMouseMove={handlePanMove}
-        onMouseUp={handlePanEnd}
-        onMouseLeave={handlePanEnd}
         onContextMenu={handleStageContextMenu}
       >
         <Layer
@@ -2219,7 +2521,7 @@ export default function CanvasStageKonva({
               height={baseGifTransform.height}
               rotation={baseGifTransform.rotation}
               fill="rgba(0,0,0,0.001)"
-              draggable={!isPreviewMode}
+              draggable={!isPreviewMode && !isNodeLocked(baseGifNode)}
               onClick={(e) => !isPreviewMode && handleSelectNode(String(baseGifNode.id || ''), e)}
               onTap={(e) => !isPreviewMode && handleSelectNode(String(baseGifNode.id || ''), e)}
               onDragEnd={(e) => {
@@ -2233,6 +2535,31 @@ export default function CanvasStageKonva({
               }}
             />
           ) : null}
+
+          {showGrid
+            ? gridGuides.vertical.map((x, i) => (
+              <Line
+                key={`grid-v-${i}`}
+                points={[x, 0, x, canvasH]}
+                stroke="rgba(148,163,184,0.2)"
+                strokeWidth={1}
+                listening={false}
+                perfectDrawEnabled={false}
+              />
+            ))
+            : null}
+          {showGrid
+            ? gridGuides.horizontal.map((y, i) => (
+              <Line
+                key={`grid-h-${i}`}
+                points={[0, y, canvasW, y]}
+                stroke="rgba(148,163,184,0.2)"
+                strokeWidth={1}
+                listening={false}
+                perfectDrawEnabled={false}
+              />
+            ))
+            : null}
 
           {nodesForStage.map((node) => {
             const id = String(node?.id || '');
@@ -2282,6 +2609,21 @@ export default function CanvasStageKonva({
               );
             }
 
+            if (type === 'video') {
+              return (
+                <VideoNode
+                  key={id}
+                  id={id}
+                  node={node}
+                  t={t}
+                  visual={visual}
+                  isPreviewMode={isPreviewMode}
+                  onSelectNode={handleSelectNode}
+                  commitNode={commitNode}
+                />
+              );
+            }
+
             if (type === 'shape') {
               return (
                 <ShapeNode
@@ -2315,7 +2657,7 @@ export default function CanvasStageKonva({
                 rotation={t.rotation}
                 stroke="#64748b"
                 dash={[6, 4]}
-                draggable={!isPreviewMode}
+                draggable={!isPreviewMode && !isNodeLocked(node)}
                 onClick={(e) => !isPreviewMode && handleSelectNode(id, e)}
                 onDragEnd={(e) => {
                   commitNode(id, { transform: { ...node.transform, x: e.target.x(), y: e.target.y() } });
@@ -2402,7 +2744,7 @@ export default function CanvasStageKonva({
             <Line
               key={`guide-v-${i}`}
               points={[round2(g.x), 0, round2(g.x), canvasH]}
-              stroke="rgba(244,63,94,0.9)"
+              stroke={g.kind === 'grid' ? 'rgba(56,189,248,0.9)' : 'rgba(244,63,94,0.9)'}
               strokeWidth={1}
               dash={[6, 4]}
               listening={false}
@@ -2413,7 +2755,7 @@ export default function CanvasStageKonva({
             <Line
               key={`guide-h-${i}`}
               points={[0, round2(g.y), canvasW, round2(g.y)]}
-              stroke="rgba(244,63,94,0.9)"
+              stroke={g.kind === 'grid' ? 'rgba(56,189,248,0.9)' : 'rgba(244,63,94,0.9)'}
               strokeWidth={1}
               dash={[6, 4]}
               listening={false}
@@ -2735,26 +3077,4 @@ export default function CanvasStageKonva({
   );
 }
 
-function SpacePanCapture() {
-  useEffect(() => {
-    const onDown = (e) => {
-      if (e.code === 'Space') {
-        window.__LUDITECA_SPACE_PAN = true;
-      }
-    };
-    const onUp = (e) => {
-      if (e.code === 'Space') {
-        window.__LUDITECA_SPACE_PAN = false;
-      }
-    };
-    window.addEventListener('keydown', onDown);
-    window.addEventListener('keyup', onUp);
-    return () => {
-      window.removeEventListener('keydown', onDown);
-      window.removeEventListener('keyup', onUp);
-      window.__LUDITECA_SPACE_PAN = false;
-    };
-  }, []);
-  return null;
-}
 

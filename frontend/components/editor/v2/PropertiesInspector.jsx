@@ -13,13 +13,370 @@ import {
   FiPlay,
   FiTrash2,
   FiType,
+  FiVideo,
+  FiMusic,
 } from 'react-icons/fi';
 
 import 'animate.css';
 
+import { useResolvedStorageUrl } from '../../../lib/useResolvedStorageUrl';
+
 function toNum(v, fallback) {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function clamp(n, min, max) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function linkedAudioDisplayName(audioUrl, audioStorage) {
+  const path = typeof audioStorage?.filePath === 'string' ? audioStorage.filePath.trim() : '';
+  if (path) {
+    const parts = path.split('/').filter(Boolean);
+    const name = parts[parts.length - 1] || path;
+    try {
+      return decodeURIComponent(name);
+    } catch {
+      return name;
+    }
+  }
+  const u = String(audioUrl || '').trim();
+  if (!u) return '';
+  try {
+    const clean = u.split('?')[0];
+    const parts = clean.split('/').filter(Boolean);
+    const name = parts[parts.length - 1] || '';
+    return name ? decodeURIComponent(name) : 'Áudio';
+  } catch {
+    return 'Áudio';
+  }
+}
+
+function LinkedAudioSection({ nodeId, props, onPatchNode, onOpenAudioLibrary, elementLabel }) {
+  const audioUrl = String(props?.audio || '');
+  const audioStorage = props?.audioStorage;
+  const hasLinked = Boolean(
+    audioUrl.trim() || (typeof audioStorage?.filePath === 'string' && audioStorage.filePath.trim()),
+  );
+  const resolvedSrc = useResolvedStorageUrl(audioUrl, audioStorage);
+  const fileLabel = linkedAudioDisplayName(audioUrl, audioStorage);
+
+  return (
+    <section>
+      <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold text-slate-300">
+        <FiMusic className="shrink-0 text-amber-400/90" size={14} aria-hidden />
+        Áudio vinculado
+      </h3>
+      <div className="space-y-3 rounded-lg border border-amber-500/25 bg-slate-950/70 p-3">
+        <p className="text-[10px] leading-relaxed text-slate-500">
+          Associe narração ou música a {elementLabel}. O leitor do livro pode usar este ficheiro em conjunto com o
+          elemento (conforme a app ou visualização).
+        </p>
+
+        {!hasLinked ? (
+          <div className="rounded-lg border border-dashed border-slate-600 bg-slate-900/90 px-3 py-4">
+            <p className="mb-3 text-center text-xs text-slate-400">Nenhum áudio associado a este elemento.</p>
+            <button
+              type="button"
+              onClick={() => onOpenAudioLibrary?.()}
+              className="w-full rounded-md bg-amber-600 px-3 py-2.5 text-xs font-semibold text-amber-950 shadow-sm transition-colors hover:bg-amber-500"
+            >
+              Escolher áudio na biblioteca
+            </button>
+            <p className="mt-3 text-center text-[10px] leading-snug text-slate-600">
+              Abre o painel <span className="text-slate-400">Mídia → Áudios</span>. Com este elemento seleccionado,
+              clique num ficheiro para vincular.
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="flex items-start gap-2.5 rounded-md border border-slate-700 bg-slate-900 px-3 py-2.5">
+              <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]" />
+              <div className="min-w-0 flex-1">
+                <div className="text-[10px] font-bold uppercase tracking-wide text-emerald-400/95">Áudio ligado</div>
+                <div className="mt-0.5 truncate font-mono text-[11px] text-slate-200" title={fileLabel || resolvedSrc}>
+                  {fileLabel || 'Ficheiro de áudio'}
+                </div>
+              </div>
+            </div>
+
+            {resolvedSrc ? (
+              <div className="rounded-md border border-slate-700 bg-slate-900/80 p-2">
+                <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                  Pré-escuta
+                </span>
+                <audio key={resolvedSrc} controls preload="metadata" className="w-full">
+                  <source src={resolvedSrc} />
+                </audio>
+              </div>
+            ) : (
+              <p className="rounded border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 text-[10px] text-amber-100/90">
+                A obter URL assinada do áudio…
+              </p>
+            )}
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+              <button
+                type="button"
+                onClick={() => onOpenAudioLibrary?.()}
+                className="flex-1 rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-xs font-medium text-slate-100 transition-colors hover:bg-slate-700"
+              >
+                Trocar áudio
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  onPatchNode(nodeId, { props: { ...props, audio: '', audioStorage: null } })
+                }
+                className="flex-1 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-200 transition-colors hover:bg-red-500/20"
+              >
+                Remover vínculo
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+const BOOK_VIDEO_LAYOUTS = [
+  { value: 'standard', label: 'Barra e centro', hint: 'Titulo no topo, play ao centro — classico no editor.' },
+  { value: 'poster_card', label: 'Cartao com capa', hint: 'Destaque ao poster/capa; play discreto no canto.' },
+  { value: 'minimal_chrome', label: 'Minimal', hint: 'Moldura leve; titulo e play pequenos.' },
+];
+
+function VideoBookRepresentationForm({ nodeId, props, onPatchNode }) {
+  const layout = BOOK_VIDEO_LAYOUTS.some((o) => o.value === props?.bookVideoLayout)
+    ? props.bookVideoLayout
+    : 'standard';
+  const corner = clamp(toNum(props?.videoCornerRadius, 12), 0, 48);
+  const placeholder = String(props?.videoPlaceholderFill || '#111827');
+
+  return (
+    <div className="space-y-3 rounded border border-violet-500/30 bg-slate-950/80 p-3">
+      <div className="text-[10px] font-bold uppercase tracking-wider text-violet-300">Como aparece no livro</div>
+      <p className="text-[10px] leading-snug text-slate-500">
+        Define o aspecto do quadro de video na pagina (leitores usam estes dados ao renderizar o livro).
+      </p>
+      <label className="flex flex-col gap-1">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Estilo do quadro</span>
+        <select
+          value={layout}
+          onChange={(e) =>
+            onPatchNode(nodeId, {
+              props: { ...props, bookVideoLayout: e.target.value },
+            })
+          }
+          className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-200"
+        >
+          {BOOK_VIDEO_LAYOUTS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        <span className="text-[10px] text-slate-500">{BOOK_VIDEO_LAYOUTS.find((o) => o.value === layout)?.hint}</span>
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Titulo no quadro</span>
+        <input
+          type="text"
+          value={String(props?.title ?? '')}
+          placeholder="Ex.: Introducao"
+          onChange={(e) =>
+            onPatchNode(nodeId, {
+              props: { ...props, title: e.target.value },
+            })
+          }
+          className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-200"
+        />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Legenda (opcional)</span>
+        <input
+          type="text"
+          value={String(props?.videoCaption ?? '')}
+          placeholder="Uma linha sob o video"
+          onChange={(e) =>
+            onPatchNode(nodeId, {
+              props: { ...props, videoCaption: e.target.value },
+            })
+          }
+          className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-200"
+        />
+      </label>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Cantos (px)</span>
+          <input
+            type="number"
+            min={0}
+            max={48}
+            step={1}
+            value={corner}
+            onChange={(e) =>
+              onPatchNode(nodeId, {
+                props: { ...props, videoCornerRadius: clamp(toNum(e.target.value, 12), 0, 48) },
+              })
+            }
+            className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-200"
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Fundo sem capa</span>
+          <input
+            type="color"
+            value={placeholder}
+            onChange={(e) =>
+              onPatchNode(nodeId, {
+                props: { ...props, videoPlaceholderFill: e.target.value },
+              })
+            }
+            className="h-9 w-full cursor-pointer rounded border border-slate-700 bg-slate-900 p-1"
+          />
+        </label>
+      </div>
+      <label className="flex items-center justify-between rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-300">
+        Mostrar icone de play no quadro
+        <input
+          type="checkbox"
+          checked={props.showPlayBadge !== false}
+          onChange={(e) =>
+            onPatchNode(nodeId, {
+              props: { ...props, showPlayBadge: e.target.checked },
+            })
+          }
+          className="accent-violet-500"
+        />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Velocidade de reproducao</span>
+        <select
+          value={String(clamp(toNum(props?.playbackRate, 1), 0.25, 2))}
+          onChange={(e) =>
+            onPatchNode(nodeId, {
+              props: { ...props, playbackRate: clamp(toNum(e.target.value, 1), 0.25, 2) },
+            })
+          }
+          className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-200"
+        >
+          <option value="0.5">0.5x</option>
+          <option value="0.75">0.75x</option>
+          <option value="1">1x (normal)</option>
+          <option value="1.25">1.25x</option>
+          <option value="1.5">1.5x</option>
+          <option value="2">2x</option>
+        </select>
+      </label>
+    </div>
+  );
+}
+
+function VideoInspectorPreview({ nodeId, props, onPatchNode }) {
+  const videoRef = useRef(null);
+  const resolved = useResolvedStorageUrl(String(props?.content || ''), props?.storage);
+  const posterResolved = useResolvedStorageUrl(String(props?.poster || ''), props?.posterStorage);
+  const startAt = Math.max(0, toNum(props?.startAt, 0));
+  const volume = clamp(toNum(props?.volume, 1), 0, 1);
+  const objectFit = ['cover', 'contain', 'fill'].includes(props?.objectFit) ? props.objectFit : 'cover';
+  const playbackRate = clamp(toNum(props?.playbackRate, 1), 0.25, 2);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !resolved) return;
+    const onMeta = () => {
+      try {
+        v.currentTime = startAt;
+      } catch {
+        /* ignore */
+      }
+    };
+    v.addEventListener('loadedmetadata', onMeta);
+    return () => v.removeEventListener('loadedmetadata', onMeta);
+  }, [resolved, startAt]);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (v) v.volume = volume;
+  }, [volume]);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (v) v.playbackRate = playbackRate;
+  }, [playbackRate]);
+
+  if (!resolved) {
+    return (
+      <div className="rounded border border-slate-700 bg-slate-950 px-2 py-3 text-xs text-slate-500">
+        Sem URL de video ou a renovar URL de armazenamento…
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <video
+        ref={videoRef}
+        key={resolved}
+        src={resolved}
+        poster={posterResolved || undefined}
+        controls={props.controls !== false}
+        playsInline
+        loop={Boolean(props.loop)}
+        muted={Boolean(props.muted)}
+        className="w-full rounded border border-slate-700 bg-black"
+        style={{ maxHeight: '14rem', objectFit }}
+      />
+      <VideoBookRepresentationForm nodeId={nodeId} props={props} onPatchNode={onPatchNode} />
+      <label className="flex flex-col gap-1">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Volume</span>
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={volume}
+          onChange={(e) =>
+            onPatchNode(nodeId, {
+              props: { ...props, volume: clamp(toNum(e.target.value, 1), 0, 1) },
+            })
+          }
+          className="w-full accent-indigo-500"
+        />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Encaixe no quadro</span>
+        <select
+          value={objectFit}
+          onChange={(e) =>
+            onPatchNode(nodeId, {
+              props: { ...props, objectFit: e.target.value },
+            })
+          }
+          className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-200"
+        >
+          <option value="cover">Cobrir (cover)</option>
+          <option value="contain">Conter (contain)</option>
+          <option value="fill">Esticar (fill)</option>
+        </select>
+      </label>
+      <label className="flex items-center justify-between rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-300">
+        Controlos nativos (play, tempo)
+        <input
+          type="checkbox"
+          checked={props.controls !== false}
+          onChange={(e) =>
+            onPatchNode(nodeId, {
+              props: { ...props, controls: e.target.checked },
+            })
+          }
+          className="accent-indigo-500"
+        />
+      </label>
+    </div>
+  );
 }
 
 function PropGridInput({ label, value, onChange, min, max, step }) {
@@ -411,8 +768,8 @@ export default function PropertiesInspector({
   );
   if (!selectedNode) {
     return (
-      <div className="flex h-full flex-col bg-slate-800 text-slate-200">
-        <div className="border-b border-slate-700 bg-slate-900 px-4 py-3">
+      <div className="flex min-h-0 flex-1 flex-col bg-slate-800 text-slate-200">
+        <div className="shrink-0 border-b border-slate-700 bg-slate-900 px-4 py-3">
           <div className="text-xs font-bold uppercase tracking-wide text-slate-100">
             Propriedades
           </div>
@@ -441,9 +798,10 @@ export default function PropertiesInspector({
       : {};
   const isText = selectedNode.type === 'text';
   const isImage = selectedNode.type === 'image';
+  const isVideo = selectedNode.type === 'video';
   const isShape = selectedNode.type === 'shape';
-  const supportsAudioBinding = isText || isImage;
-  const supportsEffects = isText || isShape;
+  const supportsAudioBinding = isText || isImage || isVideo;
+  const supportsEffects = isText || isShape || isVideo;
   const supportsTextEditing = isText || isShape;
 
   const applyInlineMark = (marker) => {
@@ -484,13 +842,15 @@ export default function PropertiesInspector({
   };
 
   return (
-    <div className="flex h-full flex-col bg-slate-800 text-slate-200">
-      <div className="flex items-center justify-between border-b border-slate-700 bg-slate-900 px-4 py-3">
+    <div className="flex min-h-0 flex-1 flex-col bg-slate-800 text-slate-200">
+      <div className="flex shrink-0 items-center justify-between border-b border-slate-700 bg-slate-900 px-4 py-3">
         <div className="flex items-center gap-2">
           {isText ? (
             <FiType className="text-indigo-400" />
           ) : isImage ? (
             <FiImage className="text-emerald-400" />
+          ) : isVideo ? (
+            <FiVideo className="text-violet-400" />
           ) : (
             <FiMaximize className="text-sky-400" />
           )}
@@ -1162,44 +1522,90 @@ export default function PropertiesInspector({
           </section>
         ) : null}
 
-        {isImage ? (
+        {isImage || isVideo ? (
           <section>
             <h3 className="mb-3 text-xs font-semibold text-slate-300">Midia</h3>
             <div className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-400">
-              Imagem vinculada pela biblioteca de midia.
+              {isVideo
+                ? 'Video da biblioteca: ajuste reproducao abaixo e a aparencia do quadro na pagina na caixa roxa.'
+                : 'Imagem vinculada pela biblioteca de midia.'}
             </div>
+            {isVideo ? (
+              <>
+                <div className="mt-3 rounded border border-slate-700 bg-slate-900 p-3">
+                  <VideoInspectorPreview nodeId={selectedNode.id} props={props} onPatchNode={onPatchNode} />
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-3 rounded border border-slate-700 bg-slate-900 p-3">
+                <label className="col-span-2 flex items-center justify-between rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-300">
+                  Reproduzir automaticamente
+                  <input
+                    type="checkbox"
+                    checked={Boolean(props.autoplay)}
+                    onChange={(e) =>
+                      onPatchNode(selectedNode.id, {
+                        props: { ...props, autoplay: e.target.checked },
+                      })
+                    }
+                    className="accent-indigo-500"
+                  />
+                </label>
+                <label className="flex items-center justify-between rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-300">
+                  Em loop
+                  <input
+                    type="checkbox"
+                    checked={Boolean(props.loop)}
+                    onChange={(e) =>
+                      onPatchNode(selectedNode.id, {
+                        props: { ...props, loop: e.target.checked },
+                      })
+                    }
+                    className="accent-indigo-500"
+                  />
+                </label>
+                <label className="flex items-center justify-between rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-300">
+                  Iniciar mudo
+                  <input
+                    type="checkbox"
+                    checked={Boolean(props.muted)}
+                    onChange={(e) =>
+                      onPatchNode(selectedNode.id, {
+                        props: { ...props, muted: e.target.checked },
+                      })
+                    }
+                    className="accent-indigo-500"
+                  />
+                </label>
+                <label className="col-span-2 flex flex-col gap-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    Inicio (segundos)
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.5}
+                    className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-200"
+                    value={Math.max(0, toNum(props.startAt, 0))}
+                    onChange={(e) =>
+                      onPatchNode(selectedNode.id, {
+                        props: { ...props, startAt: Math.max(0, toNum(e.target.value, 0)) },
+                      })
+                    }
+                  />
+                </label>
+                </div>
+              </>
+            ) : null}
           </section>
         ) : null}
 
         {supportsAudioBinding ? (
-          <section>
-            <h3 className="mb-3 text-xs font-semibold text-slate-300">Audio vinculado</h3>
-            <div className="space-y-2 rounded border border-slate-700 bg-slate-900 p-3">
-              <input
-                type="text"
-                readOnly
-                value={String(props.audio || '')}
-                placeholder="Nenhum audio vinculado."
-                className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-300"
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => onOpenAudioLibrary?.()}
-                  className="rounded border border-slate-700 bg-slate-800 px-2 py-2 text-xs text-slate-200 transition-colors hover:bg-slate-700"
-                >
-                  Vincular da midia
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onPatchNode(selectedNode.id, { props: { ...props, audio: '', audioStorage: null } })}
-                  className="rounded border border-red-500/40 bg-red-500/10 px-2 py-2 text-xs text-red-300 transition-colors hover:bg-red-500/20"
-                >
-                  Remover audio
-                </button>
-              </div>
-            </div>
-          </section>
+          <LinkedAudioSection
+            nodeId={selectedNode.id}
+            props={props}
+            onPatchNode={onPatchNode}
+            onOpenAudioLibrary={onOpenAudioLibrary}
+            elementLabel={isVideo ? 'este vídeo' : isImage ? 'esta imagem' : 'este texto'}
+          />
         ) : null}
       </div>
     </div>

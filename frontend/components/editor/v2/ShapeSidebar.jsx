@@ -45,11 +45,11 @@ const SHAPE_ITEMS = [
 
 export default function ShapeSidebar({ onAddShape }) {
   return (
-    <div className="flex h-full flex-col bg-slate-800 text-slate-200">
-      <div className="border-b border-slate-700 bg-slate-900 px-3 py-2">
+    <div className="flex min-h-0 flex-1 flex-col bg-slate-800 text-slate-200">
+      <div className="shrink-0 border-b border-slate-700 bg-slate-900 px-3 py-2">
         <div className="text-xs font-semibold text-slate-200">Adicionar formas</div>
       </div>
-      <div className="grid grid-cols-2 gap-3 p-4">
+      <div className="grid min-h-0 flex-1 grid-cols-2 gap-3 overflow-y-auto p-4 content-start">
         {SHAPE_ITEMS.map((shape) => (
           <button
             key={shape.id}
