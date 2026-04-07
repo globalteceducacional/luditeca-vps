@@ -529,11 +529,22 @@ export default function EditBookV2() {
     const videoLoop = videoMeta?.loop !== undefined ? Boolean(videoMeta.loop) : false;
 
     const sourceName = String(file?.name || '').trim();
+    const urlStr = String(file?.url || '');
+    const pathStr = String(file?.path || '');
+    const storageKeyStr = String(file?.storageKey || '');
+    const storageKeyBase = storageKeyStr.split('/').pop() || storageKeyStr;
+    const mimeFromFile = String(
+      file?.mimeType || file?.mimetype || file?.contentType || file?.fileType || '',
+    ).toLowerCase();
     const looksLikeGif =
       !isVideo &&
       !isAudio &&
       (/\.gif$/i.test(sourceName) ||
-        String(file?.mimeType || file?.mimetype || file?.contentType || '').toLowerCase() === 'image/gif');
+        /\.gif(?:$|[?#])/i.test(urlStr) ||
+        /\.gif$/i.test(pathStr) ||
+        /\.gif$/i.test(storageKeyBase) ||
+        mimeFromFile === 'image/gif' ||
+        (mimeFromFile.startsWith('image/') && mimeFromFile.includes('gif')));
 
     if (!isAudio) {
       const node = {
@@ -547,6 +558,7 @@ export default function EditBookV2() {
           ...(basePath ? { storage: { bucket: bucketFromFile, filePath: basePath } } : {}),
           ...(sourceName && !isVideo ? { librarySourceName: sourceName } : {}),
           ...(looksLikeGif ? { mediaKind: 'gif' } : {}),
+          ...(!isVideo && file?.fileType ? { mimeType: String(file.fileType) } : {}),
           // Ajustes visuais (brilho/contraste/saturação) gravados no metadado da biblioteca.
           ...(imageMeta && !isVideo ? { imageAdjustments: imageMeta } : {}),
           ...(isVideo

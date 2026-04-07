@@ -20,7 +20,6 @@ import {
 } from '../../../../lib/storageApi';
 import { getApiBaseUrl } from '../../../../lib/apiClient';
 import StorageBackedHtmlImage from '../../StorageBackedHtmlImage';
-import GifFirstFrameThumb from '../media/GifFirstFrameThumb';
 import MediaLibraryThumb from '../media/MediaLibraryThumb';
 import ImageEditorPanel from '../media/ImageEditorPanel';
 import MediaEditModal from '../media/MediaEditModal';
@@ -781,14 +780,7 @@ export default function PageSidebar({
                       ) : null}
                     </div>
                     <div className="mt-2 aspect-[16/9] w-full rounded border border-slate-700 bg-slate-900">
-                      {previewUrl ? /\.gif(?:$|[?#])/i.test(previewUrl) ? (
-                        <GifFirstFrameThumb
-                          src={previewUrl}
-                          storage={previewStorage}
-                          className="h-full w-full object-cover"
-                          alt=""
-                        />
-                      ) : (
+                      {previewUrl ? (
                         <StorageBackedHtmlImage
                           src={previewUrl}
                           storage={previewStorage}

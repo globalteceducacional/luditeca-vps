@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FiBox,
   FiImage,
@@ -11,6 +11,7 @@ import {
   FiVideo,
   FiVolume2,
 } from 'react-icons/fi';
+import StorageBackedHtmlImage from './StorageBackedHtmlImage';
 import { MAX_TIMELINE_STEP, MIN_VISIBLE_TIMELINE_STEPS } from './editorConstants';
 
 function clampInt(n, min, max) {
@@ -41,10 +42,18 @@ function getElementLabel(el, maxTextLen = 20) {
   return String(el.type || 'Item');
 }
 
-function getImagePreviewUrl(el) {
-  if (!el || el.type !== 'image') return '';
+function getImagePreview(el) {
+  if (!el || el.type !== 'image') return null;
   const src = String(el?.content || '').trim();
-  return src || '';
+  if (!src) return null;
+  return {
+    url: src,
+    storage: el?.storage ?? el?.props?.storage ?? null,
+  };
+}
+/** Compat: mantido para usos internos que já existem */
+function getImagePreviewUrl(el) {
+  return getImagePreview(el)?.url || '';
 }
 
 function normalizeTimelineElement(raw, idx) {
@@ -79,7 +88,7 @@ function normalizeTimelineElement(raw, idx) {
 function useTimelineLayout() {
   const [layout, setLayout] = useState(() => ({
     stepWidth: 80,
-    trackSidebarClass: 'w-[200px]',
+    sidebarWidthPx: 200,
     rowHeight: 52,
     compactHeader: false,
   }));
@@ -88,30 +97,30 @@ function useTimelineLayout() {
     const update = () => {
       const w = typeof window !== 'undefined' ? window.innerWidth : 1024;
       let stepWidth = 80;
-      let trackSidebarClass = 'w-[200px]';
+      let sidebarWidthPx = 200;
       let rowHeight = 52;
       let compactHeader = false;
       if (w < 380) {
         stepWidth = 40;
-        trackSidebarClass = 'w-[88px] min-w-[88px]';
+        sidebarWidthPx = 88;
         rowHeight = 44;
         compactHeader = true;
       } else if (w < 480) {
         stepWidth = 44;
-        trackSidebarClass = 'w-[100px] min-w-[100px]';
+        sidebarWidthPx = 100;
         rowHeight = 46;
         compactHeader = true;
       } else if (w < 640) {
         stepWidth = 52;
-        trackSidebarClass = 'w-[120px] min-w-[120px]';
+        sidebarWidthPx = 120;
         rowHeight = 48;
         compactHeader = true;
       } else if (w < 900) {
         stepWidth = 64;
-        trackSidebarClass = 'w-[160px] min-w-[160px]';
+        sidebarWidthPx = 160;
         rowHeight = 50;
       }
-      setLayout({ stepWidth, trackSidebarClass, rowHeight, compactHeader });
+      setLayout({ stepWidth, sidebarWidthPx, rowHeight, compactHeader });
     };
     update();
     window.addEventListener('resize', update);
@@ -136,10 +145,15 @@ export default function ProTimeline({
 }) {
   const source = Array.isArray(nodes) ? nodes : Array.isArray(elements) ? elements : [];
   const safeElements = source.map((el, idx) => normalizeTimelineElement(el, idx));
-  const timelineRef = useRef(null);
+  const gridHorizontalScrollRef = useRef(null);
+  const stepHeaderScrollRef = useRef(null);
   const [draggingId, setDraggingId] = useState(null);
-  const { stepWidth: STEP_WIDTH, trackSidebarClass, rowHeight: ROW_HEIGHT_BASE, compactHeader } =
-    useTimelineLayout();
+  const {
+    stepWidth: STEP_WIDTH,
+    sidebarWidthPx,
+    rowHeight: ROW_HEIGHT_BASE,
+    compactHeader,
+  } = useTimelineLayout();
 
   const { maxSteps, rows } = useMemo(() => {
     const stepsUsed = safeElements.map((e) =>
@@ -181,12 +195,25 @@ export default function ProTimeline({
   const steps = Array.from({ length: maxSteps + 1 }).map((_, i) => i);
 
   useEffect(() => {
-    if (isPlaying && timelineRef.current) {
+    if (isPlaying && gridHorizontalScrollRef.current) {
       const scrollPos = currentStep * STEP_WIDTH;
       const offset = Math.min(200, Math.max(80, window.innerWidth * 0.25));
-      timelineRef.current.scrollLeft = Math.max(0, scrollPos - offset);
+      const el = gridHorizontalScrollRef.current;
+      el.scrollLeft = Math.max(0, scrollPos - offset);
+      if (stepHeaderScrollRef.current) stepHeaderScrollRef.current.scrollLeft = el.scrollLeft;
     }
   }, [currentStep, isPlaying, STEP_WIDTH]);
+
+  /** Grelha (etapas) e cabeçalho numérico partilham o mesmo scroll horizontal */
+  const syncHeaderScrollFromGrid = useCallback((e) => {
+    const left = e.target.scrollLeft;
+    if (stepHeaderScrollRef.current) stepHeaderScrollRef.current.scrollLeft = left;
+  }, []);
+
+  const syncGridScrollFromHeader = useCallback((e) => {
+    const left = e.target.scrollLeft;
+    if (gridHorizontalScrollRef.current) gridHorizontalScrollRef.current.scrollLeft = left;
+  }, []);
 
   const handleDragStart = (e, id) => {
     setDraggingId(id);
@@ -276,131 +303,167 @@ export default function ProTimeline({
           Arraste os blocos para mudar a etapa de entrada. Deslize a grelha para ver mais colunas.
         </p>
       </div>
-      <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        <div
-          className={`z-20 flex shrink-0 flex-col border-r border-slate-700 bg-slate-900 shadow-[2px_0_10px_rgba(0,0,0,0.2)] ${trackSidebarClass}`}
-        >
-          <div className="flex min-h-8 items-center border-b border-slate-700 bg-slate-900 px-2 text-[9px] font-bold uppercase tracking-wider text-slate-500 sm:px-3 sm:text-[10px]">
+      {/* Uma única scroll vertical para trilhas + grelha; cabeçalhos com mesma altura (h-8) para alinhar linhas */}
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="flex shrink-0 border-b border-slate-700 bg-slate-900">
+          <div
+            className="z-20 flex h-8 shrink-0 items-center border-r border-slate-700 bg-slate-900 px-2 text-[9px] font-bold uppercase tracking-wider text-slate-500 shadow-[2px_0_10px_rgba(0,0,0,0.2)] sm:px-3 sm:text-[10px]"
+            style={{ width: sidebarWidthPx, minWidth: sidebarWidthPx, maxWidth: sidebarWidthPx }}
+          >
             <span className="truncate">Trilhas ({safeElements.length})</span>
           </div>
-          <div className="flex-1 overflow-y-auto overflow-x-hidden">
-            {rows.map((row) => (
-              <div
-                key={row.rowId}
-                className="flex items-center gap-1 border-b border-slate-800 px-1.5 transition-colors hover:bg-slate-800 sm:px-3"
-                style={{ height: `${row.rowHeight}px` }}
-              >
-                <span className="shrink-0 text-indigo-400">{row.icon}</span>
-                <span
-                  className={`min-w-0 truncate font-medium text-slate-300 ${compactHeader ? 'text-[10px] leading-tight' : 'text-xs'}`}
-                  title={row.trackName}
+          <div
+            ref={stepHeaderScrollRef}
+            onScroll={syncGridScrollFromHeader}
+            className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden [-webkit-overflow-scrolling:touch]"
+          >
+            <div className="flex h-8 min-w-max border-slate-800">
+              {steps.map((s) => (
+                <div
+                  key={s}
+                  onClick={() => onStepChange(s)}
+                  title={`Etapa ${s}: clique para ver o canvas nesta etapa`}
+                  className={`relative flex min-w-0 flex-shrink-0 cursor-pointer flex-col justify-end border-l border-slate-800 transition-colors hover:bg-slate-800 ${s === currentStep ? 'bg-indigo-900/30' : ''}`}
+                  style={{ width: `${STEP_WIDTH}px`, minWidth: `${STEP_WIDTH}px` }}
                 >
-                  {row.trackName}
-                </span>
-              </div>
-            ))}
+                  <span
+                    className={`pb-0.5 pl-1 sm:pl-1.5 ${compactHeader ? 'text-[9px]' : 'text-[10px]'} ${s === currentStep ? 'font-bold text-indigo-400' : 'text-slate-500'}`}
+                  >
+                    {s}
+                  </span>
+                  <div className="absolute bottom-0 flex w-full justify-between px-1 opacity-30">
+                    <div className="h-1 w-[1px] bg-slate-400" />
+                    <div className="h-1.5 w-[1px] bg-slate-400" />
+                    <div className="h-1 w-[1px] bg-slate-400" />
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
-        <div ref={timelineRef} className="relative min-w-0 flex-1 overflow-auto bg-slate-950 [-webkit-overflow-scrolling:touch]">
-          <div className="sticky top-0 z-10 flex h-8 min-w-max border-b border-slate-700 bg-slate-900">
-            {steps.map((s) => (
-              <div
-                key={s}
-                onClick={() => onStepChange(s)}
-                title={`Etapa ${s}: clique para ver o canvas nesta etapa`}
-                className={`relative flex min-w-0 flex-shrink-0 cursor-pointer flex-col justify-end border-l border-slate-800 transition-colors hover:bg-slate-800 ${s === currentStep ? 'bg-indigo-900/30' : ''}`}
-                style={{ width: `${STEP_WIDTH}px`, minWidth: `${STEP_WIDTH}px` }}
-              >
-                <span
-                  className={`pb-0.5 pl-1 sm:pl-1.5 ${compactHeader ? 'text-[9px]' : 'text-[10px]'} ${s === currentStep ? 'font-bold text-indigo-400' : 'text-slate-500'}`}
+
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden [-webkit-overflow-scrolling:touch]">
+          {rows.length === 0 ? (
+            <div className="border-b border-slate-800 bg-slate-950 p-4 text-xs text-slate-500">
+              Nenhum elemento no canvas.
+            </div>
+          ) : (
+            <div
+              className="grid w-full min-w-0"
+              style={{
+                gridTemplateColumns: `${sidebarWidthPx}px minmax(0, 1fr)`,
+                gridTemplateRows: rows.map((r) => `${r.rowHeight}px`).join(' '),
+              }}
+            >
+              {rows.map((row, index) => (
+                <div
+                  key={`side-${row.rowId}`}
+                  className="box-border flex min-h-0 min-w-0 items-center border-b border-r border-slate-700 bg-slate-900 px-1.5 shadow-[2px_0_10px_rgba(0,0,0,0.2)] transition-colors hover:bg-slate-800 sm:px-3"
+                  style={{ gridColumn: 1, gridRow: index + 1 }}
                 >
-                  {s}
-                </span>
-                <div className="absolute bottom-0 flex w-full justify-between px-1 opacity-30">
-                  <div className="h-1 w-[1px] bg-slate-400" />
-                  <div className="h-1.5 w-[1px] bg-slate-400" />
-                  <div className="h-1 w-[1px] bg-slate-400" />
+                  <div className="flex min-h-0 w-full min-w-0 items-center gap-1.5 sm:gap-2">
+                    <span className="flex shrink-0 items-center text-indigo-400">{row.icon}</span>
+                    <span
+                      className={`min-w-0 truncate font-medium leading-none text-slate-300 ${compactHeader ? 'text-[10px]' : 'text-xs'}`}
+                      title={row.trackName}
+                    >
+                      {row.trackName}
+                    </span>
+                  </div>
+                </div>
+              ))}
+              <div
+                className="relative flex min-h-0 w-full min-w-0 flex-col border-b border-slate-800 bg-slate-950"
+                style={{ gridColumn: 2, gridRow: '1 / -1' }}
+              >
+                <div
+                  ref={gridHorizontalScrollRef}
+                  onScroll={syncHeaderScrollFromGrid}
+                  className="box-border h-full min-h-0 w-full flex-1 overflow-x-auto overflow-y-hidden [-webkit-overflow-scrolling:touch]"
+                >
+                  <div className="relative min-w-max pb-20">
+                    <div
+                      className="pointer-events-none absolute top-0 bottom-0 z-[15] w-px bg-indigo-500 transition-all duration-200 ease-linear"
+                      style={{ left: `${currentStep * STEP_WIDTH + 1}px` }}
+                    >
+                      <div className="absolute top-0 h-0 w-0 -translate-x-1/2 border-l-[5px] border-r-[5px] border-t-[6px] border-l-transparent border-r-transparent border-t-indigo-500" />
+                    </div>
+                    {rows.map((r) => (
+                      <div
+                        key={r.rowId}
+                        className="relative box-border border-b border-slate-800"
+                        style={{ height: r.rowHeight, minHeight: r.rowHeight }}
+                      >
+                        {steps.map((s) => (
+                          <div
+                            key={s}
+                            onDragOver={handleDragOver}
+                            onDrop={(e) => handleDrop(e, s)}
+                            className={`h-full flex-shrink-0 border-l border-slate-800/40 transition-colors ${draggingId ? 'hover:bg-indigo-500/10' : ''}`}
+                            style={{ width: `${STEP_WIDTH}px`, minWidth: `${STEP_WIDTH}px` }}
+                          />
+                        ))}
+                        {(() => {
+                          const el = r.item;
+                          const step = clampInt(el?.step ?? 0, 0, maxSteps);
+                          const isSelected =
+                            selectedElement && String(el?.id) === String(selectedElement);
+                          const isDragging = draggingId === el.id;
+                          const imagePreview = getImagePreview(el);
+                          const blockH = Math.min(32, Math.max(22, r.rowHeight - 8));
+                          const blockTopPx = Math.max(4, Math.round((r.rowHeight - blockH) / 2));
+                          return (
+                            <div
+                              key={el.id}
+                              draggable
+                              onDragStart={(e) => handleDragStart(e, el.id)}
+                              onDragEnd={handleDragEnd}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onElementSelect(String(el.id));
+                              }}
+                              className="absolute flex cursor-grab items-center overflow-hidden rounded-md border transition-all active:cursor-grabbing touch-manipulation"
+                              style={{
+                                left: `${step * STEP_WIDTH + blockPad}px`,
+                                top: `${blockTopPx}px`,
+                                height: `${blockH}px`,
+                                width: `${Math.max(28, STEP_WIDTH - blockPad * 2)}px`,
+                                zIndex: isDragging ? 50 : isSelected ? 10 : 1,
+                                backgroundColor: isSelected ? '#4f46e5' : '#334155',
+                                borderColor: isSelected ? '#818cf8' : '#475569',
+                              }}
+                              title={`Arrastar para mudar a entrada. Atual: Etapa ${step}`}
+                            >
+                              <div className="pointer-events-none absolute top-0 bottom-0 right-[-100px] w-[100px] bg-gradient-to-r from-slate-500 to-transparent opacity-20" />
+                              <div
+                                className={`relative z-10 flex flex-1 items-center gap-1 truncate px-1.5 font-medium text-white sm:gap-1.5 sm:px-2 ${compactHeader ? 'text-[10px]' : 'text-[11px]'}`}
+                              >
+                                {imagePreview ? (
+                                  <StorageBackedHtmlImage
+                                    src={imagePreview.url}
+                                    storage={imagePreview.storage}
+                                    alt=""
+                                    className={`shrink-0 rounded object-cover ${compactHeader ? 'h-4 w-4' : 'h-5 w-5'}`}
+                                    draggable={false}
+                                  />
+                                ) : null}
+                                <div
+                                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${isSelected ? 'bg-white' : 'bg-slate-400'}`}
+                                />
+                                <span className="truncate">
+                                  {getElementLabel(el, compactHeader ? 12 : 20)}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
-            ))}
-          </div>
-          <div
-            className="pointer-events-none absolute top-0 bottom-0 z-[15] w-px bg-indigo-500 transition-all duration-200 ease-linear"
-            style={{ left: `${currentStep * STEP_WIDTH + 1}px` }}
-          >
-            <div className="absolute top-0 h-0 w-0 -translate-x-1/2 border-l-[5px] border-r-[5px] border-t-[6px] border-l-transparent border-r-transparent border-t-indigo-500" />
-          </div>
-          <div className="min-w-max pb-20">
-            {rows.length === 0 ? (
-              <div className="p-4 text-xs text-slate-500">Nenhum elemento no canvas.</div>
-            ) : (
-              rows.map((row) => (
-                <div
-                  key={row.rowId}
-                  className="relative flex border-b border-slate-800"
-                  style={{ height: `${row.rowHeight}px` }}
-                >
-                  {steps.map((s) => (
-                    <div
-                      key={s}
-                      onDragOver={handleDragOver}
-                      onDrop={(e) => handleDrop(e, s)}
-                      className={`h-full flex-shrink-0 border-l border-slate-800/40 transition-colors ${draggingId ? 'hover:bg-indigo-500/10' : ''}`}
-                      style={{ width: `${STEP_WIDTH}px`, minWidth: `${STEP_WIDTH}px` }}
-                    />
-                  ))}
-                  {(() => {
-                    const el = row.item;
-                    const step = clampInt(el?.step ?? 0, 0, maxSteps);
-                    const isSelected = selectedElement && String(el?.id) === String(selectedElement);
-                    const isDragging = draggingId === el.id;
-                    const previewUrl = getImagePreviewUrl(el);
-                    const blockH = Math.min(32, Math.max(22, row.rowHeight - 8));
-                    const blockTopPx = Math.max(4, Math.round((row.rowHeight - blockH) / 2));
-                    return (
-                      <div
-                        key={el.id}
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, el.id)}
-                        onDragEnd={handleDragEnd}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onElementSelect(String(el.id));
-                        }}
-                        className="absolute flex cursor-grab items-center overflow-hidden rounded-md border transition-all active:cursor-grabbing touch-manipulation"
-                        style={{
-                          left: `${step * STEP_WIDTH + blockPad}px`,
-                          top: `${blockTopPx}px`,
-                          height: `${blockH}px`,
-                          width: `${Math.max(28, STEP_WIDTH - blockPad * 2)}px`,
-                          zIndex: isDragging ? 50 : isSelected ? 10 : 1,
-                          backgroundColor: isSelected ? '#4f46e5' : '#334155',
-                          borderColor: isSelected ? '#818cf8' : '#475569',
-                        }}
-                        title={`Arrastar para mudar a entrada. Atual: Etapa ${step}`}
-                      >
-                        <div className="pointer-events-none absolute top-0 bottom-0 right-[-100px] w-[100px] bg-gradient-to-r from-slate-500 to-transparent opacity-20" />
-                        <div
-                          className={`relative z-10 flex flex-1 items-center gap-1 truncate px-1.5 font-medium text-white sm:gap-1.5 sm:px-2 ${compactHeader ? 'text-[10px]' : 'text-[11px]'}`}
-                        >
-                          {previewUrl ? (
-                            <img
-                              src={previewUrl}
-                              alt=""
-                              className={`shrink-0 rounded object-cover ${compactHeader ? 'h-4 w-4' : 'h-5 w-5'}`}
-                              draggable={false}
-                            />
-                          ) : null}
-                          <div className={`h-1.5 w-1.5 shrink-0 rounded-full ${isSelected ? 'bg-white' : 'bg-slate-400'}`} />
-                          <span className="truncate">{getElementLabel(el, compactHeader ? 12 : 20)}</span>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              ))
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

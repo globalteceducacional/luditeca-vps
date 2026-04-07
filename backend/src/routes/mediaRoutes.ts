@@ -195,6 +195,8 @@ export async function registerMediaRoutes(app: FastifyInstance) {
             id: row.id.toString(),
             name: fileName,
             type: extType(fileName),
+            /** MIME gravado no upload (ex.: image/gif) — o canvas evita use-image/decode que congela GIF. */
+            fileType: row.fileType || undefined,
             // Compat com o frontend atual (path relativo "virtual" da tela)
             path: fileName,
             // Chave real no storage (usar sempre que possível)
@@ -279,6 +281,7 @@ export async function registerMediaRoutes(app: FastifyInstance) {
           name: file.name,
           type,
           path: toRel(fullPath),
+          fileType: meta?.fileType || undefined,
           url,
           ...thumbs,
           metadata: meta

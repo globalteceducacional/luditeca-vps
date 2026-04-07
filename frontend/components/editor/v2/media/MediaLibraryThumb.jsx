@@ -9,12 +9,27 @@ function isGifNameOrUrl(name, url) {
 }
 
 /**
- * Miniatura da grelha da biblioteca: nunca reproduz GIF animado (usa `.thumb.png` ou 1.º frame).
+ * Miniatura da grelha da biblioteca.
+ * GIFs mostram só o 1.º frame (estático) — poupa CPU e largura de banda na grelha.
+ * Imagens estáticas usam o thumbnail gerado pelo servidor quando disponível.
  */
 export default function MediaLibraryThumb({ item, previewUrl, storage, className, draggable = false }) {
-  const hasServerThumb = Boolean(item?.thumbStorageKey || item?.thumbUrl);
   const gif = isGifNameOrUrl(item?.name, previewUrl);
 
+  // GIF: 1.º frame estático via GifFirstFrameThumb (evita N GIFs animando em simultâneo na grelha)
+  if (gif) {
+    return (
+      <GifFirstFrameThumb
+        src={previewUrl}
+        storage={storage}
+        className={className}
+        alt=""
+      />
+    );
+  }
+
+  // Imagens estáticas: preferir thumbnail do servidor (mais leve)
+  const hasServerThumb = Boolean(item?.thumbStorageKey || item?.thumbUrl);
   if (hasServerThumb) {
     const thumbStorage =
       typeof item.thumbStorageKey === 'string' && item.thumbStorageKey.trim()
@@ -29,10 +44,6 @@ export default function MediaLibraryThumb({ item, previewUrl, storage, className
         draggable={draggable}
       />
     );
-  }
-
-  if (gif) {
-    return <GifFirstFrameThumb src={previewUrl} storage={storage} className={className} alt="" />;
   }
 
   return (

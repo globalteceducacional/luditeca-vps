@@ -1,6 +1,14 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Stage, Layer, Rect, Text, Group, Line, Ellipse, Image as KonvaImage, Transformer } from 'react-konva';
-import useImage from 'use-image';
 import { createPortal } from 'react-dom';
 import Konva from 'konva';
 import { useResolvedStorageUrl } from '../../lib/useResolvedStorageUrl';
@@ -19,6 +27,9 @@ import {
   getSafeClientRect,
   resolveContextMenuPositionFromViewportBox,
 } from './canvas/snapViewportUtils';
+
+/** Onde pendurar <img> usados pelo Konva.drawImage — tem de estar na árvore VISÍVEL do editor (não body off-screen). */
+const OffscreenImageHostContext = createContext(null);
 
 function isNodeHidden(node) {
   return Boolean(node?.props?.hidden);
@@ -48,12 +59,16 @@ function isGifStoragePath(filePath) {
  */
 function isAnimatedGifContent(url, storage, mediaKind, fileHint = null) {
   if (String(mediaKind || '').toLowerCase() === 'gif') return true;
+  const hintMimeRaw = fileHint && typeof fileHint.mimeType === 'string' ? fileHint.mimeType.trim().toLowerCase() : '';
+  if (hintMimeRaw === 'image/gif' || (hintMimeRaw.startsWith('image/') && hintMimeRaw.includes('gif'))) {
+    return true;
+  }
+  const hintFt = fileHint && typeof fileHint.fileType === 'string' ? fileHint.fileType.trim().toLowerCase() : '';
+  if (hintFt === 'image/gif' || (hintFt.startsWith('image/') && hintFt.includes('gif'))) return true;
   if (isLikelyAnimatedGifUrl(url)) return true;
   if (storage && isGifStoragePath(typeof storage?.filePath === 'string' ? storage.filePath : '')) return true;
   const hintName = fileHint && typeof fileHint.name === 'string' ? fileHint.name.trim() : '';
   if (hintName && /\.gif(?:$|[?#])/i.test(hintName)) return true;
-  const hintMime = fileHint && typeof fileHint.mimeType === 'string' ? fileHint.mimeType.trim().toLowerCase() : '';
-  if (hintMime === 'image/gif') return true;
   return false;
 }
 
@@ -95,49 +110,51 @@ function nodeMediaMetaKey(props) {
   return '';
 }
 
-/** Nó imagem que é GIF no canvas (precisa de RAF; filtros Konva + cache congelam o GIF). */
-function isCanvasImageGifNode(node) {
-  if (String(node?.type) !== 'image') return false;
-  const p = node?.props || {};
-  return isAnimatedGifContent(String(p?.content || ''), p?.storage, p?.mediaKind, {
-    name: typeof p?.librarySourceName === 'string' ? p.librarySourceName : '',
-  });
-}
-
 /**
- * Imagens estáticas: `use-image` (com decode). GIF animado no canvas: <img> sem decode — o pacote use-image
- * chama decode() e no Chrome isso tende a fixar o GIF no 1.º frame em drawImage/repaint.
+ * Carrega <img> para Konva.Image (drawImage).
+ *
+ * GIF no canvas: o Chrome (e outros) muitas vezes NÃO avançam frames se o <img> está
+ * em `body` com coordenadas fora do ecrã — drawImage fica no 1.º frame. Na mídia/páginas
+ * o <img> está dentro do painel visível e anima. Por isso anexamos ao host DENTRO do
+ * wrapper do stage (`OffscreenImageHostContext`), micro-réctangulo no canto (opacity baixa).
  */
-function useStaticStorageBackedImage(url, storage, mediaKind, fileHint = null) {
+function useStaticStorageBackedImage(url, storage, _mediaKind, _fileHint = null) {
   const resolved = useResolvedStorageUrl(String(url || ''), storage);
-  const isGif = isAnimatedGifContent(String(url || ''), storage, mediaKind, fileHint);
-
-  const [gifImg, setGifImg] = useState(null);
+  const hostEl = useContext(OffscreenImageHostContext);
+  const [img, setImg] = useState(null);
   useLayoutEffect(() => {
-    if (!isGif || !resolved) {
-      setGifImg(null);
+    if (!resolved) {
+      setImg(null);
       return undefined;
     }
+    const mountParent =
+      hostEl && typeof hostEl.appendChild === 'function' ? hostEl : document.body;
     const el = document.createElement('img');
-    const onLoad = () => setGifImg(el);
-    const onErr = () => setGifImg(null);
+    el.setAttribute('aria-hidden', 'true');
+    el.draggable = false;
+    el.style.cssText =
+      mountParent === document.body
+        ? 'position:fixed;right:0;bottom:0;width:2px;height:2px;opacity:0.02;pointer-events:none;z-index:0;object-fit:contain;'
+        : 'display:block;max-width:100%;max-height:100%;width:auto;height:auto;pointer-events:none;object-fit:contain;';
+    mountParent.appendChild(el);
+
+    const onLoad = () => setImg(el);
+    const onErr = () => setImg(null);
     el.addEventListener('load', onLoad);
     el.addEventListener('error', onErr);
-    // CORS: evita canvas "tainted" (toDataURL / toBlob). O storage deve enviar Access-Control-Allow-Origin.
-    if (/^https?:\/\//i.test(String(resolved))) {
+    if (/^https?:\/\/(localhost|127\.0\.0\.1)/i.test(String(resolved))) {
       el.crossOrigin = 'anonymous';
     }
     el.src = resolved;
     return () => {
       el.removeEventListener('load', onLoad);
       el.removeEventListener('error', onErr);
+      if (el.parentNode) el.parentNode.removeChild(el);
       el.src = '';
-      setGifImg(null);
+      setImg(null);
     };
-  }, [isGif, resolved]);
-
-  const [normalImg] = useImage(isGif ? '' : resolved || '');
-  return isGif ? gifImg : normalImg ?? null;
+  }, [resolved, hostEl]);
+  return img;
 }
 
 function useStorageBackedImageUrl(url, storage, mediaKind, fileHint = null) {
@@ -160,8 +177,15 @@ function ImageNode({
   const gifHint = useMemo(
     () => ({
       name: typeof props?.librarySourceName === 'string' ? props.librarySourceName : '',
+      mimeType:
+        typeof props?.mimeType === 'string'
+          ? props.mimeType
+          : typeof props?.contentType === 'string'
+            ? props.contentType
+            : '',
+      fileType: typeof props?.fileType === 'string' ? props.fileType : '',
     }),
-    [props?.librarySourceName],
+    [props?.librarySourceName, props?.mimeType, props?.contentType, props?.fileType],
   );
   const img = useStaticStorageBackedImage(
     String(props?.content || ''),
@@ -188,7 +212,8 @@ function ImageNode({
     return null;
   }, [props, mediaMetaMap]);
 
-  // GIF + Konva.cache() + filtros = bitmap estático; no editor priorizamos animação (sem filtros no canvas).
+  // GIF + Konva.cache() + filtros = bitmap estático; nunca aplicamos cache() para preservar animação.
+  // isGifNode mantido para bloquear filtros quando detetado como GIF.
   const konvaFilters = isGifNode ? null : buildKonvaFilters(rawAdjustments);
 
   const imgRef = useRef(null);
@@ -196,22 +221,11 @@ function ImageNode({
   useEffect(() => {
     const k = imgRef.current;
     if (!k) return;
-    if (konvaFilters && img) {
-      k.filters(konvaFilters.filters);
-      if (konvaFilters.brightness !== 0) k.brightness(konvaFilters.brightness);
-      if (konvaFilters.contrast !== 0) k.contrast(konvaFilters.contrast);
-      if (konvaFilters.saturation !== 0) k.saturation(konvaFilters.saturation);
-      k.cache();
-    } else {
-      k.filters([]);
-      try {
-        k.clearCache();
-      } catch {
-        /* ignore */
-      }
-    }
+    // Nunca usar k.cache() em imagens — congela GIFs mesmo sem filtros explícitos.
+    k.filters([]);
+    try { k.clearCache(); } catch { /* ignore */ }
     k.imageSmoothingEnabled = true;
-  }, [img, konvaFilters, rawAdjustments]);
+  }, [img]);
 
   useEffect(() => {
     let anim = '';
@@ -2179,28 +2193,31 @@ export default function CanvasStageKonva({
     );
   }, [sorted, timelineStep]);
 
-  const needsGifCanvasTicker = useMemo(() => {
-    const bgAnimates = isAnimatedGifContent(bgUrl, bgStorage, bgMediaKind) && Boolean(bgImage);
-    const nodeAnimates = sortedForTimeline.some((n) => isCanvasImageGifNode(n));
-    return bgAnimates || nodeAnimates;
-  }, [bgUrl, bgStorage, bgMediaKind, bgImage, sortedForTimeline]);
+  /**
+   * Usa Konva.Animation (forma oficial) para redesenhar o layer quando há imagens visíveis.
+   * Konva.Animation chama layer.draw() em cada RAF de forma sincronizada com o motor Konva,
+   * garantindo que cada frame do GIF (do <img> no DOM) é copiado para o canvas a tempo.
+   */
+  const hasVisibleImageNodes = useMemo(() => {
+    const hasImg = sortedForTimeline.some(
+      (n) => String(n?.type) === 'image' && !isNodeHidden(n),
+    );
+    const bgGif = Boolean(bgImage) && isAnimatedGifContent(bgUrl, bgStorage, bgMediaKind);
+    return hasImg || bgGif;
+  }, [sortedForTimeline, bgImage, bgUrl, bgStorage, bgMediaKind]);
 
   useEffect(() => {
-    if (!needsGifCanvasTicker) return;
-    let rafId = 0;
-    let cancelled = false;
-    const tick = () => {
-      if (cancelled) return;
-      const layer = contentLayerRef.current;
-      if (layer) layer.batchDraw();
-      rafId = requestAnimationFrame(tick);
-    };
-    rafId = requestAnimationFrame(tick);
+    const layer = contentLayerRef.current;
+    if (!layer || !hasVisibleImageNodes) return;
+    // Konva.Animation: redesenha o layer em cada frame → copia frame actual do GIF para canvas
+    const anim = new Konva.Animation(() => {
+      // sem cálculos: o simples facto de existir um Animation ativo força o redraw do layer
+    }, layer);
+    anim.start();
     return () => {
-      cancelled = true;
-      cancelAnimationFrame(rafId);
+      anim.stop();
     };
-  }, [needsGifCanvasTicker, pan.x, pan.y, scale]);
+  }, [hasVisibleImageNodes]);
 
   const gridGuides = useMemo(() => {
     if (!showGrid || gridSize < 8) return { vertical: [], horizontal: [] };
@@ -2280,12 +2297,24 @@ export default function CanvasStageKonva({
     return { x, y, width: drawW, height: drawH };
   }, [bgImage, canvasW, canvasH, bgScale, bgPosition.x, bgPosition.y]);
 
+  const [offscreenImageHostEl, setOffscreenImageHostEl] = useState(null);
+  const setOffscreenImageHostRef = useCallback((node) => {
+    setOffscreenImageHostEl((prev) => (prev !== node ? node : prev));
+  }, []);
+
   return (
+    <OffscreenImageHostContext.Provider value={offscreenImageHostEl}>
     <div
       ref={stageWrapRef}
       className="relative h-full w-full overflow-hidden bg-gray-900"
       style={{ touchAction: 'none' }}
     >
+      {/* Host visível para <img> do Konva — GIF anima; fora do ecrã no body o Chrome congela frames no canvas */}
+      <div
+        ref={setOffscreenImageHostRef}
+        className="pointer-events-none absolute left-0 top-0 z-0 max-h-[4px] max-w-[4px] overflow-hidden opacity-[0.03]"
+        aria-hidden
+      />
       {!isPreviewMode && (
         <div className="absolute left-3 top-3 z-50 flex max-w-[min(100%,24rem)] flex-col gap-1 rounded border border-gray-700 bg-gray-950/70 px-3 py-2 text-xs text-gray-200 backdrop-blur sm:max-w-none sm:flex-row sm:items-center sm:gap-2">
           <div className="flex items-center gap-2">
@@ -2967,6 +2996,7 @@ export default function CanvasStageKonva({
       )
         : null}
     </div>
+    </OffscreenImageHostContext.Provider>
   );
 }
 
