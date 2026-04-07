@@ -31,6 +31,7 @@ import LayerManagerPanel from '../../../components/editor/v2/panels/LayerManager
 import PageSidebar from '../../../components/editor/v2/panels/PageSidebar';
 import PropertiesInspector from '../../../components/editor/v2/panels/PropertiesInspector';
 import ShapeSidebar from '../../../components/editor/v2/panels/ShapeSidebar';
+import AudioLibraryPickModal from '../../../components/editor/v2/media/AudioLibraryPickModal';
 import { useAuth } from '../../../contexts/auth';
 import { getAuthors } from '../../../lib/authors';
 import { getBook, updateBook } from '../../../lib/books';
@@ -56,6 +57,9 @@ const LEFT_PANELS = [
   { id: 'layers', label: 'Camadas', icon: FiLayers },
   { id: 'shapes', label: 'Formas', icon: FiSquare },
 ];
+
+/** Igual a ProTimeline.js: o canvas não deve captar dragOver desse arrasto (senão o drop na grelha falha). */
+const LUDITECA_TIMELINE_DND_MIME = 'application/x-luditeca-timeline-node';
 
 function ensurePagesV2(v2) {
   if (!isPagesV2(v2)) return { version: 2, canvas: { width: 1280, height: 720 }, pages: [] };
@@ -232,6 +236,7 @@ export default function EditBookV2() {
   const [loadingAuthors, setLoadingAuthors] = useState(true);
   const [loadingCategories, setLoadingCategories] = useState(true);
   const [uploadingCover, setUploadingCover] = useState(false);
+  const [audioPickModalOpen, setAudioPickModalOpen] = useState(false);
 
   const playTimerRef = useRef(null);
   const prevStepForPlaybackRef = useRef(null);
@@ -372,8 +377,7 @@ export default function EditBookV2() {
     setLeftTab('media');
   }, []);
   const openAudioAssets = useCallback(() => {
-    setMediaType('audio');
-    setLeftTab('media');
+    setAudioPickModalOpen(true);
   }, []);
 
   const patchCurrentPageTransition = useCallback(
@@ -493,7 +497,7 @@ export default function EditBookV2() {
   }, [addShape]);
 
   const handlePickMedia = useCallback((file) => {
-    if (!file) return;
+    if (!file) return false;
     const normalizedType = String(file?.type || '').toLowerCase();
     const isAudio = normalizedType === 'audio';
     const isVideo = normalizedType === 'video';
@@ -592,13 +596,13 @@ export default function EditBookV2() {
         return p;
       });
       setSelectedNodeId(node.id);
-      return;
+      return true;
     }
     if (selectedNodeId) {
       const target = nodes.find((n) => String(n.id) === String(selectedNodeId));
       const targetType = String(target?.type || '');
       if (targetType !== 'text' && targetType !== 'image' && targetType !== 'video') {
-        return;
+        return false;
       }
       const audioStorage = basePath ? { bucket: bucketFromFile || 'audios', filePath: basePath } : null;
       patchNode(selectedNodeId, {
@@ -608,7 +612,9 @@ export default function EditBookV2() {
           ...(audioStorage ? { audioStorage } : {}),
         },
       });
+      return true;
     }
+    return false;
   }, [user?.id, id, currentPage, patchPage, selectedNodeId, patchNode, nodes]);
 
   const handleCanvasDrop = useCallback(
@@ -629,6 +635,10 @@ export default function EditBookV2() {
   );
 
   const handleCanvasDragOver = useCallback((event) => {
+    const types = Array.from(event.dataTransfer?.types ?? []);
+    if (types.includes(LUDITECA_TIMELINE_DND_MIME)) {
+      return;
+    }
     event.preventDefault();
     event.dataTransfer.dropEffect = 'copy';
   }, []);
@@ -1275,6 +1285,23 @@ export default function EditBookV2() {
         </div>
         )}
       </div>
+      <AudioLibraryPickModal
+        isOpen={audioPickModalOpen}
+        onClose={() => setAudioPickModalOpen(false)}
+        bookId={id ? String(id) : undefined}
+        applyEnabled={Boolean(selectedNodeId)}
+        onPick={(file) => {
+          const applied = handlePickMedia(file);
+          setAudioPickModalOpen(false);
+          if (applied) toast.success('Áudio vinculado ao elemento.');
+          else toast.error('Não foi possível vincular. Selecione texto, imagem ou vídeo no canvas.');
+        }}
+        onOpenMediaTab={() => {
+          setMediaType('audio');
+          setLeftTab('media');
+          setAudioPickModalOpen(false);
+        }}
+      />
     </EditorLayout>
   );
 }

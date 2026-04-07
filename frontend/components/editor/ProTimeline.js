@@ -215,30 +215,55 @@ export default function ProTimeline({
     if (gridHorizontalScrollRef.current) gridHorizontalScrollRef.current.scrollLeft = left;
   }, []);
 
+  const TIMELINE_DND_MIME = 'application/x-luditeca-timeline-node';
+
   const handleDragStart = (e, id) => {
-    setDraggingId(id);
-    e.dataTransfer.setData('text/plain', id);
+    const sid = String(id ?? '');
+    setDraggingId(sid);
+    try {
+      e.dataTransfer.setData('text/plain', sid);
+      e.dataTransfer.setData(TIMELINE_DND_MIME, sid);
+    } catch {
+      e.dataTransfer.setData('text/plain', sid);
+    }
     e.dataTransfer.effectAllowed = 'move';
-    setTimeout(() => {
-      if (e.target) e.target.style.opacity = '0.4';
-    }, 0);
+    requestAnimationFrame(() => {
+      const t = e.currentTarget;
+      if (t && t instanceof HTMLElement) {
+        t.style.opacity = '0.35';
+        t.style.pointerEvents = 'none';
+      }
+    });
   };
 
   const handleDragEnd = (e) => {
     setDraggingId(null);
-    if (e.target) e.target.style.opacity = '1';
+    const t = e.currentTarget;
+    if (t && t instanceof HTMLElement) {
+      t.style.opacity = '1';
+      t.style.pointerEvents = '';
+    }
   };
 
   const handleDragOver = (e) => {
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
+    e.stopPropagation();
+    const types = Array.from(e.dataTransfer?.types ?? []);
+    if (types.includes(TIMELINE_DND_MIME)) {
+      e.dataTransfer.dropEffect = 'move';
+    } else {
+      e.dataTransfer.dropEffect = 'none';
+    }
   };
 
   const handleDrop = (e, newStep) => {
     e.preventDefault();
-    const id = e.dataTransfer.getData('text/plain');
-    if (id && onUpdateElementStep && newStep !== undefined) {
-      onUpdateElementStep(id, newStep);
+    e.stopPropagation();
+    const id =
+      e.dataTransfer.getData(TIMELINE_DND_MIME) || e.dataTransfer.getData('text/plain');
+    const sid = String(id || '').trim();
+    if (sid && onUpdateElementStep && newStep !== undefined) {
+      onUpdateElementStep(sid, newStep);
     }
     setDraggingId(null);
   };
@@ -391,15 +416,19 @@ export default function ProTimeline({
                     {rows.map((r) => (
                       <div
                         key={r.rowId}
-                        className="relative box-border border-b border-slate-800"
-                        style={{ height: r.rowHeight, minHeight: r.rowHeight }}
+                        className="relative box-border flex min-w-max flex-row border-b border-slate-800"
+                        style={{
+                          height: r.rowHeight,
+                          minHeight: r.rowHeight,
+                          minWidth: `${steps.length * STEP_WIDTH}px`,
+                        }}
                       >
                         {steps.map((s) => (
                           <div
                             key={s}
                             onDragOver={handleDragOver}
                             onDrop={(e) => handleDrop(e, s)}
-                            className={`h-full flex-shrink-0 border-l border-slate-800/40 transition-colors ${draggingId ? 'hover:bg-indigo-500/10' : ''}`}
+                            className={`box-border h-full flex-shrink-0 border-l border-slate-800/40 transition-colors ${draggingId ? 'hover:bg-indigo-500/10' : ''}`}
                             style={{ width: `${STEP_WIDTH}px`, minWidth: `${STEP_WIDTH}px` }}
                           />
                         ))}
@@ -408,7 +437,7 @@ export default function ProTimeline({
                           const step = clampInt(el?.step ?? 0, 0, maxSteps);
                           const isSelected =
                             selectedElement && String(el?.id) === String(selectedElement);
-                          const isDragging = draggingId === el.id;
+                          const isDragging = String(draggingId) === String(el.id);
                           const imagePreview = getImagePreview(el);
                           const blockH = Math.min(32, Math.max(22, r.rowHeight - 8));
                           const blockTopPx = Math.max(4, Math.round((r.rowHeight - blockH) / 2));

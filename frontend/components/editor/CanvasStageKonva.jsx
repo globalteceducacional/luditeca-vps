@@ -20,6 +20,7 @@ import {
 } from './gifPlaybackUtils';
 import { useGifManualCanvas } from './useGifManualCanvas';
 import { EDITOR_FONT_OPTIONS, MAX_TIMELINE_STEP } from './editorConstants';
+import { AUDIO_BADGE_R, outsideTopLeftFromAudioProps } from '../../lib/audioBadgeCanvas';
 import { readMediaMetaMap } from './v2/media/mediaLibraryUtils';
 import {
   clampPanToViewport,
@@ -81,6 +82,92 @@ function nodeMediaMetaKey(props) {
   const bucket = typeof props?.storage?.bucket === 'string' ? props.storage.bucket.trim() : '';
   if (storageKey) return `${bucket}:${storageKey}`;
   return '';
+}
+
+/** Indica se o nó tem áudio vinculado (URL ou ficheiro em storage). */
+function hasLinkedAudioFromProps(props) {
+  if (!props) return false;
+  const url = String(props.audio || '').trim();
+  const fp = typeof props.audioStorage?.filePath === 'string' ? props.audioStorage.filePath.trim() : '';
+  return Boolean(url || fp);
+}
+
+/** Desenho do botão âmbar (coordenadas locais 0,0 = canto sup. esq. do círculo). */
+function AudioBadgeKonvaIcon() {
+  const playR = AUDIO_BADGE_R;
+  const diameter = playR * 2;
+  const playScale = playR / 16;
+  const playTri = [
+    12 * playScale,
+    9 * playScale,
+    12 * playScale,
+    23 * playScale,
+    23 * playScale,
+    16 * playScale,
+  ];
+  return (
+    <>
+      <Rect
+        width={diameter}
+        height={diameter}
+        cornerRadius={playR}
+        fill="rgba(2, 6, 23, 0.9)"
+        stroke="#f59e0b"
+        strokeWidth={2}
+        shadowBlur={5}
+        shadowColor="rgba(0,0,0,0.45)"
+        listening={false}
+      />
+      <Line points={playTri} fill="#fcd34d" closed listening={false} />
+    </>
+  );
+}
+
+/** Botão âmbar **fora** da caixa azul do elemento (posição só pelas propriedades). */
+function LinkedAudioBadgeOnNode({ id, boxW, boxH, props, isPreviewMode, onSelectNode }) {
+  const { gx, gy } = useMemo(
+    () => outsideTopLeftFromAudioProps(boxW, boxH, props),
+    [boxW, boxH, props?.audioBadgePlacement, props?.audioBadgeXPct, props?.audioBadgeYPct],
+  );
+  return (
+    <Group
+      x={gx}
+      y={gy}
+      listening={!isPreviewMode}
+      onMouseDown={(e) => {
+        if (!isPreviewMode) onSelectNode?.(id, e);
+      }}
+      cursor={isPreviewMode ? 'default' : 'pointer'}
+    >
+      <AudioBadgeKonvaIcon />
+    </Group>
+  );
+}
+
+/**
+ * Badge de áudio junto à borda do nó, no mesmo sistema de coordenadas (roda com o elemento).
+ * Renderizado por cima do Transformer para não ficar tapado pelas alças.
+ */
+function NodeAudioBadgeOverlay({ node, isPreviewMode, onSelectNode }) {
+  const id = String(node?.id || '');
+  const type = String(node?.type || '');
+  if (type !== 'text' && type !== 'image' && type !== 'video') return null;
+  const props = node?.props || {};
+  if (!hasLinkedAudioFromProps(props)) return null;
+  const t = getNodeTransform(node);
+  const visual = getNodeVisualProps(node);
+  return (
+    <Group x={t.x} y={t.y} rotation={t.rotation} opacity={visual.opacity}>
+      <LinkedAudioBadgeOnNode
+        id={id}
+        boxW={t.width}
+        boxH={t.height}
+        props={props}
+        isPreviewMode={isPreviewMode}
+        onSelectNode={onSelectNode}
+      />
+    </Group>
+  );
 }
 
 /**
@@ -175,6 +262,7 @@ function ImageNode({
   const img = useHtmlImgForKonva(resolved, hostEl, !manualPlayback);
 
   const imgRef = useRef(null);
+  const groupRef = useRef(null);
   const onGifFrame = useCallback(() => {
     imgRef.current?.getLayer()?.batchDraw();
   }, []);
@@ -227,7 +315,7 @@ function ImageNode({
     }
     if (!anim) return;
 
-    const target = imgRef.current;
+    const target = groupRef.current;
     if (!target) return;
 
     const baseX = t.x;
@@ -389,17 +477,13 @@ function ImageNode({
   ]);
 
   return (
-    <KonvaImage
-      ref={imgRef}
+    <Group
+      ref={groupRef}
       id={`node-${id}`}
       name="selectable"
-      perfectDrawEnabled={false}
       x={t.x}
       y={t.y}
-      width={t.width}
-      height={t.height}
       rotation={t.rotation}
-      image={displayImage}
       opacity={visual?.opacity}
       draggable={!isPreviewMode && !locked}
       onClick={(e) => !isPreviewMode && onSelectNode?.(id, e)}
@@ -407,7 +491,19 @@ function ImageNode({
       onDragEnd={(e) => {
         commitNode(id, { transform: { ...node.transform, x: e.target.x(), y: e.target.y() } });
       }}
-    />
+    >
+      <KonvaImage
+        ref={imgRef}
+        perfectDrawEnabled={false}
+        x={0}
+        y={0}
+        width={t.width}
+        height={t.height}
+        image={displayImage}
+        listening={false}
+      />
+      <Rect width={t.width} height={t.height} fill="rgba(0,0,0,0.001)" strokeEnabled={false} />
+    </Group>
   );
 }
 
@@ -803,27 +899,48 @@ function parseRichSpans(raw, spans, globalWeight, globalStyle) {
   return out;
 }
 
-/**
- * Mede a largura de um trecho de texto usando Konva.Text.measureSize (nativo Konva),
- * evitando criar elementos canvas temporários.
- */
-function measureTextWidth(text, fontSize, fontFamily, bold, italic) {
-  try {
-    const fontStyle = italic ? 'italic' : 'normal';
-    const fontVariant = 'normal';
-    const fontWeight = bold ? 'bold' : 'normal';
-    const size = Konva.Text.measureSize(String(text || ''), {
-      fontSize: Math.max(1, fontSize),
-      fontFamily: fontFamily || 'sans-serif',
-      fontStyle,
-      fontVariant,
-      fontWeight,
-    });
-    return size.width;
-  } catch {
-    // Fallback caso Konva.Text.measureSize não esteja disponível.
-    return String(text || '').length * Math.max(1, fontSize) * 0.55;
+let _richTextMeasureCtx = null;
+
+function getRichTextMeasureContext() {
+  if (typeof document === 'undefined') return null;
+  if (!_richTextMeasureCtx) {
+    const c = document.createElement('canvas');
+    _richTextMeasureCtx = c.getContext('2d');
   }
+  return _richTextMeasureCtx;
+}
+
+/** Família para CSS canvas (Konva usa aspas se houver espaço). */
+function formatMeasureFontFamily(fontFamily) {
+  const first = String(fontFamily || 'Roboto')
+    .split(',')[0]
+    .trim()
+    .replace(/^["']|["']$/g, '');
+  if (first.includes(' ') && !/^["']/.test(first)) return `"${first}"`;
+  return first || 'sans-serif';
+}
+
+/**
+ * Largura do trecho alinhada ao desenho Konva.Text (measureText + letterSpacing × comprimento, como Konva 9).
+ * Konva.Text.measureSize não é estático; o fallback antigo (len×0.55) ignorava negrito e gerava sobreposição.
+ */
+function measureTextWidth(text, fontSize, fontFamily, bold, italic, letterSpacing = 0) {
+  const str = String(text || '');
+  const fs = Math.max(1, fontSize);
+  const ctx = getRichTextMeasureContext();
+  if (ctx) {
+    try {
+      const fontStyle = italic ? 'italic' : 'normal';
+      const fontWeight = bold ? 'bold' : 'normal';
+      ctx.font = `${fontStyle} ${fontWeight} ${fs}px ${formatMeasureFontFamily(fontFamily)}`;
+      const w = ctx.measureText(str).width;
+      const ls = Number(letterSpacing) || 0;
+      return w + ls * str.length;
+    } catch {
+      /* fallback abaixo */
+    }
+  }
+  return str.length * fs * (bold ? 0.62 : 0.55);
 }
 
 function splitByWords(segmentText) {
@@ -834,6 +951,7 @@ function splitByWords(segmentText) {
 function buildRichLayout(tokens, maxWidth, opts) {
   const fontSize = Math.max(1, toNum(opts.fontSize, 24));
   const fontFamily = String(opts.fontFamily || 'Roboto');
+  const letterSpacing = toNum(opts.letterSpacing, 0);
   /** @type {Array<Array<{text:string,bold?:boolean,italic?:boolean,underline?:boolean,width:number}>>} */
   const lines = [[]];
   let lineWidth = 0;
@@ -850,7 +968,7 @@ function buildRichLayout(tokens, maxWidth, opts) {
     }
     const words = splitByWords(tk.text);
     for (const wd of words) {
-      const segW = measureTextWidth(wd, fontSize, fontFamily, tk.bold, tk.italic);
+      const segW = measureTextWidth(wd, fontSize, fontFamily, tk.bold, tk.italic, letterSpacing);
       const overflows = lineWidth > 0 && lineWidth + segW > maxWidth;
       if (overflows) pushLine();
       lines[lines.length - 1].push({
@@ -890,8 +1008,9 @@ function RichTextNode({
       buildRichLayout(tokens, Math.max(1, t.width), {
         fontSize: toNum(props?.fontSize, 24),
         fontFamily: String(props?.fontFamily || 'Roboto'),
+        letterSpacing: toNum(props?.letterSpacing, 0),
       }),
-    [tokens, t.width, props?.fontSize, props?.fontFamily],
+    [tokens, t.width, props?.fontSize, props?.fontFamily, props?.letterSpacing],
   );
 
   const fontSize = Math.max(1, toNum(props?.fontSize, 24));
@@ -1132,7 +1251,9 @@ function RichTextNode({
               text={seg.text}
               fontSize={fontSize}
               fontFamily={String(props?.fontFamily || 'Roboto')}
-              fontStyle={`${seg.bold ? 'bold' : ''} ${seg.italic ? 'italic' : ''}`.trim()}
+              fontStyle={
+                [seg.bold && 'bold', seg.italic && 'italic'].filter(Boolean).join(' ') || 'normal'
+              }
               fill={baseColor}
               textDecoration={seg.underline ? 'underline' : props?.textDecoration === 'underline' ? 'underline' : ''}
               letterSpacing={letterSpacing}
@@ -2668,6 +2789,15 @@ export default function CanvasStageKonva({
               dash={[6, 4]}
               listening={false}
               perfectDrawEnabled={false}
+            />
+          ))}
+
+          {sortedForTimeline.map((node) => (
+            <NodeAudioBadgeOverlay
+              key={`audio-badge-overlay-${String(node?.id || '')}`}
+              node={node}
+              isPreviewMode={isPreviewMode}
+              onSelectNode={handleSelectNode}
             />
           ))}
         </Layer>

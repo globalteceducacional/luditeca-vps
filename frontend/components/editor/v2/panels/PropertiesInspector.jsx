@@ -25,6 +25,12 @@ import { clamp, toNum } from '../../../../lib/editorUtils';
 import { EDITOR_FONT_OPTIONS, MAX_TIMELINE_STEP } from '../../editorConstants';
 import { gifHintFromProps, isAnimatedGifContent } from '../../gifPlaybackUtils';
 
+function audioBadgePlacementOrDefault(raw) {
+  const s = String(raw || '').trim().toLowerCase();
+  if (['nw', 'ne', 'sw', 'se', 'n', 's', 'e', 'w'].includes(s)) return s;
+  return 'se';
+}
+
 function linkedAudioDisplayName(audioUrl, audioStorage) {
   const path = typeof audioStorage?.filePath === 'string' ? audioStorage.filePath.trim() : '';
   if (path) {
@@ -56,32 +62,103 @@ function LinkedAudioSection({ nodeId, props, onPatchNode, onOpenAudioLibrary, el
   );
   const resolvedSrc = useResolvedStorageUrl(audioUrl, audioStorage);
   const fileLabel = linkedAudioDisplayName(audioUrl, audioStorage);
+  const badgePlacement = audioBadgePlacementOrDefault(props?.audioBadgePlacement);
+  const hasPctBadgePos =
+    props?.audioBadgeXPct != null &&
+    props?.audioBadgeYPct != null &&
+    Number.isFinite(Number(props.audioBadgeXPct)) &&
+    Number.isFinite(Number(props.audioBadgeYPct));
+
+  const placementOptions = [
+    { id: 'nw', label: 'Sup. esq.' },
+    { id: 'n', label: 'Topo' },
+    { id: 'ne', label: 'Sup. dir.' },
+    { id: 'w', label: 'Esquerda' },
+    { id: '__', label: '', spacer: true },
+    { id: 'e', label: 'Direita' },
+    { id: 'sw', label: 'Inf. esq.' },
+    { id: 's', label: 'Base' },
+    { id: 'se', label: 'Inf. dir.' },
+  ];
 
   return (
-    <section>
-      <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold text-slate-300">
-        <FiMusic className="shrink-0 text-amber-400/90" size={14} aria-hidden />
-        Áudio vinculado
-      </h3>
-      <div className="space-y-3 rounded-lg border border-amber-500/25 bg-slate-950/70 p-3">
-        <p className="text-[10px] leading-relaxed text-slate-500">
-          Associe narração ou música a {elementLabel}. O leitor do livro pode usar este ficheiro em conjunto com o
-          elemento (conforme a app ou visualização).
+    <section className="rounded-xl border border-amber-500/40 bg-gradient-to-b from-amber-500/10 via-slate-950/90 to-slate-950 p-1 shadow-[0_0_0_1px_rgba(245,158,11,0.12)]">
+      <div className="rounded-lg border border-amber-500/20 bg-slate-950/80 p-3">
+        <h3 className="mb-1 flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-amber-200">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/20 ring-1 ring-amber-400/40">
+            <FiMusic className="text-amber-300" size={16} aria-hidden />
+          </span>
+          Áudio do elemento
+        </h3>
+        <p className="mb-3 text-[10px] leading-relaxed text-slate-400">
+          Narração ou música para <span className="font-medium text-slate-200">{elementLabel}</span>. No canvas aparece um
+          botão de play âmbar quando há áudio ligado.
         </p>
 
+        <div className="mb-3 rounded-lg border border-slate-700/80 bg-slate-900/60 p-2.5">
+          <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            Posição do botão (fora da caixa)
+          </div>
+          {hasPctBadgePos ? (
+            <p className="mb-2 rounded border border-amber-500/25 bg-amber-500/10 px-2 py-1.5 text-[9px] leading-snug text-amber-100/90">
+              Este elemento usa percentuais personalizados (<span className="font-mono">audioBadgeXPct/YPct</span>).
+              Ao escolher uma posição abaixo, esses valores são substituídos pelo preset correspondente.
+            </p>
+          ) : (
+            <p className="mb-2 text-[9px] leading-snug text-slate-600">
+              O botão fica <strong>fora</strong> da caixa do elemento (não sobrepõe o texto/imagem) e roda com ele.
+              Escolha o lado ou canto:
+            </p>
+          )}
+          <div className="grid grid-cols-3 gap-1.5">
+            {placementOptions.map((opt) =>
+              opt.spacer ? (
+                <div key={opt.id} className="min-h-[2.25rem]" aria-hidden />
+              ) : (
+                <button
+                  key={opt.id}
+                  type="button"
+                  title={opt.label}
+                  onClick={() => {
+                    const next = { ...props, audioBadgePlacement: opt.id };
+                    delete next.audioBadgeCanvasX;
+                    delete next.audioBadgeCanvasY;
+                    delete next.audioBadgeXPct;
+                    delete next.audioBadgeYPct;
+                    onPatchNode(nodeId, { props: next });
+                  }}
+                  className={`rounded-md border px-1.5 py-2 text-center text-[10px] font-semibold leading-tight transition-colors ${
+                    !hasPctBadgePos && badgePlacement === opt.id
+                      ? 'border-amber-500 bg-amber-500/20 text-amber-100'
+                      : 'border-slate-600 bg-slate-950 text-slate-400 hover:border-slate-500 hover:text-slate-200'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ),
+            )}
+          </div>
+          <p className="mt-2 text-[9px] leading-snug text-slate-600">
+            Guardado em <span className="font-mono text-slate-500">audioBadgePlacement</span> (e percentuais derivados no
+            leitor).
+          </p>
+        </div>
+
         {!hasLinked ? (
-          <div className="rounded-lg border border-dashed border-slate-600 bg-slate-900/90 px-3 py-4">
-            <p className="mb-3 text-center text-xs text-slate-400">Nenhum áudio associado a este elemento.</p>
+          <div className="rounded-lg border-2 border-dashed border-amber-500/50 bg-slate-900/95 px-3 py-4 ring-1 ring-inset ring-amber-500/20">
+            <p className="mb-3 text-center text-xs font-medium text-slate-300">Nenhum áudio associado.</p>
             <button
               type="button"
               onClick={() => onOpenAudioLibrary?.()}
-              className="w-full rounded-md bg-amber-600 px-3 py-2.5 text-xs font-semibold text-amber-950 shadow-sm transition-colors hover:bg-amber-500"
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-amber-500 px-3 py-3 text-xs font-bold text-amber-950 shadow-md shadow-amber-900/30 transition-colors hover:bg-amber-400"
             >
-              Escolher áudio na biblioteca
+              <FiPlay className="shrink-0" size={16} strokeWidth={2.5} aria-hidden />
+              Adicionar áudio da biblioteca
             </button>
-            <p className="mt-3 text-center text-[10px] leading-snug text-slate-600">
-              Abre o painel <span className="text-slate-400">Mídia → Áudios</span>. Com este elemento seleccionado,
-              clique num ficheiro para vincular.
+            <p className="mt-3 text-center text-[10px] leading-snug text-slate-500">
+              Abre-se uma janela com os áudios da biblioteca: ouça com o leitor e confirme com{' '}
+              <span className="font-medium text-slate-400">Usar este áudio</span>. Para enviar ficheiros novos, use{' '}
+              <span className="font-medium text-slate-400">Mídia → Áudios</span>.
             </p>
           </div>
         ) : (
@@ -121,9 +198,15 @@ function LinkedAudioSection({ nodeId, props, onPatchNode, onOpenAudioLibrary, el
               </button>
               <button
                 type="button"
-                onClick={() =>
-                  onPatchNode(nodeId, { props: { ...props, audio: '', audioStorage: null } })
-                }
+                onClick={() => {
+                  const next = { ...props, audio: '', audioStorage: null };
+                  delete next.audioBadgePlacement;
+                  delete next.audioBadgeXPct;
+                  delete next.audioBadgeYPct;
+                  delete next.audioBadgeCanvasX;
+                  delete next.audioBadgeCanvasY;
+                  onPatchNode(nodeId, { props: next });
+                }}
                 className="flex-1 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-200 transition-colors hover:bg-red-500/20"
               >
                 Remover vínculo
