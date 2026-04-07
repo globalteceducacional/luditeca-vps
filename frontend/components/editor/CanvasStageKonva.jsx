@@ -13,6 +13,12 @@ import { createPortal } from 'react-dom';
 import Konva from 'konva';
 import { useResolvedStorageUrl } from '../../lib/useResolvedStorageUrl';
 import { clamp, round2, toNum } from '../../lib/editorUtils';
+import {
+  gifHintFromProps,
+  isAnimatedGifContent,
+  needsManualGifPlayback,
+} from './gifPlaybackUtils';
+import { useGifManualCanvas } from './useGifManualCanvas';
 import { EDITOR_FONT_OPTIONS, MAX_TIMELINE_STEP } from './editorConstants';
 import { readMediaMetaMap } from './v2/media/mediaLibraryUtils';
 import {
@@ -37,39 +43,6 @@ function isNodeHidden(node) {
 
 function isNodeLocked(node) {
   return Boolean(node?.props?.locked);
-}
-
-/** URLs com extensão .gif visível (presign muitas vezes não tem). */
-function isLikelyAnimatedGifUrl(url) {
-  return /\.gif(?:$|[?#])/i.test(String(url || '').trim());
-}
-
-function isGifStoragePath(filePath) {
-  const fp = String(filePath || '').trim();
-  if (!fp) return false;
-  const base = fp.split('/').pop() || fp;
-  if (/\.gif$/i.test(base)) return true;
-  // Caminho completo (presign por vezes sem extensão no último segmento)
-  return /\.gif(?:$|[?#])/i.test(fp);
-}
-
-/**
- * Deteta GIF animado: `mediaKind`, URL, `storage.filePath`, nome de ficheiro da biblioteca ou MIME.
- * URLs presignadas muitas vezes não contêm `.gif` — o nome vindo do drag/drop cobre esse caso.
- */
-function isAnimatedGifContent(url, storage, mediaKind, fileHint = null) {
-  if (String(mediaKind || '').toLowerCase() === 'gif') return true;
-  const hintMimeRaw = fileHint && typeof fileHint.mimeType === 'string' ? fileHint.mimeType.trim().toLowerCase() : '';
-  if (hintMimeRaw === 'image/gif' || (hintMimeRaw.startsWith('image/') && hintMimeRaw.includes('gif'))) {
-    return true;
-  }
-  const hintFt = fileHint && typeof fileHint.fileType === 'string' ? fileHint.fileType.trim().toLowerCase() : '';
-  if (hintFt === 'image/gif' || (hintFt.startsWith('image/') && hintFt.includes('gif'))) return true;
-  if (isLikelyAnimatedGifUrl(url)) return true;
-  if (storage && isGifStoragePath(typeof storage?.filePath === 'string' ? storage.filePath : '')) return true;
-  const hintName = fileHint && typeof fileHint.name === 'string' ? fileHint.name.trim() : '';
-  if (hintName && /\.gif(?:$|[?#])/i.test(hintName)) return true;
-  return false;
 }
 
 /**
@@ -117,13 +90,17 @@ function nodeMediaMetaKey(props) {
  * em `body` com coordenadas fora do ecrã — drawImage fica no 1.º frame. Na mídia/páginas
  * o <img> está dentro do painel visível e anima. Por isso anexamos ao host DENTRO do
  * wrapper do stage (`OffscreenImageHostContext`), micro-réctangulo no canto (opacity baixa).
+ *
+ * Importante: o contentor NÃO pode ser só 2–4px — com `max-width:100%` o <img> fica minúsculo e o Chrome
+ * (e outros) muitas vezes deixam de avançar frames do GIF animado. Usar ≥64px mantém a animação fluida.
  */
-function useStaticStorageBackedImage(url, storage, _mediaKind, _fileHint = null) {
-  const resolved = useResolvedStorageUrl(String(url || ''), storage);
-  const hostEl = useContext(OffscreenImageHostContext);
+/** `<img>` para Konva.drawImage; `enabled` permite desligar quando o GIF usa canvas manual. */
+const GIF_HOST_MIN_PX = 64;
+
+function useHtmlImgForKonva(resolved, hostEl, enabled) {
   const [img, setImg] = useState(null);
   useLayoutEffect(() => {
-    if (!resolved) {
+    if (!enabled || !resolved) {
       setImg(null);
       return undefined;
     }
@@ -135,7 +112,7 @@ function useStaticStorageBackedImage(url, storage, _mediaKind, _fileHint = null)
     el.style.cssText =
       mountParent === document.body
         ? 'position:fixed;right:0;bottom:0;width:2px;height:2px;opacity:0.02;pointer-events:none;z-index:0;object-fit:contain;'
-        : 'display:block;max-width:100%;max-height:100%;width:auto;height:auto;pointer-events:none;object-fit:contain;';
+        : `display:block;width:${GIF_HOST_MIN_PX}px;height:${GIF_HOST_MIN_PX}px;min-width:${GIF_HOST_MIN_PX}px;min-height:${GIF_HOST_MIN_PX}px;max-width:none;max-height:none;pointer-events:none;object-fit:contain;`;
     mountParent.appendChild(el);
 
     const onLoad = () => setImg(el);
@@ -153,8 +130,14 @@ function useStaticStorageBackedImage(url, storage, _mediaKind, _fileHint = null)
       el.src = '';
       setImg(null);
     };
-  }, [resolved, hostEl]);
+  }, [resolved, hostEl, enabled]);
   return img;
+}
+
+function useStaticStorageBackedImage(url, storage, _mediaKind, _fileHint = null) {
+  const resolved = useResolvedStorageUrl(String(url || ''), storage);
+  const hostEl = useContext(OffscreenImageHostContext);
+  return useHtmlImgForKonva(resolved, hostEl, true);
 }
 
 function useStorageBackedImageUrl(url, storage, mediaKind, fileHint = null) {
@@ -175,24 +158,11 @@ function ImageNode({
 }) {
   const props = node?.props || {};
   const gifHint = useMemo(
-    () => ({
-      name: typeof props?.librarySourceName === 'string' ? props.librarySourceName : '',
-      mimeType:
-        typeof props?.mimeType === 'string'
-          ? props.mimeType
-          : typeof props?.contentType === 'string'
-            ? props.contentType
-            : '',
-      fileType: typeof props?.fileType === 'string' ? props.fileType : '',
-    }),
+    () => gifHintFromProps(props),
     [props?.librarySourceName, props?.mimeType, props?.contentType, props?.fileType],
   );
-  const img = useStaticStorageBackedImage(
-    String(props?.content || ''),
-    props?.storage,
-    props?.mediaKind,
-    gifHint,
-  );
+  const resolved = useResolvedStorageUrl(String(props?.content || ''), props?.storage);
+  const hostEl = useContext(OffscreenImageHostContext);
   const locked = isNodeLocked(node);
 
   const isGifNode = isAnimatedGifContent(
@@ -201,6 +171,24 @@ function ImageNode({
     props?.mediaKind,
     gifHint,
   );
+  const manualPlayback = needsManualGifPlayback(props, isGifNode);
+  const img = useHtmlImgForKonva(resolved, hostEl, !manualPlayback);
+
+  const imgRef = useRef(null);
+  const onGifFrame = useCallback(() => {
+    imgRef.current?.getLayer()?.batchDraw();
+  }, []);
+  const { canvas: manualCanvas } = useGifManualCanvas(
+    resolved,
+    {
+      speed: clamp(toNum(props.gifPlaybackSpeed, 1), 0.25, 4),
+      infiniteLoop: props.gifInfiniteLoop !== false,
+      repeatCount: Math.max(1, Math.trunc(toNum(props.gifRepeatCount, 1))),
+      onFrame: onGifFrame,
+    },
+    manualPlayback && Boolean(resolved),
+  );
+  const displayImage = manualPlayback ? manualCanvas : img;
 
   // Ajustes visuais: props do nó têm precedência; fallback para mediaMetaMap (biblioteca).
   const rawAdjustments = useMemo(() => {
@@ -216,8 +204,6 @@ function ImageNode({
   // isGifNode mantido para bloquear filtros quando detetado como GIF.
   const konvaFilters = isGifNode ? null : buildKonvaFilters(rawAdjustments);
 
-  const imgRef = useRef(null);
-
   useEffect(() => {
     const k = imgRef.current;
     if (!k) return;
@@ -225,7 +211,7 @@ function ImageNode({
     k.filters([]);
     try { k.clearCache(); } catch { /* ignore */ }
     k.imageSmoothingEnabled = true;
-  }, [img]);
+  }, [displayImage]);
 
   useEffect(() => {
     let anim = '';
@@ -413,7 +399,7 @@ function ImageNode({
       width={t.width}
       height={t.height}
       rotation={t.rotation}
-      image={img}
+      image={displayImage}
       opacity={visual?.opacity}
       draggable={!isPreviewMode && !locked}
       onClick={(e) => !isPreviewMode && onSelectNode?.(id, e)}
@@ -2309,10 +2295,10 @@ export default function CanvasStageKonva({
       className="relative h-full w-full overflow-hidden bg-gray-900"
       style={{ touchAction: 'none' }}
     >
-      {/* Host visível para <img> do Konva — GIF anima; fora do ecrã no body o Chrome congela frames no canvas */}
+      {/* Host ≥64px: GIF animado precisa de área de decode visível; 4px congelava frames no Chrome */}
       <div
         ref={setOffscreenImageHostRef}
-        className="pointer-events-none absolute left-0 top-0 z-0 max-h-[4px] max-w-[4px] overflow-hidden opacity-[0.03]"
+        className="pointer-events-none absolute left-0 top-0 z-0 h-16 w-16 overflow-hidden opacity-[0.02]"
         aria-hidden
       />
       {!isPreviewMode && (

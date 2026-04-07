@@ -42,6 +42,7 @@ import {
   migratePagesLegacyToV2,
   migratePagesV2ToLegacy,
 } from '../../../lib/pagesV2/migrate';
+import { DEFAULT_GIF_NODE_PROPS } from '../../../components/editor/gifPlaybackUtils';
 
 const CanvasStageKonva = dynamic(
   () => import('../../../components/editor/CanvasStageKonva'),
@@ -557,7 +558,7 @@ export default function EditBookV2() {
           content: String(file?.url || ''),
           ...(basePath ? { storage: { bucket: bucketFromFile, filePath: basePath } } : {}),
           ...(sourceName && !isVideo ? { librarySourceName: sourceName } : {}),
-          ...(looksLikeGif ? { mediaKind: 'gif' } : {}),
+          ...(looksLikeGif ? { mediaKind: 'gif', ...DEFAULT_GIF_NODE_PROPS } : {}),
           ...(!isVideo && file?.fileType ? { mimeType: String(file.fileType) } : {}),
           // Ajustes visuais (brilho/contraste/saturação) gravados no metadado da biblioteca.
           ...(imageMeta && !isVideo ? { imageAdjustments: imageMeta } : {}),

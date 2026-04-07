@@ -23,6 +23,7 @@ import 'animate.css';
 import { useResolvedStorageUrl } from '../../../../lib/useResolvedStorageUrl';
 import { clamp, toNum } from '../../../../lib/editorUtils';
 import { EDITOR_FONT_OPTIONS, MAX_TIMELINE_STEP } from '../../editorConstants';
+import { gifHintFromProps, isAnimatedGifContent } from '../../gifPlaybackUtils';
 
 function linkedAudioDisplayName(audioUrl, audioStorage) {
   const path = typeof audioStorage?.filePath === 'string' ? audioStorage.filePath.trim() : '';
@@ -756,6 +757,16 @@ export default function PropertiesInspector({
     return () => window.removeEventListener('keydown', onKey);
   }, [shapeEditorOpen]);
 
+  const gifInspectorHint = useMemo(
+    () => gifHintFromProps(selectedNode?.props || {}),
+    [
+      selectedNode?.props?.librarySourceName,
+      selectedNode?.props?.mimeType,
+      selectedNode?.props?.contentType,
+      selectedNode?.props?.fileType,
+    ],
+  );
+
   if (!selectedNode) {
     return (
       <div className="flex min-h-0 flex-1 flex-col bg-slate-800 text-slate-200">
@@ -789,6 +800,9 @@ export default function PropertiesInspector({
   const isText = selectedNode.type === 'text';
   const isImage = selectedNode.type === 'image';
   const isVideo = selectedNode.type === 'video';
+  const isGifElement =
+    isImage &&
+    isAnimatedGifContent(String(props.content || ''), props.storage, props.mediaKind, gifInspectorHint);
   const supportsAudioBinding = isText || isImage || isVideo;
   const supportsEffects = isText || isShape || isVideo;
   const supportsTextEditing = isText || isShape;
@@ -1591,6 +1605,72 @@ export default function PropertiesInspector({
                 </label>
                 </div>
               </>
+            ) : null}
+            {isGifElement ? (
+              <div className="mt-3 space-y-3 rounded border border-indigo-500/20 bg-slate-900 p-3">
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-indigo-300/90">
+                  GIF animado
+                </div>
+                <p className="text-[10px] leading-relaxed text-slate-500">
+                  Ajuste a velocidade em relação ao ficheiro original. Desative o loop infinito para limitar quantas
+                  vezes a animação corre (1 = só uma vez).
+                </p>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-xs text-slate-300">
+                    Velocidade ({clamp(toNum(props.gifPlaybackSpeed, 1), 0.25, 4).toFixed(2)}×)
+                  </span>
+                  <input
+                    type="range"
+                    min={0.25}
+                    max={4}
+                    step={0.05}
+                    value={clamp(toNum(props.gifPlaybackSpeed, 1), 0.25, 4)}
+                    onChange={(e) =>
+                      onPatchNode(selectedNode.id, {
+                        props: { ...props, gifPlaybackSpeed: clamp(toNum(e.target.value, 1), 0.25, 4) },
+                      })
+                    }
+                    className="w-full accent-indigo-500"
+                  />
+                </label>
+                <label className="flex items-center justify-between rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-300">
+                  Loop infinito
+                  <input
+                    type="checkbox"
+                    checked={props.gifInfiniteLoop !== false}
+                    onChange={(e) =>
+                      onPatchNode(selectedNode.id, {
+                        props: { ...props, gifInfiniteLoop: e.target.checked ? true : false },
+                      })
+                    }
+                    className="accent-indigo-500"
+                  />
+                </label>
+                {props.gifInfiniteLoop === false ? (
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                      Número de ciclos
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={999}
+                      step={1}
+                      className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-200"
+                      value={Math.max(1, Math.trunc(toNum(props.gifRepeatCount, 1)))}
+                      onChange={(e) =>
+                        onPatchNode(selectedNode.id, {
+                          props: {
+                            ...props,
+                            gifRepeatCount: Math.max(1, Math.trunc(toNum(e.target.value, 1))),
+                          },
+                        })
+                      }
+                    />
+                    <span className="text-[10px] text-slate-600">Use 1 para reproduzir uma única vez.</span>
+                  </label>
+                ) : null}
+              </div>
             ) : null}
           </section>
         ) : null}
