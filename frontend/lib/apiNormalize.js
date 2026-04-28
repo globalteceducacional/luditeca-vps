@@ -1,6 +1,12 @@
+function asStringArray(v) {
+  if (!Array.isArray(v)) return [];
+  return v.filter((x) => typeof x === 'string' && x.trim()).map((x) => x.trim());
+}
+
 export function normalizeBook(b) {
   if (!b) return b;
   const authors = b.authors || null;
+  const category = b.category || null;
   return {
     id: String(b.id),
     title: b.title,
@@ -15,7 +21,13 @@ export function normalizeBook(b) {
     author_id: b.authorId != null ? String(b.authorId) : null,
     category_id: b.categoryId != null ? String(b.categoryId) : null,
     link_slidebook: b.linkSlidebook ?? null,
-    authors: authors ? { id: authors.id, name: authors.name } : null,
+    workflow_status: b.workflowStatus ?? b.workflow_status ?? 'draft',
+    authors: authors ? { id: String(authors.id), name: authors.name } : null,
+    category: category ? { id: String(category.id), name: category.name } : null,
+    catalog_characters: asStringArray(b.catalogCharacters ?? b.catalog_characters),
+    catalog_keywords: asStringArray(b.catalogKeywords ?? b.catalog_keywords),
+    catalog_collection: b.catalogCollection ?? b.catalog_collection ?? '',
+    catalog_level: b.catalogLevel ?? b.catalog_level ?? '',
   };
 }
 

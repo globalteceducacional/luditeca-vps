@@ -3,6 +3,7 @@ import { hashPassword } from '../lib/password.js';
 import { requireAdmin } from '../plugins/auth.js';
 import { USER_ROLES } from '../lib/roles.js';
 import { jsonSafe } from '../lib/serialize.js';
+import { writeAuditLog } from '../lib/auditLog.js';
 function normalizeEmail(v) {
     return String(v ?? '').trim().toLowerCase();
 }
@@ -56,6 +57,15 @@ export async function registerUserRoutes(app) {
                 profile: { create: { role } },
             },
         });
+        await writeAuditLog({
+            actorUserId: request.user.id,
+            actionCode: 'EVT:USER_CREATE',
+            module: 'api',
+            targetType: 'USER',
+            targetId: `USER:${user.id}`,
+            request,
+            metadata: { email: user.email, role: user.role },
+        });
         return reply.code(201).send(userPublic(user));
     });
     // Atualiza usuário (somente ADM)
@@ -90,6 +100,15 @@ export async function registerUserRoutes(app) {
                 update: { role: data.role },
             });
         }
+        await writeAuditLog({
+            actorUserId: request.user.id,
+            actionCode: 'EVT:USER_UPDATE',
+            module: 'api',
+            targetType: 'USER',
+            targetId: `USER:${id}`,
+            request,
+            metadata: { updatedKeys: Object.keys(data) },
+        });
         return reply.send(userPublic(updated));
     });
     // Exclui usuário (somente ADM)
@@ -99,6 +118,14 @@ export async function registerUserRoutes(app) {
         if (currentUserId && id === currentUserId) {
             return reply.code(400).send({ error: 'Você não pode excluir a própria conta.' });
         }
+        await writeAuditLog({
+            actorUserId: request.user.id,
+            actionCode: 'EVT:USER_DELETE',
+            module: 'api',
+            targetType: 'USER',
+            targetId: `USER:${id}`,
+            request,
+        });
         await prisma.user.delete({ where: { id } });
         return reply.code(204).send();
     });

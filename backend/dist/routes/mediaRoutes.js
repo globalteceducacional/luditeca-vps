@@ -3,6 +3,7 @@ import path from 'node:path';
 import { prisma } from '../lib/prisma.js';
 import { assertBucket, copyObject, deleteObject, listAllKeys, listObjects, objectExists, presignedGetUrl, presignedPutUrl, putObject, } from '../lib/s3.js';
 import { requireCmsEditor } from '../plugins/auth.js';
+import { writeAuditLog } from '../lib/auditLog.js';
 import { generateThumbnail, getImageMeta, isSupportedImageType } from '../lib/imageProcessor.js';
 const MEDIA_BUCKET_MAP = {
     image: 'covers',
@@ -162,6 +163,8 @@ export async function registerMediaRoutes(app) {
                     id: row.id.toString(),
                     name: fileName,
                     type: extType(fileName),
+                    /** MIME gravado no upload (ex.: image/gif) — o canvas evita use-image/decode que congela GIF. */
+                    fileType: row.fileType || undefined,
                     // Compat com o frontend atual (path relativo "virtual" da tela)
                     path: fileName,
                     // Chave real no storage (usar sempre que possível)
@@ -236,6 +239,7 @@ export async function registerMediaRoutes(app) {
                 name: file.name,
                 type,
                 path: toRel(fullPath),
+                fileType: meta?.fileType || undefined,
                 url,
                 ...thumbs,
                 metadata: meta
@@ -370,8 +374,9 @@ export async function registerMediaRoutes(app) {
                 /* thumbnail é best-effort; nunca bloqueia o upload */
             }
         }
+        let createdMediaId = null;
         try {
-            await prisma.mediaFile.create({
+            const row = await prisma.mediaFile.create({
                 data: {
                     userId: uid,
                     bookId,
@@ -381,10 +386,24 @@ export async function registerMediaRoutes(app) {
                     fileSize: BigInt(buf.length),
                     bucketName: bucket,
                 },
+                select: { id: true },
             });
+            createdMediaId = row.id;
         }
         catch {
             /* metadados opcionais */
+        }
+        if (createdMediaId) {
+            await writeAuditLog({
+                actorUserId: uid,
+                actionCode: 'EVT:MEDIA_UPLOAD',
+                module: 'api',
+                targetType: 'MEDIA',
+                targetId: `MEDIA:${createdMediaId}`,
+                bookId: bookId ?? null,
+                request,
+                metadata: { bucket, fileName: safeName, mediaType },
+            });
         }
         let url = null;
         let thumbUrl = null;

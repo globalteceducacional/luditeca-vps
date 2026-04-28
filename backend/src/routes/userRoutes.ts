@@ -4,6 +4,7 @@ import { hashPassword } from '../lib/password.js';
 import { requireAdmin } from '../plugins/auth.js';
 import { USER_ROLES, type UserRole } from '../lib/roles.js';
 import { jsonSafe } from '../lib/serialize.js';
+import { writeAuditLog } from '../lib/auditLog.js';
 
 function normalizeEmail(v: unknown) {
   return String(v ?? '').trim().toLowerCase();
@@ -60,6 +61,16 @@ export async function registerUserRoutes(app: FastifyInstance) {
       },
     });
 
+    await writeAuditLog({
+      actorUserId: request.user!.id,
+      actionCode: 'EVT:USER_CREATE',
+      module: 'api',
+      targetType: 'USER',
+      targetId: `USER:${user.id}`,
+      request,
+      metadata: { email: user.email, role: user.role },
+    });
+
     return reply.code(201).send(userPublic(user as any));
   });
 
@@ -97,6 +108,16 @@ export async function registerUserRoutes(app: FastifyInstance) {
       });
     }
 
+    await writeAuditLog({
+      actorUserId: request.user!.id,
+      actionCode: 'EVT:USER_UPDATE',
+      module: 'api',
+      targetType: 'USER',
+      targetId: `USER:${id}`,
+      request,
+      metadata: { updatedKeys: Object.keys(data) },
+    });
+
     return reply.send(userPublic(updated as any));
   });
 
@@ -107,6 +128,15 @@ export async function registerUserRoutes(app: FastifyInstance) {
     if (currentUserId && id === currentUserId) {
       return reply.code(400).send({ error: 'Você não pode excluir a própria conta.' });
     }
+
+    await writeAuditLog({
+      actorUserId: request.user!.id,
+      actionCode: 'EVT:USER_DELETE',
+      module: 'api',
+      targetType: 'USER',
+      targetId: `USER:${id}`,
+      request,
+    });
 
     await prisma.user.delete({ where: { id } });
     return reply.code(204).send();

@@ -172,11 +172,12 @@ export async function storageSignedGetUrl(bucket, key, headers = {}) {
 }
 
 /** Upload por bucket lógico e caminho relativo (compatível com chamadas antigas no código). */
-export async function uploadFile(bucketName, filePath, file) {
+export async function uploadFile(bucketName, filePath, file, opts = {}) {
   const data = await storageUploadWithRoot(bucketName, {
     path: filePath,
     file,
-    root: 'library',
+    root: opts.root || 'library',
+    headers: opts.headers || {},
   });
   return { url: data.url, path: data.path };
 }

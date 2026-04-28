@@ -1,5 +1,8 @@
 import type { FastifyInstance } from 'fastify';
+import type { Prisma } from '@prisma/client';
+import { BookWorkflowStatus } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
+import { writeAuditLog } from '../lib/auditLog.js';
 import { jsonSafe } from '../lib/serialize.js';
 import { requireCmsEditor } from '../plugins/auth.js';
 import { requireAuth } from '../plugins/auth.js';
@@ -11,6 +14,7 @@ import {
   presignedGetUrl,
 } from '../lib/s3.js';
 import { isPagesV2, migratePagesLegacyToV2 } from '../lib/pagesV2/migrate.js';
+import { parseCatalogStringArrayFromBody, persistBookSearchIndex } from '../lib/bookSearchIndex.js';
 
 function toBigIntOrNull(v: unknown): bigint | null {
   if (v === null || v === undefined || v === '') return null;
@@ -24,6 +28,20 @@ function isNonEmptyString(v: unknown) {
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === 'object' && !Array.isArray(v);
+}
+
+const WORKFLOW_SET = new Set<string>([
+  BookWorkflowStatus.draft,
+  BookWorkflowStatus.review,
+  BookWorkflowStatus.published,
+  BookWorkflowStatus.archived,
+]);
+
+function parseBookWorkflowStatus(v: unknown): BookWorkflowStatus | undefined {
+  if (v === null || v === undefined || v === '') return undefined;
+  const s = String(v).trim();
+  if (!WORKFLOW_SET.has(s)) return undefined;
+  return s as BookWorkflowStatus;
 }
 
 async function resolveStorageUrl(
@@ -356,23 +374,119 @@ async function signLegacyPagesMediaUrls(pages: unknown) {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function bookResponse(b: any) {
   if (!b) return null;
-  const { authorRel, categoryRel, ...rest } = b;
+  const { authorRel, categoryRel, searchIndex: _searchIndex, ...rest } = b;
   return {
     ...jsonSafe(rest),
     authors: authorRel
       ? { id: Number(authorRel.id), name: authorRel.name }
       : null,
+    category: categoryRel
+      ? { id: Number(categoryRel.id), name: categoryRel.name }
+      : null,
   };
+}
+
+function stripHeavyBookFields(resp: Record<string, unknown>) {
+  delete resp.pages;
+  delete resp.pagesV2;
+  delete resp.pages_v2;
+  return resp;
+}
+
+function tokenizeSearchQuery(raw: string): string[] {
+  return String(raw || '')
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0);
 }
 
 export async function registerBookRoutes(app: FastifyInstance) {
   app.get('/books', { preHandler: requireAuth }, async (_request, reply) => {
     const rows = await prisma.book.findMany({
       orderBy: { createdAt: 'desc' },
-      include: { authorRel: true },
+      include: { authorRel: true, categoryRel: true },
     });
     return reply.send(rows.map((r) => bookResponse(r)));
   });
+
+  app.get<{ Querystring: Record<string, string | undefined> }>(
+    '/books/search',
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const q = typeof request.query.q === 'string' ? request.query.q : '';
+      const character =
+        typeof request.query.character === 'string' ? request.query.character : '';
+      const collection =
+        typeof request.query.collection === 'string' ? request.query.collection : '';
+      const keyword =
+        typeof request.query.keyword === 'string' ? request.query.keyword : '';
+      const level = typeof request.query.level === 'string' ? request.query.level : '';
+
+      const limit = Math.min(100, Math.max(1, parseInt(String(request.query.limit || '50'), 10) || 50));
+      const skip = Math.max(0, parseInt(String(request.query.offset || '0'), 10) || 0);
+
+      const and: Prisma.BookWhereInput[] = [];
+
+      for (const t of tokenizeSearchQuery(q)) {
+        and.push({
+          OR: [
+            { searchIndex: { contains: t, mode: 'insensitive' } },
+            { title: { contains: t, mode: 'insensitive' } },
+          ],
+        });
+      }
+
+      const ch = character.trim();
+      if (ch) {
+        and.push({
+          OR: [{ searchIndex: { contains: ch, mode: 'insensitive' } }],
+        });
+      }
+
+      const col = collection.trim();
+      if (col) {
+        and.push({
+          OR: [
+            { catalogCollection: { contains: col, mode: 'insensitive' } },
+            { searchIndex: { contains: col, mode: 'insensitive' } },
+          ],
+        });
+      }
+
+      const kw = keyword.trim();
+      if (kw) {
+        and.push({
+          OR: [{ searchIndex: { contains: kw, mode: 'insensitive' } }],
+        });
+      }
+
+      const lv = level.trim();
+      if (lv) {
+        and.push({
+          OR: [
+            { catalogLevel: { contains: lv, mode: 'insensitive' } },
+            { searchIndex: { contains: lv, mode: 'insensitive' } },
+          ],
+        });
+      }
+
+      const where: Prisma.BookWhereInput = and.length > 0 ? { AND: and } : {};
+
+      const [rows, total] = await Promise.all([
+        prisma.book.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+          include: { authorRel: true, categoryRel: true },
+        }),
+        prisma.book.count({ where }),
+      ]);
+
+      const data = rows.map((r) => stripHeavyBookFields(bookResponse(r) as Record<string, unknown>));
+      return reply.send(jsonSafe({ data, total, limit, skip }));
+    },
+  );
 
   app.get<{ Params: { id: string } }>(
     '/books/:id',
@@ -381,7 +495,7 @@ export async function registerBookRoutes(app: FastifyInstance) {
       const id = BigInt(request.params.id);
       const b = await prisma.book.findUnique({
         where: { id },
-        include: { authorRel: true },
+        include: { authorRel: true, categoryRel: true },
       });
       if (!b) return reply.code(404).send({ error: 'Livro não encontrado.' });
       const resp = bookResponse(b) as Record<string, unknown>;
@@ -425,13 +539,46 @@ export async function registerBookRoutes(app: FastifyInstance) {
       linkSlidebook:
         body.link_slidebook != null ? String(body.link_slidebook) : null,
     };
+    const wfCreate = parseBookWorkflowStatus(body.workflow_status ?? body.workflowStatus);
+    if (wfCreate) {
+      createData.workflowStatus = wfCreate;
+    }
     if (pagesV2 != null) {
       createData.pagesV2 = pagesV2 as object;
     }
 
+    if ('catalog_characters' in body || 'catalogCharacters' in body) {
+      const raw = body.catalog_characters ?? body.catalogCharacters;
+      if (raw === null) {
+        createData.catalogCharacters = null;
+      } else {
+        const arr = parseCatalogStringArrayFromBody(raw);
+        if (arr !== undefined) createData.catalogCharacters = arr;
+      }
+    }
+    if ('catalog_keywords' in body || 'catalogKeywords' in body) {
+      const raw = body.catalog_keywords ?? body.catalogKeywords;
+      if (raw === null) {
+        createData.catalogKeywords = null;
+      } else {
+        const arr = parseCatalogStringArrayFromBody(raw);
+        if (arr !== undefined) createData.catalogKeywords = arr;
+      }
+    }
+    if ('catalog_collection' in body || 'catalogCollection' in body) {
+      const v = body.catalog_collection ?? body.catalogCollection;
+      createData.catalogCollection =
+        v == null || String(v).trim() === '' ? null : String(v).trim();
+    }
+    if ('catalog_level' in body || 'catalogLevel' in body) {
+      const v = body.catalog_level ?? body.catalogLevel;
+      createData.catalogLevel =
+        v == null || String(v).trim() === '' ? null : String(v).trim();
+    }
+
     const created = await prisma.book.create({
       data: createData as any,
-      include: { authorRel: true },
+      include: { authorRel: true, categoryRel: true },
     });
 
     let responseBook = created;
@@ -469,11 +616,28 @@ export async function registerBookRoutes(app: FastifyInstance) {
 
         const refreshed = await prisma.book.findUnique({
           where: { id: BigInt(created.id) },
-          include: { authorRel: true },
+          include: { authorRel: true, categoryRel: true },
         });
         if (refreshed) responseBook = refreshed;
       }
     }
+
+    await persistBookSearchIndex(BigInt(responseBook.id));
+
+    await writeAuditLog({
+      actorUserId: request.user!.id,
+      actionCode: 'EVT:BOOK_CREATE',
+      module: 'api',
+      targetType: 'BOOK',
+      targetId: `BOOK:${responseBook.id}`,
+      bookId: BigInt(responseBook.id),
+      request,
+      metadata: {
+        title: responseBook.title,
+        importSessionId: importSessionId || undefined,
+        workflowStatus: responseBook.workflowStatus,
+      },
+    });
 
     return reply.code(201).send(bookResponse(responseBook));
   });
@@ -497,11 +661,102 @@ export async function registerBookRoutes(app: FastifyInstance) {
       if ('author_id' in clean) data.authorId = toBigIntOrNull(clean.author_id);
       if ('category_id' in clean) data.categoryId = toBigIntOrNull(clean.category_id);
       if ('link_slidebook' in clean) data.linkSlidebook = clean.link_slidebook;
+
+      const wfRaw = clean.workflow_status ?? clean.workflowStatus;
+      if (wfRaw !== undefined) {
+        const wf = parseBookWorkflowStatus(wfRaw);
+        if (wfRaw !== null && wfRaw !== '' && !wf) {
+          return reply.code(400).send({ error: 'workflow_status inválido (draft|review|published|archived).' });
+        }
+        if (wf) data.workflowStatus = wf;
+      }
+
+      if ('catalog_characters' in clean || 'catalogCharacters' in clean) {
+        const raw = clean.catalog_characters ?? clean.catalogCharacters;
+        if (raw === null) {
+          data.catalogCharacters = null;
+        } else {
+          const arr = parseCatalogStringArrayFromBody(raw);
+          if (arr !== undefined) data.catalogCharacters = arr;
+        }
+      }
+      if ('catalog_keywords' in clean || 'catalogKeywords' in clean) {
+        const raw = clean.catalog_keywords ?? clean.catalogKeywords;
+        if (raw === null) {
+          data.catalogKeywords = null;
+        } else {
+          const arr = parseCatalogStringArrayFromBody(raw);
+          if (arr !== undefined) data.catalogKeywords = arr;
+        }
+      }
+      if ('catalog_collection' in clean || 'catalogCollection' in clean) {
+        const v = clean.catalog_collection ?? clean.catalogCollection;
+        data.catalogCollection =
+          v == null || String(v).trim() === '' ? null : String(v).trim();
+      }
+      if ('catalog_level' in clean || 'catalogLevel' in clean) {
+        const v = clean.catalog_level ?? clean.catalogLevel;
+        data.catalogLevel =
+          v == null || String(v).trim() === '' ? null : String(v).trim();
+      }
+
+      const prev = await prisma.book.findUnique({
+        where: { id },
+        select: { workflowStatus: true, title: true },
+      });
+      if (!prev) {
+        return reply.code(404).send({ error: 'Livro não encontrado.' });
+      }
+
+      if (Object.keys(data).length === 0) {
+        const row = await prisma.book.findUnique({
+          where: { id },
+          include: { authorRel: true, categoryRel: true },
+        });
+        return reply.send(bookResponse(row));
+      }
+
       const updated = await prisma.book.update({
         where: { id },
         data: data as object,
-        include: { authorRel: true },
+        include: { authorRel: true, categoryRel: true },
       });
+
+      await persistBookSearchIndex(id);
+
+      await writeAuditLog({
+        actorUserId: request.user!.id,
+        actionCode: 'EVT:BOOK_UPDATE',
+        module: 'api',
+        targetType: 'BOOK',
+        targetId: `BOOK:${id.toString()}`,
+        bookId: id,
+        request,
+        metadata: {
+          fields: Object.keys(data),
+          title: updated.title,
+        },
+      });
+
+      if (
+        data.workflowStatus != null &&
+        String(data.workflowStatus) !== String(prev.workflowStatus)
+      ) {
+        await writeAuditLog({
+          actorUserId: request.user!.id,
+          actionCode: 'EVT:BOOK_WORKFLOW_CHANGE',
+          module: 'api',
+          targetType: 'BOOK',
+          targetId: `BOOK:${id.toString()}`,
+          bookId: id,
+          request,
+          metadata: {
+            from: prev.workflowStatus,
+            to: data.workflowStatus,
+          },
+        });
+      }
+
       return reply.send(bookResponse(updated));
     },
   );
@@ -550,6 +805,16 @@ export async function registerBookRoutes(app: FastifyInstance) {
           }
         }
       }
+
+      await writeAuditLog({
+        actorUserId: request.user!.id,
+        actionCode: 'EVT:BOOK_DELETE',
+        module: 'api',
+        targetType: 'BOOK',
+        targetId: `BOOK:${bookIdAsString}`,
+        bookId: id,
+        request,
+      });
 
       await prisma.book.delete({ where: { id } });
       return reply.code(204).send();

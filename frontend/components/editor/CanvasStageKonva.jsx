@@ -22,6 +22,7 @@ import { useGifManualCanvas } from './useGifManualCanvas';
 import { EDITOR_FONT_OPTIONS, MAX_TIMELINE_STEP } from './editorConstants';
 import { AUDIO_BADGE_R, outsideTopLeftFromAudioProps } from '../../lib/audioBadgeCanvas';
 import { readMediaMetaMap } from './v2/media/mediaLibraryUtils';
+import { reportClientTelemetry } from '../../lib/telemetryClient';
 import {
   clampPanToViewport,
   CONTEXT_MENU_GAP,
@@ -773,6 +774,24 @@ function SelectedVideoFloatingPreview({ node }) {
         loop={loop}
         className="w-full rounded border border-gray-800 bg-black"
         style={{ maxHeight: '12rem', objectFit }}
+        onError={(e) => {
+          const mediaErr = e?.currentTarget?.error;
+          let srcHost = null;
+          try {
+            srcHost = new URL(resolved).hostname;
+          } catch {
+            /* ignore */
+          }
+          void reportClientTelemetry({
+            category: 'video_playback',
+            message: mediaErr?.message || 'video_element_error',
+            meta: {
+              code: mediaErr?.code ?? null,
+              srcHost,
+              nodeId: node?.id ?? null,
+            },
+          });
+        }}
       />
       <p className="mt-1 text-[10px] leading-snug text-gray-500">
         Volume e encaixe: painel Propriedades. No canvas use o quadro para posicao e tamanho.

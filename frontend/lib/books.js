@@ -11,6 +11,32 @@ export const getBooks = async () => {
   }
 };
 
+/**
+ * Busca de catálogo (índice no servidor: título, descrição, autor, categoria, personagens, coleção, palavras-chave, nível).
+ * @param {Record<string, string|number|undefined>} params q, character, collection, keyword, level, limit, offset
+ */
+export const searchBooks = async (params = {}) => {
+  try {
+    const q = new URLSearchParams();
+    const keys = ['q', 'character', 'collection', 'keyword', 'level', 'limit', 'offset'];
+    for (const k of keys) {
+      const v = params[k];
+      if (v != null && String(v).trim() !== '') q.set(k, String(v).trim());
+    }
+    const qs = q.toString();
+    const row = await apiFetch(qs ? `/books/search?${qs}` : '/books/search');
+    return {
+      data: Array.isArray(row?.data) ? row.data.map(normalizeBook) : [],
+      total: row?.total ?? 0,
+      limit: row?.limit,
+      skip: row?.skip,
+      error: null,
+    };
+  } catch (e) {
+    return { data: null, total: 0, error: { message: e.message } };
+  }
+};
+
 export const getBook = async (id) => {
   try {
     const row = await apiFetch(`/books/${id}`);
@@ -49,6 +75,7 @@ export const createBook = async (bookData) => {
       category_id: bookData.category_id,
       link_slidebook: bookData.link_slidebook,
       import_session_id: bookData.import_session_id,
+      ...(bookData.workflow_status ? { workflow_status: bookData.workflow_status } : {}),
     };
     const row = await apiFetch('/books', { method: 'POST', body: payload });
     return { data: normalizeBook(row), error: null };

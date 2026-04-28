@@ -3,6 +3,11 @@ import { prisma } from '../lib/prisma.js';
 import { hashPassword, verifyPassword } from '../lib/password.js';
 import { signAccessToken } from '../lib/jwt.js';
 import { requireAuth } from '../plugins/auth.js';
+import {
+  generatePasswordResetRawToken,
+  hashPasswordResetToken,
+  writeAuditLog,
+} from '../lib/auditLog.js';
 
 export async function registerAuthRoutes(app: FastifyInstance) {
   const parseJsonMap = (value: unknown): Record<string, unknown> => {
@@ -41,6 +46,15 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       },
     });
     await prisma.profile.create({ data: { userId: user.id } });
+    await writeAuditLog({
+      actorUserId: user.id,
+      actionCode: 'EVT:AUTH_REGISTER_OK',
+      module: 'auth',
+      targetType: 'USER',
+      targetId: `USER:${user.id}`,
+      request,
+      metadata: { email: user.email },
+    });
     const token = signAccessToken({
       sub: user.id,
       email: user.email,
@@ -67,6 +81,12 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     }
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user || !(await verifyPassword(password, user.passwordHash))) {
+      await writeAuditLog({
+        actionCode: 'EVT:AUTH_LOGIN_FAIL',
+        module: 'auth',
+        request,
+        metadata: {},
+      });
       return reply.code(401).send({ error: 'Credenciais inválidas.' });
     }
     const full = await prisma.user.findUnique({
@@ -78,6 +98,14 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       email: user.email,
       role: user.role,
     });
+    await writeAuditLog({
+      actorUserId: user.id,
+      actionCode: 'EVT:AUTH_LOGIN_OK',
+      module: 'auth',
+      targetType: 'USER',
+      targetId: `USER:${user.id}`,
+      request,
+    });
     return reply.send({
       access_token: token,
       user: {
@@ -88,6 +116,96 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         avatar_url: full?.profile?.icone ?? null,
       },
     });
+  });
+
+  app.post('/auth/forgot-password', async (request, reply) => {
+    const body = request.body as { email?: string };
+    const email = String(body?.email || '').trim().toLowerCase();
+    if (!email) {
+      return reply.code(400).send({ error: 'Email obrigatório.' });
+    }
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (user) {
+      const ttlMin = Math.min(24 * 60, Math.max(5, Number(process.env.PASSWORD_RESET_TTL_MINUTES) || 60));
+      const expiresAt = new Date(Date.now() + ttlMin * 60 * 1000);
+      await prisma.passwordResetToken.updateMany({
+        where: { userId: user.id, usedAt: null },
+        data: { usedAt: new Date() },
+      });
+      const raw = generatePasswordResetRawToken();
+      const tokenHash = hashPasswordResetToken(raw);
+      await prisma.passwordResetToken.create({
+        data: { userId: user.id, tokenHash, expiresAt },
+      });
+      const base = (process.env.PASSWORD_RESET_PUBLIC_BASE_URL || '').replace(/\/+$/, '');
+      const resetLink = base ? `${base}?token=${raw}` : null;
+      if (resetLink) {
+        request.log.info({ resetLink }, 'password_reset_link');
+      } else {
+        request.log.warn(
+          'PASSWORD_RESET_PUBLIC_BASE_URL não definido; defina para obter o link completo nos logs de servidor.',
+        );
+        request.log.info({ tokenPrefix: raw.slice(0, 8) }, 'password_reset_created');
+      }
+      await writeAuditLog({
+        actorUserId: user.id,
+        actionCode: 'EVT:AUTH_PASSWORD_RESET_REQUEST',
+        module: 'auth',
+        targetType: 'USER',
+        targetId: `USER:${user.id}`,
+        request,
+        metadata: { hasPublicBaseUrl: Boolean(base) },
+      });
+      if (process.env.PASSWORD_RESET_DEV_RETURN_TOKEN === 'true') {
+        return reply.send({ ok: true, dev_reset_token: raw, dev_reset_link: resetLink });
+      }
+    }
+    return reply.send({ ok: true });
+  });
+
+  app.post('/auth/reset-password', async (request, reply) => {
+    const body = request.body as { token?: string; password?: string };
+    const rawToken = String(body?.token || '').trim();
+    const newPassword = String(body?.password || '');
+    if (!rawToken || newPassword.length < 6) {
+      await writeAuditLog({
+        actionCode: 'EVT:AUTH_PASSWORD_RESET_FAIL',
+        module: 'auth',
+        request,
+        metadata: { reason: 'validation' },
+      });
+      return reply.code(400).send({ error: 'Token e nova senha (mín. 6 caracteres) são obrigatórios.' });
+    }
+    const tokenHash = hashPasswordResetToken(rawToken);
+    const row = await prisma.passwordResetToken.findFirst({
+      where: { tokenHash, usedAt: null, expiresAt: { gt: new Date() } },
+    });
+    if (!row) {
+      await writeAuditLog({
+        actionCode: 'EVT:AUTH_PASSWORD_RESET_FAIL',
+        module: 'auth',
+        request,
+        metadata: { reason: 'invalid_or_expired_token' },
+      });
+      return reply.code(400).send({ error: 'Token inválido ou expirado.' });
+    }
+    await prisma.user.update({
+      where: { id: row.userId },
+      data: { passwordHash: await hashPassword(newPassword) },
+    });
+    await prisma.passwordResetToken.update({
+      where: { id: row.id },
+      data: { usedAt: new Date() },
+    });
+    await writeAuditLog({
+      actorUserId: row.userId,
+      actionCode: 'EVT:AUTH_PASSWORD_RESET_OK',
+      module: 'auth',
+      targetType: 'USER',
+      targetId: `USER:${row.userId}`,
+      request,
+    });
+    return reply.send({ ok: true });
   });
 
   app.get('/auth/me', { preHandler: requireAuth }, async (request, reply) => {
@@ -144,6 +262,14 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     await prisma.user.update({
       where: { id: request.user!.id },
       data: { passwordHash: await hashPassword(next) },
+    });
+    await writeAuditLog({
+      actorUserId: request.user!.id,
+      actionCode: 'EVT:AUTH_PASSWORD_CHANGE',
+      module: 'auth',
+      targetType: 'USER',
+      targetId: `USER:${request.user!.id}`,
+      request,
     });
     return reply.send({ ok: true });
   });

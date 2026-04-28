@@ -14,6 +14,7 @@ import {
   putObject,
 } from '../lib/s3.js';
 import { requireCmsEditor } from '../plugins/auth.js';
+import { writeAuditLog } from '../lib/auditLog.js';
 import { generateThumbnail, getImageMeta, isSupportedImageType } from '../lib/imageProcessor.js';
 
 type MediaType =
@@ -425,8 +426,9 @@ export async function registerMediaRoutes(app: FastifyInstance) {
       }
     }
 
+    let createdMediaId: string | null = null;
     try {
-      await prisma.mediaFile.create({
+      const row = await prisma.mediaFile.create({
         data: {
           userId: uid,
           bookId,
@@ -436,9 +438,24 @@ export async function registerMediaRoutes(app: FastifyInstance) {
           fileSize: BigInt(buf.length),
           bucketName: bucket,
         },
+        select: { id: true },
       });
+      createdMediaId = row.id;
     } catch {
       /* metadados opcionais */
+    }
+
+    if (createdMediaId) {
+      await writeAuditLog({
+        actorUserId: uid,
+        actionCode: 'EVT:MEDIA_UPLOAD',
+        module: 'api',
+        targetType: 'MEDIA',
+        targetId: `MEDIA:${createdMediaId}`,
+        bookId: bookId ?? null,
+        request,
+        metadata: { bucket, fileName: safeName, mediaType },
+      });
     }
 
     let url: string | null = null;

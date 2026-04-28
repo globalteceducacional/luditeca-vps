@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { FiBook, FiUser, FiTag, FiLogOut, FiMenu, FiX, FiChevronLeft, FiChevronRight, FiSettings, FiUsers } from 'react-icons/fi';
+import { FiBook, FiUser, FiTag, FiLogOut, FiMenu, FiX, FiChevronLeft, FiChevronRight, FiSettings, FiUsers, FiFileText, FiActivity } from 'react-icons/fi';
 import { useAuth } from '../contexts/auth';
 import { ROLES } from '../lib/roles';
 
@@ -75,6 +75,16 @@ export default function Layout({ children }) {
           <Link href="/admin/users" className={`flex items-center ${collapsed ? 'justify-center' : 'px-3'} p-3 rounded-lg ${router.pathname.startsWith('/admin/users') ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100'}`}>
             <FiUsers className={collapsed ? "mx-auto" : "mr-2"} size={collapsed ? 26 : 20} />
             {!collapsed && <span className="truncate">Usuários</span>}
+          </Link>
+
+          <Link href="/admin/audit" className={`flex items-center ${collapsed ? 'justify-center' : 'px-3'} p-3 rounded-lg ${router.pathname.startsWith('/admin/audit') ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100'}`}>
+            <FiFileText className={collapsed ? "mx-auto" : "mr-2"} size={collapsed ? 26 : 20} />
+            {!collapsed && <span className="truncate">Trilha de ações</span>}
+          </Link>
+
+          <Link href="/admin/telemetry" className={`flex items-center ${collapsed ? 'justify-center' : 'px-3'} p-3 rounded-lg ${router.pathname.startsWith('/admin/telemetry') ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100'}`}>
+            <FiActivity className={collapsed ? "mx-auto" : "mr-2"} size={collapsed ? 26 : 20} />
+            {!collapsed && <span className="truncate">Telemetria</span>}
           </Link>
         </>
       )}

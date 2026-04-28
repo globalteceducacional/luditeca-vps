@@ -98,19 +98,46 @@ export default function useEditorState({
     setSelectedNodeId(copy.id);
   }, [patchPage, setSelectedNodeId]);
 
-  const addPage = useCallback(() => {
+  const addPage = useCallback((metaPatch = {}) => {
     setPagesV2((prev) => {
       const base = ensurePagesV2(prev);
       const next = deepClone(base);
+      const baseMeta =
+        metaPatch && typeof metaPatch === 'object' && Object.keys(metaPatch).length
+          ? { orientation: 'landscape', ...metaPatch }
+          : { orientation: 'landscape' };
       next.pages.push({
         id: String(Date.now()),
         background: null,
         nodes: [],
-        meta: { orientation: 'landscape' },
+        meta: baseMeta,
       });
       return next;
     });
     setCurrentPage((v) => v + 1);
+    setIsModified(true);
+  }, [setPagesV2, ensurePagesV2, setCurrentPage, setIsModified]);
+
+  const reorderPages = useCallback((fromIndex, toIndex) => {
+    setPagesV2((prev) => {
+      const base = ensurePagesV2(prev);
+      if (!Array.isArray(base.pages) || base.pages.length < 2) return base;
+      const from = Math.max(0, Math.min(base.pages.length - 1, Math.trunc(Number(fromIndex))));
+      const to = Math.max(0, Math.min(base.pages.length - 1, Math.trunc(Number(toIndex))));
+      if (from === to) return base;
+      const next = deepClone(base);
+      const [moved] = next.pages.splice(from, 1);
+      next.pages.splice(to, 0, moved);
+      const newIdx = next.pages.findIndex((p) => p.id === moved.id);
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => {
+          if (newIdx >= 0) setCurrentPage(newIdx);
+        });
+      } else if (newIdx >= 0) {
+        setCurrentPage(newIdx);
+      }
+      return next;
+    });
     setIsModified(true);
   }, [setPagesV2, ensurePagesV2, setCurrentPage, setIsModified]);
 
@@ -176,6 +203,7 @@ export default function useEditorState({
     deleteNode,
     duplicateNodeToCurrentPage,
     addPage,
+    reorderPages,
     deletePage,
     undo,
     redo,

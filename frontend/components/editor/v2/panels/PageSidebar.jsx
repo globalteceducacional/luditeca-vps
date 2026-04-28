@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'react-hot-toast';
 import {
+  FiArrowDown,
+  FiArrowUp,
   FiCheckSquare,
   FiEdit2,
   FiImage,
@@ -104,6 +106,14 @@ export default function PageSidebar({
   onSelectMedia,
   onSelectTransitionBetweenPages,
   showTabs = true,
+  /** Fluxo 3.2: capítulos (organização); novas páginas usam o capítulo ativo. */
+  outlineChapters = [],
+  activeChapterId = '',
+  onActiveChapterIdChange = () => {},
+  onAddChapter = () => {},
+  onRenameChapter = () => {},
+  onMovePage = () => {},
+  chapterTitleByPage = () => '',
 }) {
   const [processingPath, setProcessingPath] = useState('');
   const [uploadingMedia, setUploadingMedia] = useState(false);
@@ -669,7 +679,44 @@ export default function PageSidebar({
         ) : null}
 
         {activeTab === 'pages' ? (
-          <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            {outlineChapters.length > 0 ? (
+              <div className="rounded border border-slate-600 bg-slate-900/60 p-2">
+                <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                  Capítulo (novas páginas)
+                </div>
+                <div className="flex flex-wrap items-center gap-1">
+                  <select
+                    value={activeChapterId || ''}
+                    onChange={(e) => onActiveChapterIdChange(e.target.value)}
+                    className="min-w-0 flex-1 rounded border border-slate-600 bg-slate-900 px-1.5 py-1 text-[11px] text-slate-100"
+                  >
+                    {outlineChapters.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.title}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    title="Novo capítulo"
+                    onClick={onAddChapter}
+                    className="rounded bg-indigo-700 px-2 py-1 text-[11px] font-semibold text-white hover:bg-indigo-600"
+                  >
+                    + Cap.
+                  </button>
+                  <button
+                    type="button"
+                    title="Renomear capítulo ativo"
+                    onClick={onRenameChapter}
+                    className="rounded bg-slate-700 px-2 py-1 text-slate-200 hover:bg-slate-600"
+                  >
+                    <FiEdit2 size={12} />
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            <div className="flex items-center justify-between">
             <div className="text-xs font-semibold text-slate-200">Paginas</div>
             <div className="flex items-center gap-1">
               <button
@@ -691,6 +738,7 @@ export default function PageSidebar({
                 </button>
               ) : null}
             </div>
+          </div>
           </div>
         ) : (
           <div className="space-y-2">
@@ -760,6 +808,7 @@ export default function PageSidebar({
               const active = index === currentPage;
               const { url: previewUrl, storage: previewStorage } = getPagePreviewMedia(page);
               const transitionType = String(page?.meta?.transition?.type || 'none');
+              const chLabel = typeof chapterTitleByPage === 'function' ? chapterTitleByPage(page) : '';
               return (
                 <div key={page.id || `page-${index}`}>
                   <button
@@ -779,6 +828,9 @@ export default function PageSidebar({
                         </span>
                       ) : null}
                     </div>
+                    {chLabel ? (
+                      <div className="mt-1 truncate text-[10px] font-medium text-indigo-300/90">{chLabel}</div>
+                    ) : null}
                     <div className="mt-2 aspect-[16/9] w-full rounded border border-slate-700 bg-slate-900">
                       {previewUrl ? (
                         <StorageBackedHtmlImage
@@ -795,6 +847,26 @@ export default function PageSidebar({
                       )}
                     </div>
                   </button>
+                  <div className="mt-1 flex justify-end gap-1">
+                    <button
+                      type="button"
+                      title="Mover página para cima"
+                      disabled={index === 0}
+                      onClick={() => onMovePage(index, -1)}
+                      className="rounded border border-slate-600 p-1 text-slate-300 hover:bg-slate-700 disabled:opacity-30"
+                    >
+                      <FiArrowUp size={12} />
+                    </button>
+                    <button
+                      type="button"
+                      title="Mover página para baixo"
+                      disabled={index >= pages.length - 1}
+                      onClick={() => onMovePage(index, 1)}
+                      className="rounded border border-slate-600 p-1 text-slate-300 hover:bg-slate-700 disabled:opacity-30"
+                    >
+                      <FiArrowDown size={12} />
+                    </button>
+                  </div>
                   {index < pages.length - 1 ? (
                     <div className="flex items-center justify-center py-2">
                       <button

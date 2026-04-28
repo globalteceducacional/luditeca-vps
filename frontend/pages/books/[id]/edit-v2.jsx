@@ -15,6 +15,7 @@ import {
   FiSliders,
   FiType,
   FiUpload,
+  FiFileText,
 } from 'react-icons/fi';
 import { toast } from 'react-hot-toast';
 
@@ -43,12 +44,24 @@ import {
   migratePagesLegacyToV2,
   migratePagesV2ToLegacy,
 } from '../../../lib/pagesV2/migrate';
+import {
+  ensureBookOutlineOnV2,
+  getOutlineFromV2,
+  newChapterId,
+} from '../../../lib/bookFlowOutline';
 import { DEFAULT_GIF_NODE_PROPS } from '../../../components/editor/gifPlaybackUtils';
 
 const CanvasStageKonva = dynamic(
   () => import('../../../components/editor/CanvasStageKonva'),
   { ssr: false },
 );
+
+const WORKFLOW_OPTIONS = [
+  { value: 'draft', label: 'Rascunho' },
+  { value: 'review', label: 'Em revisão' },
+  { value: 'published', label: 'Publicado' },
+  { value: 'archived', label: 'Arquivado' },
+];
 
 const LEFT_PANELS = [
   { id: 'pages', label: 'Páginas', icon: FiList },
@@ -62,14 +75,16 @@ const LEFT_PANELS = [
 const LUDITECA_TIMELINE_DND_MIME = 'application/x-luditeca-timeline-node';
 
 function ensurePagesV2(v2) {
-  if (!isPagesV2(v2)) return { version: 2, canvas: { width: 1280, height: 720 }, pages: [] };
-  if (!Array.isArray(v2.pages) || v2.pages.length === 0) {
-    return {
-      ...v2,
+  let base = isPagesV2(v2)
+    ? v2
+    : { version: 2, canvas: { width: 1280, height: 720 }, pages: [] };
+  if (!Array.isArray(base.pages) || base.pages.length === 0) {
+    base = {
+      ...base,
       pages: [{ id: String(Date.now()), background: null, nodes: [], meta: { orientation: 'landscape' } }],
     };
   }
-  return v2;
+  return ensureBookOutlineOnV2(base);
 }
 
 /** Altura mínima do canvas e máxima da timeline para o split não travar em telas baixas/estreitas. */
@@ -117,6 +132,18 @@ function isTypingTarget(target) {
 function getDraftStorageKey(bookId) {
   if (!bookId) return '';
   return `luditeca:editor:v2:draft:${String(bookId)}`;
+}
+
+function catalogTagsToString(arr) {
+  if (!Array.isArray(arr) || !arr.length) return '';
+  return arr.map((x) => String(x).trim()).filter(Boolean).join(', ');
+}
+
+function splitCatalogTags(s) {
+  return String(s || '')
+    .split(/[,;]/)
+    .map((x) => x.trim())
+    .filter(Boolean);
 }
 
 function makeTextNode() {
@@ -237,6 +264,14 @@ export default function EditBookV2() {
   const [loadingCategories, setLoadingCategories] = useState(true);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [audioPickModalOpen, setAudioPickModalOpen] = useState(false);
+  /** Capítulo ativo: novas páginas herdam meta.chapterId (fluxo 3.2). */
+  const [activeChapterId, setActiveChapterId] = useState('');
+  const [workflowStatus, setWorkflowStatus] = useState('draft');
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const [catalogCollection, setCatalogCollection] = useState('');
+  const [catalogLevel, setCatalogLevel] = useState('');
+  const [catalogKeywordsStr, setCatalogKeywordsStr] = useState('');
+  const [catalogCharactersStr, setCatalogCharactersStr] = useState('');
 
   const playTimerRef = useRef(null);
   const prevStepForPlaybackRef = useRef(null);
@@ -245,6 +280,10 @@ export default function EditBookV2() {
   const saveBookRef = useRef(null);
 
   const safeV2 = useMemo(() => ensurePagesV2(pagesV2), [pagesV2]);
+  const outlineChapters = useMemo(() => {
+    const o = getOutlineFromV2(safeV2);
+    return Array.isArray(o?.chapters) ? o.chapters : [];
+  }, [safeV2]);
   const page = safeV2.pages?.[currentPage] || safeV2.pages?.[0] || null;
   const nodes = Array.isArray(page?.nodes) ? page.nodes : [];
   const pageIsVisuallyEmpty = nodes.length === 0 && !page?.background;
@@ -271,6 +310,7 @@ export default function EditBookV2() {
     deleteNode,
     duplicateNodeToCurrentPage,
     addPage,
+    reorderPages,
     deletePage,
     undo,
     redo,
@@ -304,6 +344,11 @@ export default function EditBookV2() {
     setAuthorId(data.author_id || '');
     setCategoryId(data.category_id || '');
     setCoverImage(data.cover_image || '');
+    setWorkflowStatus(data.workflow_status || 'draft');
+    setCatalogCollection(data.catalog_collection || '');
+    setCatalogLevel(data.catalog_level || '');
+    setCatalogKeywordsStr(catalogTagsToString(data.catalog_keywords));
+    setCatalogCharactersStr(catalogTagsToString(data.catalog_characters));
     let nextV2 = null;
     if (isPagesV2(data.pages_v2)) nextV2 = data.pages_v2;
     else if (Array.isArray(data.pages) && data.pages.length > 0) nextV2 = migratePagesLegacyToV2(data.pages);
@@ -370,6 +415,117 @@ export default function EditBookV2() {
       setUploadingCover(false);
       e.target.value = '';
     }
+  }, []);
+
+  const chapterTitleForPage = useCallback(
+    (pg) => {
+      const cid = pg?.meta?.chapterId;
+      if (!cid) return '';
+      const ch = outlineChapters.find((c) => c.id === cid);
+      return ch?.title ? `Cap.: ${ch.title}` : '';
+    },
+    [outlineChapters],
+  );
+
+  useEffect(() => {
+    if (!outlineChapters.length) return;
+    const ok = outlineChapters.some((c) => c.id === activeChapterId);
+    if (!activeChapterId || !ok) setActiveChapterId(outlineChapters[0].id);
+  }, [outlineChapters, activeChapterId]);
+
+  const addPageInChapter = useCallback(() => {
+    const cid = activeChapterId || outlineChapters[0]?.id || '';
+    addPage(cid ? { chapterId: cid } : {});
+  }, [addPage, activeChapterId, outlineChapters]);
+
+  const handleAddChapter = useCallback(() => {
+    const cid = newChapterId();
+    setPagesV2((prev) => {
+      const base = ensurePagesV2(prev);
+      const next = JSON.parse(JSON.stringify(base));
+      const o = next.outline || { chapters: [], attachments: [] };
+      const order = Array.isArray(o.chapters) ? o.chapters.length : 0;
+      o.chapters = [...(o.chapters || []), { id: cid, title: 'Novo capítulo', order }];
+      next.outline = o;
+      return next;
+    });
+    setActiveChapterId(cid);
+    setIsModified(true);
+  }, []);
+
+  const handleRenameChapter = useCallback(() => {
+    const current = outlineChapters.find((c) => c.id === activeChapterId);
+    const name = window.prompt('Nome do capítulo', current?.title || '');
+    if (!name || !String(name).trim()) return;
+    setPagesV2((prev) => {
+      const base = ensurePagesV2(prev);
+      const next = JSON.parse(JSON.stringify(base));
+      const o = next.outline || { chapters: [], attachments: [] };
+      o.chapters = (o.chapters || []).map((c) =>
+        c.id === activeChapterId ? { ...c, title: String(name).trim() } : c,
+      );
+      next.outline = o;
+      return next;
+    });
+    setIsModified(true);
+  }, [outlineChapters, activeChapterId]);
+
+  const handleMovePageOrder = useCallback(
+    (index, delta) => {
+      const to = index + delta;
+      if (to < 0 || to >= (safeV2.pages?.length || 0)) return;
+      reorderPages(index, to);
+    },
+    [reorderPages, safeV2.pages?.length],
+  );
+
+  const handleInfoAttachmentUpload = useCallback(
+    async (e) => {
+      const file = e.target.files?.[0];
+      if (!file || !id) return;
+      try {
+        setUploadingAttachment(true);
+        const { url, path } = await uploadFile('pages', `anexos/${file.name}`, file, {
+          headers: { 'x-book-id': String(id) },
+        });
+        const att = {
+          id: `att-${Date.now()}`,
+          name: file.name,
+          url: url || '',
+          kind: file.type || 'application/octet-stream',
+          uploadedAt: new Date().toISOString(),
+          storagePath: path || '',
+        };
+        setPagesV2((prev) => {
+          const base = ensurePagesV2(prev);
+          const next = JSON.parse(JSON.stringify(base));
+          const o = next.outline || { chapters: [], attachments: [] };
+          o.attachments = [...(o.attachments || []), att];
+          next.outline = o;
+          return next;
+        });
+        setIsModified(true);
+        toast.success('Anexo adicionado ao livro.');
+      } catch (err) {
+        toast.error(err?.message || 'Falha ao enviar anexo.');
+      } finally {
+        setUploadingAttachment(false);
+        e.target.value = '';
+      }
+    },
+    [id],
+  );
+
+  const removeAttachment = useCallback((attId) => {
+    setPagesV2((prev) => {
+      const base = ensurePagesV2(prev);
+      const next = JSON.parse(JSON.stringify(base));
+      const o = next.outline || { chapters: [], attachments: [] };
+      o.attachments = (o.attachments || []).filter((a) => a.id !== attId);
+      next.outline = o;
+      return next;
+    });
+    setIsModified(true);
   }, []);
 
   const openImageAssets = useCallback(() => {
@@ -755,6 +911,11 @@ export default function EditBookV2() {
       if (typeof parsed.author_id === 'string') setAuthorId(parsed.author_id);
       if (typeof parsed.category_id === 'string') setCategoryId(parsed.category_id);
       if (typeof parsed.cover_image === 'string') setCoverImage(parsed.cover_image);
+      if (typeof parsed.workflow_status === 'string') setWorkflowStatus(parsed.workflow_status);
+      if (typeof parsed.catalog_collection === 'string') setCatalogCollection(parsed.catalog_collection);
+      if (typeof parsed.catalog_level === 'string') setCatalogLevel(parsed.catalog_level);
+      if (typeof parsed.catalog_keywords_str === 'string') setCatalogKeywordsStr(parsed.catalog_keywords_str);
+      if (typeof parsed.catalog_characters_str === 'string') setCatalogCharactersStr(parsed.catalog_characters_str);
       setIsModified(true);
       toast.success('Rascunho local restaurado.');
     } catch {
@@ -776,6 +937,11 @@ export default function EditBookV2() {
           author_id: authorId || '',
           category_id: categoryId || '',
           cover_image: coverImage || '',
+          workflow_status: workflowStatus,
+          catalog_collection: catalogCollection,
+          catalog_level: catalogLevel,
+          catalog_keywords_str: catalogKeywordsStr,
+          catalog_characters_str: catalogCharactersStr,
           pages_v2: ensurePagesV2(pagesV2),
           savedAt: Date.now(),
         };
@@ -785,12 +951,28 @@ export default function EditBookV2() {
       }
     }, 1200);
     return () => window.clearTimeout(timer);
-  }, [id, isModified, pagesV2, title, description, authorId, categoryId, coverImage]);
+  }, [
+    id,
+    isModified,
+    pagesV2,
+    title,
+    description,
+    authorId,
+    categoryId,
+    coverImage,
+    workflowStatus,
+    catalogCollection,
+    catalogLevel,
+    catalogKeywordsStr,
+    catalogCharactersStr,
+  ]);
 
   const saveBook = useCallback(async () => {
     if (!book || !id || !pagesV2) return;
     const started = startEditorMetric();
     setSaving(true);
+    const kw = splitCatalogTags(catalogKeywordsStr);
+    const ch = splitCatalogTags(catalogCharactersStr);
     const payload = {
       ...book,
       title,
@@ -798,6 +980,11 @@ export default function EditBookV2() {
       author_id: authorId || null,
       category_id: categoryId || null,
       cover_image: coverImage || null,
+      workflow_status: workflowStatus,
+      catalog_collection: catalogCollection.trim() || null,
+      catalog_level: catalogLevel.trim() || null,
+      catalog_keywords: kw,
+      catalog_characters: ch,
       pages: migratePagesV2ToLegacy(ensurePagesV2(pagesV2)),
       pages_v2: ensurePagesV2(pagesV2),
     };
@@ -819,6 +1006,11 @@ export default function EditBookV2() {
               author_id: authorId || null,
               category_id: categoryId || null,
               cover_image: coverImage || null,
+              workflow_status: workflowStatus,
+              catalog_collection: catalogCollection.trim() || '',
+              catalog_level: catalogLevel.trim() || '',
+              catalog_keywords: kw,
+              catalog_characters: ch,
             }
           : prev,
       );
@@ -831,7 +1023,21 @@ export default function EditBookV2() {
         pages: Array.isArray(pagesV2?.pages) ? pagesV2.pages.length : 0,
       });
     }
-  }, [book, id, pagesV2, title, description, authorId, categoryId, coverImage]);
+  }, [
+    book,
+    id,
+    pagesV2,
+    title,
+    description,
+    authorId,
+    categoryId,
+    coverImage,
+    workflowStatus,
+    catalogCollection,
+    catalogLevel,
+    catalogKeywordsStr,
+    catalogCharactersStr,
+  ]);
 
   useEffect(() => {
     saveBookRef.current = saveBook;
@@ -1040,6 +1246,70 @@ export default function EditBookV2() {
                   }}
                 />
               </label>
+              <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4">
+                <h3 className="text-sm font-semibold text-slate-200">Catálogo e busca</h3>
+                <p className="mt-1 text-xs text-slate-500">
+                  Estes campos alimentam o índice de pesquisa do portal (título e descrição já entram automaticamente).
+                </p>
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <label className="block sm:col-span-2">
+                    <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">
+                      Coleção
+                    </span>
+                    <input
+                      className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none"
+                      value={catalogCollection}
+                      placeholder="Ex.: Série Azul"
+                      onChange={(e) => {
+                        setCatalogCollection(e.target.value);
+                        setIsModified(true);
+                      }}
+                    />
+                  </label>
+                  <label className="block sm:col-span-2">
+                    <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">
+                      Nível
+                    </span>
+                    <input
+                      className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none"
+                      value={catalogLevel}
+                      placeholder="Ex.: 6º ano, iniciante…"
+                      onChange={(e) => {
+                        setCatalogLevel(e.target.value);
+                        setIsModified(true);
+                      }}
+                    />
+                  </label>
+                  <label className="block sm:col-span-2">
+                    <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">
+                      Palavras-chave
+                    </span>
+                    <input
+                      className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none"
+                      value={catalogKeywordsStr}
+                      placeholder="Separadas por vírgula"
+                      onChange={(e) => {
+                        setCatalogKeywordsStr(e.target.value);
+                        setIsModified(true);
+                      }}
+                    />
+                  </label>
+                  <label className="block sm:col-span-2">
+                    <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">
+                      Personagens
+                    </span>
+                    <input
+                      className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none"
+                      value={catalogCharactersStr}
+                      placeholder="Separados por vírgula"
+                      onChange={(e) => {
+                        setCatalogCharactersStr(e.target.value);
+                        setIsModified(true);
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
               <div className="grid gap-6 sm:grid-cols-2">
                 <label className="block">
                   <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Autor</span>
@@ -1099,6 +1369,70 @@ export default function EditBookV2() {
                     <input type="file" accept="image/*" className="hidden" onChange={handleInfoCoverUpload} disabled={uploadingCover} />
                   </label>
                 </div>
+              </div>
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Estado editorial</span>
+                <select
+                  className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none"
+                  value={workflowStatus}
+                  onChange={(e) => {
+                    setWorkflowStatus(e.target.value);
+                    setIsModified(true);
+                  }}
+                >
+                  {WORKFLOW_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-slate-500">Rascunho → revisão → publicado → arquivo.</p>
+              </label>
+              <div>
+                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Documentos de apoio</span>
+                <p className="mb-2 text-xs text-slate-500">
+                  Anexe PDF ou outros ficheiros como guia (ficam listados aqui; não são inseridos automaticamente nas páginas).
+                </p>
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-600 bg-slate-800 px-4 py-2 text-sm text-slate-200 transition-colors hover:bg-slate-700">
+                  <FiFileText size={16} />
+                  {uploadingAttachment ? 'A enviar…' : 'Anexar ficheiro'}
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept=".pdf,.doc,.docx,.ppt,.pptx,.txt,application/pdf"
+                    onChange={handleInfoAttachmentUpload}
+                    disabled={uploadingAttachment}
+                  />
+                </label>
+                <ul className="mt-3 space-y-2">
+                  {(getOutlineFromV2(safeV2)?.attachments || []).map((a) => (
+                    <li
+                      key={a.id}
+                      className="flex items-center justify-between gap-2 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-200"
+                    >
+                      <span className="truncate">{a.name}</span>
+                      <div className="flex shrink-0 gap-2">
+                        {a.url ? (
+                          <a
+                            href={a.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-indigo-400 hover:underline"
+                          >
+                            Abrir
+                          </a>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="text-xs text-red-400 hover:underline"
+                          onClick={() => removeAttachment(a.id)}
+                        >
+                          Remover
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
           </div>
@@ -1172,7 +1506,7 @@ export default function EditBookV2() {
                       setCurrentPage(idx);
                       setShowTransitionEditor(false);
                     }}
-                    onAddPage={addPage}
+                    onAddPage={addPageInChapter}
                     onDeletePage={deletePage}
                     onSelectTransitionBetweenPages={selectTransitionBetweenPages}
                     activeTab={leftTab}
@@ -1182,6 +1516,13 @@ export default function EditBookV2() {
                     bookId={id}
                     onSelectMedia={handlePickMedia}
                     showTabs={false}
+                    outlineChapters={outlineChapters}
+                    activeChapterId={activeChapterId}
+                    onActiveChapterIdChange={setActiveChapterId}
+                    onAddChapter={handleAddChapter}
+                    onRenameChapter={handleRenameChapter}
+                    onMovePage={handleMovePageOrder}
+                    chapterTitleByPage={chapterTitleForPage}
                   />
                 )}
                 </div>

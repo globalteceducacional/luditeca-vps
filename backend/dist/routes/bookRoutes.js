@@ -1,4 +1,6 @@
+import { BookWorkflowStatus } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
+import { writeAuditLog } from '../lib/auditLog.js';
 import { jsonSafe } from '../lib/serialize.js';
 import { requireCmsEditor } from '../plugins/auth.js';
 import { requireAuth } from '../plugins/auth.js';
@@ -15,6 +17,20 @@ function isNonEmptyString(v) {
 }
 function isRecord(v) {
     return !!v && typeof v === 'object' && !Array.isArray(v);
+}
+const WORKFLOW_SET = new Set([
+    BookWorkflowStatus.draft,
+    BookWorkflowStatus.review,
+    BookWorkflowStatus.published,
+    BookWorkflowStatus.archived,
+]);
+function parseBookWorkflowStatus(v) {
+    if (v === null || v === undefined || v === '')
+        return undefined;
+    const s = String(v).trim();
+    if (!WORKFLOW_SET.has(s))
+        return undefined;
+    return s;
 }
 async function resolveStorageUrl(cache, storage) {
     if (!isRecord(storage))
@@ -362,6 +378,10 @@ export async function registerBookRoutes(app) {
             categoryId: toBigIntOrNull(body.category_id),
             linkSlidebook: body.link_slidebook != null ? String(body.link_slidebook) : null,
         };
+        const wfCreate = parseBookWorkflowStatus(body.workflow_status ?? body.workflowStatus);
+        if (wfCreate) {
+            createData.workflowStatus = wfCreate;
+        }
         if (pagesV2 != null) {
             createData.pagesV2 = pagesV2;
         }
@@ -405,6 +425,20 @@ export async function registerBookRoutes(app) {
                     responseBook = refreshed;
             }
         }
+        await writeAuditLog({
+            actorUserId: request.user.id,
+            actionCode: 'EVT:BOOK_CREATE',
+            module: 'api',
+            targetType: 'BOOK',
+            targetId: `BOOK:${responseBook.id}`,
+            bookId: BigInt(responseBook.id),
+            request,
+            metadata: {
+                title: responseBook.title,
+                importSessionId: importSessionId || undefined,
+                workflowStatus: responseBook.workflowStatus,
+            },
+        });
         return reply.code(201).send(bookResponse(responseBook));
     });
     app.patch('/books/:id', { preHandler: requireCmsEditor }, async (request, reply) => {
@@ -433,11 +467,63 @@ export async function registerBookRoutes(app) {
             data.categoryId = toBigIntOrNull(clean.category_id);
         if ('link_slidebook' in clean)
             data.linkSlidebook = clean.link_slidebook;
+        const wfRaw = clean.workflow_status ?? clean.workflowStatus;
+        if (wfRaw !== undefined) {
+            const wf = parseBookWorkflowStatus(wfRaw);
+            if (wfRaw !== null && wfRaw !== '' && !wf) {
+                return reply.code(400).send({ error: 'workflow_status inválido (draft|review|published|archived).' });
+            }
+            if (wf)
+                data.workflowStatus = wf;
+        }
+        const prev = await prisma.book.findUnique({
+            where: { id },
+            select: { workflowStatus: true, title: true },
+        });
+        if (!prev) {
+            return reply.code(404).send({ error: 'Livro não encontrado.' });
+        }
+        if (Object.keys(data).length === 0) {
+            const row = await prisma.book.findUnique({
+                where: { id },
+                include: { authorRel: true },
+            });
+            return reply.send(bookResponse(row));
+        }
         const updated = await prisma.book.update({
             where: { id },
             data: data,
             include: { authorRel: true },
         });
+        await writeAuditLog({
+            actorUserId: request.user.id,
+            actionCode: 'EVT:BOOK_UPDATE',
+            module: 'api',
+            targetType: 'BOOK',
+            targetId: `BOOK:${id.toString()}`,
+            bookId: id,
+            request,
+            metadata: {
+                fields: Object.keys(data),
+                title: updated.title,
+            },
+        });
+        if (data.workflowStatus != null &&
+            String(data.workflowStatus) !== String(prev.workflowStatus)) {
+            await writeAuditLog({
+                actorUserId: request.user.id,
+                actionCode: 'EVT:BOOK_WORKFLOW_CHANGE',
+                module: 'api',
+                targetType: 'BOOK',
+                targetId: `BOOK:${id.toString()}`,
+                bookId: id,
+                request,
+                metadata: {
+                    from: prev.workflowStatus,
+                    to: data.workflowStatus,
+                },
+            });
+        }
         return reply.send(bookResponse(updated));
     });
     app.delete('/books/:id', { preHandler: requireCmsEditor }, async (request, reply) => {
@@ -481,6 +567,15 @@ export async function registerBookRoutes(app) {
                 }
             }
         }
+        await writeAuditLog({
+            actorUserId: request.user.id,
+            actionCode: 'EVT:BOOK_DELETE',
+            module: 'api',
+            targetType: 'BOOK',
+            targetId: `BOOK:${bookIdAsString}`,
+            bookId: id,
+            request,
+        });
         await prisma.book.delete({ where: { id } });
         return reply.code(204).send();
     });
