@@ -144,17 +144,32 @@ async function main() {
       return reply.code(404).send({ error: 'Arquivo não encontrado.' });
     }
 
-    // Cache HTTP agressivo: ficheiros estão sob caminhos com UUID/timestamp,
-    // efetivamente imutáveis. `public` permite que o Nginx (proxy_cache)
-    // armazene a resposta.
+    // Estratégia de Cache-Control depende do ambiente:
     //
-    // `Vary` precisa de incluir `Origin` para o cache do navegador segregar
-    // por-origem e respeitar o CORS. Se omitirmos `Origin`, requests entre
-    // `<img>` (sem CORS) e `fetch(..., { mode: 'cors' })` partilham a mesma
-    // entrada de cache: a primeira (sem `Access-Control-Allow-Origin`)
-    // envenena a segunda, que falha com "No 'Access-Control-Allow-Origin'".
-    // `Accept-Encoding` cobre uma futura activação de compressão (`@fastify/compress`).
-    reply.header('Cache-Control', 'public, max-age=31536000, immutable');
+    // PROD (NODE_ENV=production):
+    //   `public, max-age=31536000, immutable` — paths são imutáveis por desenho
+    //   (UUID/timestamp no nome). O Nginx em frente (proxy_cache em disco, ver
+    //   nginx/nginx.conf) absorve a maioria dos hits, e o browser do utilizador
+    //   final cacheia agressivamente porque o reverse proxy gere bem a response.
+    //
+    // DEV (qualquer outro NODE_ENV):
+    //   `no-store` — desactiva cache do browser. Sem Nginx em frente, o Chrome
+    //   tenta gravar tudo na cache de disco; ficheiros grandes (>1.5 MB) batem
+    //   no limite single-entry e devolvem `ERR_CACHE_WRITE_FAILURE`, abortando
+    //   a request. Ainda pior: o Chrome cacheia respostas de `<img>` sem CORS
+    //   e devolve-as a `fetch(..., { mode: 'cors' })`, dando "No
+    //   Access-Control-Allow-Origin" mesmo com o servidor a enviar o header.
+    //   Em dev o ganho de cache é nulo (estamos a iterar) e o custo é alto.
+    //
+    // `Vary` mantém `Origin` mesmo em dev: além de o `no-store` cobrir o caso
+    // do Chrome, alguns proxies/edge caches (corp networks) podem ignorar
+    // `no-store` e continuar a partilhar entradas — o `Vary: Origin` é defesa
+    // em profundidade.
+    const isProd = process.env.NODE_ENV === 'production';
+    reply.header(
+      'Cache-Control',
+      isProd ? 'public, max-age=31536000, immutable' : 'no-store',
+    );
     reply.header('Vary', 'Accept-Encoding, Origin');
     reply.type(contentTypeByExt(absPath));
     return reply.send(createReadStream(absPath));
