@@ -1,5 +1,8 @@
 /backend/storage
 
+# Dependências npm (nunca commitar).
+node_modules/
+
 # Diretórios de scratch / artefactos de smoke test (não devem ir para o repo).
 /tmp/
 

@@ -133,14 +133,20 @@ export const updateBook = async (id, bookData) => {
       sanitizedData.pages_v2 = sanitizedData.pagesV2;
       delete sanitizedData.pagesV2;
     }
-    const dataSize = new Blob([JSON.stringify(sanitizedData)]).size;
-    if (dataSize > 1000000) {
-      return {
-        data: null,
-        error: {
-          message: `Dados muito grandes (${Math.round((dataSize / 1024 / 1024) * 100) / 100}MB). Remova algumas imagens ou divida em mais livros.`,
-        },
-      };
+    // Issue 04 — limite de 1 MB removido. O backend aceita até 600 MB
+    // (`bodyLimit` em server.ts) e responde comprimido (@fastify/compress).
+    // Acima de 5 MB emitimos um warn em dev para flaggar livros que provavelmente
+    // beneficiam da migração para `book_pages`/`book_page_nodes` (Issue 05,
+    // Sprint 4). Não bloqueamos: o utilizador final não deve perder trabalho.
+    if (typeof window !== 'undefined') {
+      const dataSize = new Blob([JSON.stringify(sanitizedData)]).size;
+      if (dataSize > 5 * 1024 * 1024) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[updateBook] payload grande: ${(dataSize / 1024 / 1024).toFixed(2)} MB. ` +
+            'Considera dividir o livro ou esperar pela migração para tabelas relacionais (Issue 05).',
+        );
+      }
     }
     const row = await apiFetch(`/books/${id}`, {
       method: 'PATCH',

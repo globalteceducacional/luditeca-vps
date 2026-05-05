@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import compress from '@fastify/compress';
 import multipart from '@fastify/multipart';
 import path from 'node:path';
 import { createReadStream, existsSync } from 'node:fs';
@@ -41,7 +42,12 @@ function parseCorsOrigin(): string[] {
           'Ex.: CORS_ORIGIN="https://luditeca.com,https://www.luditeca.com"',
       );
     }
-    return ['http://localhost:3000', 'http://localhost:8080'];
+    return [
+      'http://localhost:3000',
+      'http://localhost:8080',
+      'http://127.0.0.1:3000',
+      'http://127.0.0.1:8080',
+    ];
   }
 
   const list = raw
@@ -106,6 +112,18 @@ async function main() {
   });
 
   await app.register(cors, { origin: corsOrigin, credentials: true });
+  // Issue 04 — compressão de respostas. Reduz drasticamente o tamanho de
+  // payloads grandes (`/books/:id` com pages_v2, listagens, etc.).
+  // - threshold 1 KB evita overhead em respostas pequenas.
+  // - encodings em ordem de preferência: brotli (melhor rácio) > gzip > deflate.
+  // - rotas binárias (`/media/*`) são excluídas via `customTypes` para não
+  //   sobrecarregar a CPU comprimindo imagens/vídeos já comprimidos.
+  await app.register(compress, {
+    global: true,
+    threshold: 1024,
+    encodings: ['br', 'gzip', 'deflate'],
+    customTypes: /^(?:application\/json|text\/|application\/javascript)/,
+  });
   await app.register(multipart, {
     limits: { fileSize: 500 * 1024 * 1024 },
   });
@@ -116,7 +134,13 @@ async function main() {
   app.get('/health', async () => ({ ok: true, ts: new Date().toISOString() }));
 
   // Servidor de arquivos local para desenvolvimento (STORAGE_DRIVER=local).
-  app.get<{ Params: { '*': string } }>('/media/*', async (request, reply) => {
+  // `compress: false` — o hook global do @fastify/compress não deve tocar neste
+  // stream binário; em alguns casos interferia com a cadeia `onSend` do CORS e
+  // o Chrome recebia resposta sem `Access-Control-Allow-Origin` em `fetch()`.
+  app.get<{ Params: { '*': string } }>(
+    '/media/*',
+    { compress: false },
+    async (request, reply) => {
     const wildcard = String(request.params['*'] || '').replace(/^\/+/, '');
     if (!wildcard || wildcard.includes('..')) {
       return reply.code(400).send({ error: 'Caminho inválido.' });
@@ -172,8 +196,16 @@ async function main() {
     );
     reply.header('Vary', 'Accept-Encoding, Origin');
     reply.type(contentTypeByExt(absPath));
+    // CORS explícito: garante `Access-Control-Allow-Origin` mesmo que o hook
+    // global do @fastify/cors não corra como esperado em `reply.send(stream)`.
+    const reqOrigin = request.headers.origin;
+    if (typeof reqOrigin === 'string' && reqOrigin && corsOrigin.includes(reqOrigin)) {
+      reply.header('Access-Control-Allow-Origin', reqOrigin);
+      reply.header('Access-Control-Allow-Credentials', 'true');
+    }
     return reply.send(createReadStream(absPath));
-  });
+  },
+  );
 
   await registerAuthRoutes(app);
   await registerBookRoutes(app);
