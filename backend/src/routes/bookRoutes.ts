@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Prisma } from '@prisma/client';
 import { BookWorkflowStatus } from '@prisma/client';
+import pLimit from 'p-limit';
 import { prisma } from '../lib/prisma.js';
 import { writeAuditLog } from '../lib/auditLog.js';
 import { jsonSafe } from '../lib/serialize.js';
@@ -15,6 +16,14 @@ import {
 } from '../lib/s3.js';
 import { isPagesV2, migratePagesLegacyToV2 } from '../lib/pagesV2/migrate.js';
 import { parseCatalogStringArrayFromBody, persistBookSearchIndex } from '../lib/bookSearchIndex.js';
+
+/**
+ * Concorrência máxima para presigns (S3/MinIO `GET`) numa única requisição.
+ * 16 dá bom paralelismo sem saturar o backend de objectos para livros com
+ * dezenas de mídias. Aplicado **apenas** ao redor de `presignedGetUrl`,
+ * nunca à iteração de páginas/elementos (evita deadlock por re-entrância).
+ */
+const PRESIGN_CONCURRENCY = 16;
 
 function toBigIntOrNull(v: unknown): bigint | null {
   if (v === null || v === undefined || v === '') return null;
@@ -81,32 +90,38 @@ async function hydrateLegacyPagesMediaUrls(pages: unknown, cache: Map<string, st
   if (!Array.isArray(pages)) return pages;
   const next = JSON.parse(JSON.stringify(pages)) as Array<Record<string, unknown>>;
 
-  for (const page of next) {
-    const bg = isRecord(page.background) ? page.background : null;
-    if (bg) {
-      const bgStorage = bg.storage ?? parseStorageFromUrl(bg.url);
-      const signedBg = await resolveStorageUrl(cache, bgStorage);
-      if (signedBg) bg.url = signedBg;
-      if (!bg.storage && bgStorage) bg.storage = bgStorage;
-      page.background = bg;
-    }
+  const limit = pLimit(PRESIGN_CONCURRENCY);
+  const resolve = (storage: unknown) => limit(() => resolveStorageUrl(cache, storage));
 
-    const elements = Array.isArray(page.elements) ? page.elements : [];
-    for (const element of elements) {
-      if (!isRecord(element)) continue;
-      const fallbackStorage = parseStorageFromUrl(element.content);
-      const signedEl = await resolveStorageUrl(
-        cache,
-        element.storage ?? element.contentStorage ?? fallbackStorage,
+  await Promise.all(
+    next.map(async (page) => {
+      const bg = isRecord(page.background) ? page.background : null;
+      if (bg) {
+        const bgStorage = bg.storage ?? parseStorageFromUrl(bg.url);
+        const signedBg = await resolve(bgStorage);
+        if (signedBg) bg.url = signedBg;
+        if (!bg.storage && bgStorage) bg.storage = bgStorage;
+        page.background = bg;
+      }
+
+      const elements = Array.isArray(page.elements) ? page.elements : [];
+      await Promise.all(
+        elements.map(async (element) => {
+          if (!isRecord(element)) return;
+          const fallbackStorage = parseStorageFromUrl(element.content);
+          const signedEl = await resolve(
+            element.storage ?? element.contentStorage ?? fallbackStorage,
+          );
+          if (signedEl && element.type === 'image') {
+            element.content = signedEl;
+          }
+          if (!element.storage && fallbackStorage && element.type === 'image') {
+            element.storage = fallbackStorage;
+          }
+        }),
       );
-      if (signedEl && element.type === 'image') {
-        element.content = signedEl;
-      }
-      if (!element.storage && fallbackStorage && element.type === 'image') {
-        element.storage = fallbackStorage;
-      }
-    }
-  }
+    }),
+  );
 
   return next;
 }
@@ -119,36 +134,59 @@ async function hydratePagesV2MediaUrls(v2: unknown, cache: Map<string, string>) 
     pages: Array<Record<string, unknown>>;
   };
 
-  for (const page of next.pages) {
-    const bg = isRecord(page.background) ? page.background : null;
-    if (bg) {
-      const bgStorage = bg.storage ?? parseStorageFromUrl(bg.url);
-      const signedBg = await resolveStorageUrl(cache, bgStorage);
-      if (signedBg) bg.url = signedBg;
-      if (!bg.storage && bgStorage) bg.storage = bgStorage;
-      page.background = bg;
-    }
+  const limit = pLimit(PRESIGN_CONCURRENCY);
+  const resolve = (storage: unknown) => limit(() => resolveStorageUrl(cache, storage));
 
-    const nodes = Array.isArray(page.nodes) ? page.nodes : [];
-    for (const node of nodes) {
-      if (!isRecord(node) || (node.type !== 'image' && node.type !== 'video')) continue;
-      const props = isRecord(node.props) ? node.props : null;
-      if (!props) continue;
-      const nodeStorage = props.storage ?? parseStorageFromUrl(props.content);
-      const signedNode = await resolveStorageUrl(cache, nodeStorage);
-      if (signedNode) props.content = signedNode;
-      if (!props.storage && nodeStorage) props.storage = nodeStorage;
-      if (node.type === 'video') {
-        const posterStorage = props.posterStorage ?? parseStorageFromUrl(props.poster);
-        const signedPoster = await resolveStorageUrl(cache, posterStorage);
-        if (signedPoster) props.poster = signedPoster;
-        if (!props.posterStorage && posterStorage) props.posterStorage = posterStorage;
+  await Promise.all(
+    next.pages.map(async (page) => {
+      const bg = isRecord(page.background) ? page.background : null;
+      if (bg) {
+        const bgStorage = bg.storage ?? parseStorageFromUrl(bg.url);
+        const signedBg = await resolve(bgStorage);
+        if (signedBg) bg.url = signedBg;
+        if (!bg.storage && bgStorage) bg.storage = bgStorage;
+        page.background = bg;
       }
-      node.props = props;
-    }
-  }
+
+      const nodes = Array.isArray(page.nodes) ? page.nodes : [];
+      await Promise.all(
+        nodes.map(async (node) => {
+          if (!isRecord(node) || (node.type !== 'image' && node.type !== 'video')) return;
+          const props = isRecord(node.props) ? node.props : null;
+          if (!props) return;
+          const nodeStorage = props.storage ?? parseStorageFromUrl(props.content);
+          const signedNode = await resolve(nodeStorage);
+          if (signedNode) props.content = signedNode;
+          if (!props.storage && nodeStorage) props.storage = nodeStorage;
+          if (node.type === 'video') {
+            const posterStorage = props.posterStorage ?? parseStorageFromUrl(props.poster);
+            const signedPoster = await resolve(posterStorage);
+            if (signedPoster) props.poster = signedPoster;
+            if (!props.posterStorage && posterStorage) props.posterStorage = posterStorage;
+          }
+          node.props = props;
+        }),
+      );
+    }),
+  );
 
   return next;
+}
+
+/**
+ * Modos de visualização do detalhe de livro (`GET /books/:id`):
+ *  - `v2` (default): só hidrata e retorna `pages_v2`. Se o livro só tiver
+ *    legado, faz fallback para `legacy` automaticamente.
+ *  - `legacy`: só hidrata e retorna `pages` legado.
+ *  - `both`: hidrata e retorna ambos (compatibilidade com clientes antigos).
+ */
+type BookDetailView = 'v2' | 'legacy' | 'both';
+
+function parseBookDetailView(raw: unknown): BookDetailView {
+  const s = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+  if (s === 'legacy') return 'legacy';
+  if (s === 'both') return 'both';
+  return 'v2';
 }
 
 async function finalizeImportSession({
@@ -545,26 +583,51 @@ export async function registerBookRoutes(app: FastifyInstance) {
     },
   );
 
-  app.get<{ Params: { id: string } }>(
+  app.get<{ Params: { id: string }; Querystring: { view?: string } }>(
     '/books/:id',
     { preHandler: requireAuth },
     async (request, reply) => {
       const id = BigInt(request.params.id);
+      const view = parseBookDetailView(request.query.view);
       const b = await prisma.book.findUnique({
         where: { id },
         include: { authorRel: true, categoryRel: true },
       });
       if (!b) return reply.code(404).send({ error: 'Livro não encontrado.' });
+
       const resp = bookResponse(b) as Record<string, unknown>;
       const mediaUrlCache = new Map<string, string>();
-      resp.pages = await hydrateLegacyPagesMediaUrls(resp.pages, mediaUrlCache);
-      resp.pages_v2 = await hydratePagesV2MediaUrls(
-        (resp.pagesV2 ?? resp.pages_v2) as unknown,
-        mediaUrlCache,
-      );
-      const pagesV2 = (resp.pagesV2 ?? resp.pages_v2) as unknown;
+      const pagesV2Raw = (resp.pagesV2 ?? resp.pages_v2) as unknown;
+      const hasV2 = isPagesV2(pagesV2Raw);
+
+      // Decidir o que precisa ser hidratado conforme `view` e disponibilidade.
+      // Modo `v2` quando há v2: só hidrata v2 e omite o legado (economiza
+      // dezenas de presigns + payload). Sem v2, faz fallback para legacy.
+      const hydrateV2 = (view === 'v2' || view === 'both') && hasV2;
+      const hydrateLegacy =
+        view === 'legacy' || view === 'both' || (view === 'v2' && !hasV2);
+
+      const [hydratedV2, hydratedLegacy] = await Promise.all([
+        hydrateV2
+          ? hydratePagesV2MediaUrls(pagesV2Raw, mediaUrlCache)
+          : Promise.resolve(pagesV2Raw),
+        hydrateLegacy
+          ? hydrateLegacyPagesMediaUrls(resp.pages, mediaUrlCache)
+          : Promise.resolve(resp.pages),
+      ]);
+
+      // Sempre expor a chave canônica `pages_v2` no payload (snake_case),
+      // removendo o duplicado camelCase que vem do Prisma.
+      delete resp.pagesV2;
+      resp.pages_v2 = hydratedV2;
+      resp.pages = hydratedLegacy;
+
+      // Modo `v2` com v2 disponível: omite o legado para reduzir payload.
+      if (view === 'v2' && hasV2) {
+        delete resp.pages;
+      }
+
       const pagesLegacy = resp.pages as unknown;
-      const hasV2 = isPagesV2(pagesV2);
       if (!hasV2 && Array.isArray(pagesLegacy) && pagesLegacy.length > 0) {
         // Não salvamos no GET para evitar efeitos colaterais.
         resp.needsMigration = true;

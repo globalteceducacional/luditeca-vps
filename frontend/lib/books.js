@@ -63,9 +63,22 @@ export const searchBooks = async (params = {}) => {
   }
 };
 
-export const getBook = async (id) => {
+/**
+ * Carrega um livro pelo id.
+ *
+ * @param {string|number} id
+ * @param {{ view?: 'v2'|'legacy'|'both' }} [opts]
+ *   - `view='v2'` (default): a API retorna apenas `pages_v2` hidratado e
+ *     omite o `pages` legado quando há v2 — reduz drasticamente o payload
+ *     e o número de presigns. Editor v2 só precisa de v2.
+ *   - `view='legacy'`: força só `pages` legado.
+ *   - `view='both'`: traz os dois (compatibilidade com clientes antigos).
+ */
+export const getBook = async (id, opts = {}) => {
   try {
-    const row = await apiFetch(`/books/${id}`);
+    const view = opts.view || 'v2';
+    const qs = new URLSearchParams({ view }).toString();
+    const row = await apiFetch(`/books/${id}?${qs}`);
     return { data: normalizeBook(row), error: null };
   } catch (e) {
     return { data: null, error: { message: e.message } };
