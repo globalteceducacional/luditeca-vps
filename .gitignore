@@ -1,5 +1,13 @@
 /backend/storage
-backend/.env
-# Segredos de deploy Docker na raiz do stack
+
+# Diretórios de scratch / artefactos de smoke test (não devem ir para o repo).
+/tmp/
+
+# Variáveis de ambiente — nunca commitar (segredos).
 .env
 .env.local
+.env.*.local
+backend/.env
+backend/.env.*
+frontend/.env.local
+frontend/.env.*.local
