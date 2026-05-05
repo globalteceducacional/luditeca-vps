@@ -1748,6 +1748,12 @@ export default function CanvasStageKonva({
   const contentLayerRef = useRef(null);
   const inlineTextareaRef = useRef(null);
   const draggingRef = useRef(false);
+  // Issue 03 — coalescer eventos onDragMove com requestAnimationFrame.
+  // Evita correr a lógica pesada de snap/guides em cada mousemove (60-240Hz)
+  // e limita-a a um frame por refresh; no refresh seguinte, processamos sempre
+  // o último evento recebido (snap continua exacto na frame final).
+  const dragMoveRafRef = useRef(0);
+  const dragMoveLastEventRef = useRef(null);
 
   const [guides, setGuides] = useState({ vertical: [], horizontal: [] });
   const [contextMenu, setContextMenu] = useState(null);
@@ -1867,17 +1873,23 @@ export default function CanvasStageKonva({
     }
   }, [selectedIds, isPreviewMode, timelineStep, inlineEditor?.nodeId, nodes]);
 
+  // Issue 03 — shallow clone em vez de JSON deep-clone do pagesV2 inteiro.
+  // O `onChange` recebe a mesma identidade nas referências de páginas não tocadas
+  // e da própria página exceto pelo array `nodes` (que é reconstruído).
   const commitNode = useCallback(
     (id, patch) => {
       if (!onChange) return;
       if (!pagesV2 || pagesV2.version !== 2) return;
-      const next = JSON.parse(JSON.stringify(pagesV2));
-      const p = next.pages?.[pageIndex];
-      if (!p || !Array.isArray(p.nodes)) return;
-      const idx = p.nodes.findIndex((n) => String(n?.id) === String(id));
+      const oldPage = pagesV2.pages?.[pageIndex];
+      if (!oldPage || !Array.isArray(oldPage.nodes)) return;
+      const idx = oldPage.nodes.findIndex((n) => String(n?.id) === String(id));
       if (idx === -1) return;
-      p.nodes[idx] = { ...p.nodes[idx], ...patch };
-      onChange(next);
+      const newNodes = oldPage.nodes.slice();
+      newNodes[idx] = { ...newNodes[idx], ...patch };
+      const newPage = { ...oldPage, nodes: newNodes };
+      const newPages = pagesV2.pages.slice();
+      newPages[pageIndex] = newPage;
+      onChange({ ...pagesV2, pages: newPages });
     },
     [onChange, pagesV2, pageIndex],
   );
@@ -1894,9 +1906,8 @@ export default function CanvasStageKonva({
     [isPreviewMode, setSelectedId],
   );
 
-  const handleDragMove = useCallback(
+  const processDragMove = useCallback(
     (e) => {
-      if (isPreviewMode) return;
       const stage = stageRef.current;
       const layer = contentLayerRef.current;
       const target = e?.target;
@@ -1984,13 +1995,47 @@ export default function CanvasStageKonva({
         }
       }
     },
-    [canvasW, canvasH, isPreviewMode, contextMenu?.nodeId, snapToGrid, gridSize],
+    [canvasW, canvasH, contextMenu?.nodeId, snapToGrid, gridSize],
+  );
+
+  const handleDragMove = useCallback(
+    (e) => {
+      if (isPreviewMode) return;
+      // Guarda sempre o evento mais recente; se já houver um rAF pendente,
+      // ele vai usar este evento quando disparar (coalescing natural).
+      dragMoveLastEventRef.current = e;
+      if (dragMoveRafRef.current) return;
+      dragMoveRafRef.current = requestAnimationFrame(() => {
+        dragMoveRafRef.current = 0;
+        const ev = dragMoveLastEventRef.current;
+        dragMoveLastEventRef.current = null;
+        if (ev) processDragMove(ev);
+      });
+    },
+    [isPreviewMode, processDragMove],
   );
 
   const handleDragEnd = useCallback(() => {
+    if (dragMoveRafRef.current) {
+      cancelAnimationFrame(dragMoveRafRef.current);
+      dragMoveRafRef.current = 0;
+      const ev = dragMoveLastEventRef.current;
+      dragMoveLastEventRef.current = null;
+      // Processa o último evento sincronicamente para garantir snap final.
+      if (ev) processDragMove(ev);
+    }
     if (!draggingRef.current) return;
     draggingRef.current = false;
     setGuides({ vertical: [], horizontal: [] });
+  }, [processDragMove]);
+
+  // Cleanup defensivo do rAF pendente em unmount.
+  useEffect(() => () => {
+    if (dragMoveRafRef.current) {
+      cancelAnimationFrame(dragMoveRafRef.current);
+      dragMoveRafRef.current = 0;
+    }
+    dragMoveLastEventRef.current = null;
   }, []);
 
   const openInlineEditor = useCallback((nodeId) => {
