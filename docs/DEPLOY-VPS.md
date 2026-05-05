@@ -6,7 +6,23 @@
 - **Armazenamento de ficheiros**: disco local na API (`STORAGE_DRIVER=local`, volume Docker `luditeca_storage` em `/app/storage`). Pastas por bucket (`covers`, `pages`, etc.) criadas automaticamente nos uploads.
 - **backend** (`./backend`, Docker): Node 20, Fastify, Prisma (`JWT_SECRET`, `DATABASE_URL`, `PUBLIC_MEDIA_BASE`, `CORS_ORIGIN`).
 - **frontend** (`./frontend`, Docker): Next.js 14 `output: 'standalone'`, variáveis `NEXT_PUBLIC_API_URL` e `NEXT_PUBLIC_MEDIA_BASE_URL` **no momento do build**.
-- **Nginx**: TLS, `client_max_body_size 600m`, proxy `/api/` → API, `/media/` → API (ficheiros locais), `/` → Next.
+- **Nginx**: TLS, `client_max_body_size 600m`, proxy `/api/` → API, `/media/` → API (ficheiros locais, com `proxy_cache` em disco), `/` → Next.
+
+### Cache de mídia (Issue 14)
+
+Para evitar que cada `GET /media/...` chegue à API (que faz `existsSync` + `createReadStream` em disco a cada pedido), o Nginx mantém um cache em disco:
+
+- Definido em `nginx/nginx.conf` (`proxy_cache_path /var/cache/nginx/media ... max_size=2g inactive=30d`).
+- Persistido pelo volume Docker `nginx_cache` (em `docker-compose.yml`).
+- TTL de 7 dias para `200`, 5 minutos para `404`. Resposta da API inclui `Cache-Control: public, max-age=31536000, immutable` (paths são imutáveis por desenho — UUID/timestamp no nome).
+- Cada resposta carrega `X-Cache-Status: MISS|HIT|EXPIRED|...` (auditoria). Cliente:
+  ```bash
+  curl -sI https://seu-dominio/media/covers/<uid>/library/<uuid>-foo.png | grep -i x-cache
+  ```
+- Limpar cache (raro, ex.: emergência):
+  ```bash
+  docker compose exec nginx sh -c 'rm -rf /var/cache/nginx/media/* && nginx -s reload'
+  ```
 
 ## Preparar o pacote (Windows)
 

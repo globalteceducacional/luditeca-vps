@@ -144,6 +144,12 @@ async function main() {
       return reply.code(404).send({ error: 'Arquivo não encontrado.' });
     }
 
+    // Cache HTTP agressivo: ficheiros estão sob caminhos com UUID/timestamp,
+    // efetivamente imutáveis. `public` permite que o Nginx (proxy_cache)
+    // armazene a resposta. `Vary: Accept-Encoding` previne envenenamento do
+    // cache caso a compressão seja ligada no futuro.
+    reply.header('Cache-Control', 'public, max-age=31536000, immutable');
+    reply.header('Vary', 'Accept-Encoding');
     reply.type(contentTypeByExt(absPath));
     return reply.send(createReadStream(absPath));
   });
