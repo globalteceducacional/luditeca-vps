@@ -386,11 +386,51 @@ function bookResponse(b: any) {
   };
 }
 
-function stripHeavyBookFields(resp: Record<string, unknown>) {
-  delete resp.pages;
-  delete resp.pagesV2;
-  delete resp.pages_v2;
-  return resp;
+/**
+ * Projeção leve para listagens (catálogo / busca).
+ * Exclui campos pesados: `pages`, `pagesV2`, `searchIndex`, `linkSlidebook`.
+ * Reduz drasticamente o payload de `GET /books` e `GET /books/search`.
+ */
+const BOOK_CARD_SELECT = {
+  id: true,
+  title: true,
+  author: true,
+  description: true,
+  coverImage: true,
+  createdAt: true,
+  workflowStatus: true,
+  authorId: true,
+  categoryId: true,
+  catalogCollection: true,
+  catalogLevel: true,
+  catalogCharacters: true,
+  catalogKeywords: true,
+  authorRel: { select: { id: true, name: true } },
+  categoryRel: { select: { id: true, name: true } },
+} satisfies Prisma.BookSelect;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function bookCardResponse(b: any) {
+  if (!b) return null;
+  const { authorRel, categoryRel, ...rest } = b;
+  return {
+    ...jsonSafe(rest),
+    authors: authorRel
+      ? { id: Number(authorRel.id), name: authorRel.name }
+      : null,
+    category: categoryRel
+      ? { id: Number(categoryRel.id), name: categoryRel.name }
+      : null,
+  };
+}
+
+/** Lê e clampa `limit` (1..100, default 50) e `offset` (>=0, default 0). */
+function parseLimitOffset(query: Record<string, string | undefined>) {
+  const limitRaw = parseInt(String(query.limit ?? ''), 10);
+  const offsetRaw = parseInt(String(query.offset ?? ''), 10);
+  const limit = Number.isFinite(limitRaw) ? Math.min(100, Math.max(1, limitRaw)) : 50;
+  const skip = Number.isFinite(offsetRaw) ? Math.max(0, offsetRaw) : 0;
+  return { limit, skip };
 }
 
 function tokenizeSearchQuery(raw: string): string[] {
@@ -401,13 +441,30 @@ function tokenizeSearchQuery(raw: string): string[] {
 }
 
 export async function registerBookRoutes(app: FastifyInstance) {
-  app.get('/books', { preHandler: requireAuth }, async (_request, reply) => {
-    const rows = await prisma.book.findMany({
-      orderBy: { createdAt: 'desc' },
-      include: { authorRel: true, categoryRel: true },
-    });
-    return reply.send(rows.map((r) => bookResponse(r)));
-  });
+  app.get<{ Querystring: Record<string, string | undefined> }>(
+    '/books',
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const { limit, skip } = parseLimitOffset(request.query);
+      const [rows, total] = await Promise.all([
+        prisma.book.findMany({
+          orderBy: { createdAt: 'desc' },
+          take: limit,
+          skip,
+          select: BOOK_CARD_SELECT,
+        }),
+        prisma.book.count(),
+      ]);
+      return reply.send(
+        jsonSafe({
+          data: rows.map((r) => bookCardResponse(r)),
+          total,
+          limit,
+          skip,
+        }),
+      );
+    },
+  );
 
   app.get<{ Querystring: Record<string, string | undefined> }>(
     '/books/search',
@@ -478,12 +535,12 @@ export async function registerBookRoutes(app: FastifyInstance) {
           orderBy: { createdAt: 'desc' },
           skip,
           take: limit,
-          include: { authorRel: true, categoryRel: true },
+          select: BOOK_CARD_SELECT,
         }),
         prisma.book.count({ where }),
       ]);
 
-      const data = rows.map((r) => stripHeavyBookFields(bookResponse(r) as Record<string, unknown>));
+      const data = rows.map((r) => bookCardResponse(r));
       return reply.send(jsonSafe({ data, total, limit, skip }));
     },
   );

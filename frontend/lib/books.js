@@ -2,12 +2,38 @@ import { apiFetch } from './apiClient';
 import { normalizeBook } from './apiNormalize';
 import { sanitizeNumericFields } from './sanitizeNumeric';
 
-export const getBooks = async () => {
+/**
+ * Lista o catálogo de livros (cartões leves, sem `pages`/`pages_v2`).
+ *
+ * @param {{ limit?: number, offset?: number }} [params]
+ * @returns {Promise<{ data: any[]|null, total: number, limit?: number, skip?: number, error: { message: string }|null }>}
+ *
+ * Retorno padronizado com `total` para suportar paginação na UI.
+ * Compatível com versões anteriores da API que devolviam array puro.
+ */
+export const getBooks = async (params = {}) => {
   try {
-    const rows = await apiFetch('/books');
-    return { data: rows.map(normalizeBook), error: null };
+    const q = new URLSearchParams();
+    if (params.limit != null) q.set('limit', String(params.limit));
+    if (params.offset != null) q.set('offset', String(params.offset));
+    const qs = q.toString();
+    const row = await apiFetch(qs ? `/books?${qs}` : '/books');
+
+    // Compat: API antiga devolvia array puro.
+    if (Array.isArray(row)) {
+      const data = row.map(normalizeBook);
+      return { data, total: data.length, limit: data.length, skip: 0, error: null };
+    }
+
+    return {
+      data: Array.isArray(row?.data) ? row.data.map(normalizeBook) : [],
+      total: typeof row?.total === 'number' ? row.total : 0,
+      limit: row?.limit,
+      skip: row?.skip,
+      error: null,
+    };
   } catch (e) {
-    return { data: null, error: { message: e.message } };
+    return { data: null, total: 0, error: { message: e.message } };
   }
 };
 
