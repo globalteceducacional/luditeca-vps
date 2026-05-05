@@ -45,6 +45,14 @@ O ficheiro `.env` na raiz de `luditeca-vps` alimenta o `docker-compose.yml` (Pos
    - `PUBLIC_MEDIA_BASE` na API igual a `NEXT_PUBLIC_MEDIA_BASE_URL` (URL que o browser e a API usam para links públicos).
    - `CORS_ORIGIN=https://seu-dominio` (sem barra final).
 
+> ⚠️ **`CORS_ORIGIN` é obrigatório quando `NODE_ENV=production`.** Se a variável não estiver definida (ou estiver vazia / mal formada), a API aborta o arranque com mensagem clara — ver `parseCorsOrigin()` em `backend/src/server.ts`. Cada entrada deve ser `http(s)://host[:port]` sem barra final ou caminho. Múltiplas origens são separadas por vírgula:
+>
+> ```env
+> CORS_ORIGIN="https://luditeca.com,https://www.luditeca.com,https://staging.luditeca.com"
+> ```
+>
+> Em desenvolvimento, sem `CORS_ORIGIN` definido, o default é `http://localhost:3000,http://localhost:8080`.
+
 Guia passo a passo (DNS Hostinger + Nginx no host + Certbot): **`docs/DOMINIO-HOSTINGER.md`**.
 
 ## Segredos
