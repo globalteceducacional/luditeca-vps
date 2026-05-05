@@ -146,10 +146,16 @@ async function main() {
 
     // Cache HTTP agressivo: ficheiros estão sob caminhos com UUID/timestamp,
     // efetivamente imutáveis. `public` permite que o Nginx (proxy_cache)
-    // armazene a resposta. `Vary: Accept-Encoding` previne envenenamento do
-    // cache caso a compressão seja ligada no futuro.
+    // armazene a resposta.
+    //
+    // `Vary` precisa de incluir `Origin` para o cache do navegador segregar
+    // por-origem e respeitar o CORS. Se omitirmos `Origin`, requests entre
+    // `<img>` (sem CORS) e `fetch(..., { mode: 'cors' })` partilham a mesma
+    // entrada de cache: a primeira (sem `Access-Control-Allow-Origin`)
+    // envenena a segunda, que falha com "No 'Access-Control-Allow-Origin'".
+    // `Accept-Encoding` cobre uma futura activação de compressão (`@fastify/compress`).
     reply.header('Cache-Control', 'public, max-age=31536000, immutable');
-    reply.header('Vary', 'Accept-Encoding');
+    reply.header('Vary', 'Accept-Encoding, Origin');
     reply.type(contentTypeByExt(absPath));
     return reply.send(createReadStream(absPath));
   });

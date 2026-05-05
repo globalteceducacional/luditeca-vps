@@ -15,6 +15,7 @@ Para evitar que cada `GET /media/...` chegue à API (que faz `existsSync` + `cre
 - Definido em `nginx/nginx.conf` (`proxy_cache_path /var/cache/nginx/media ... max_size=2g inactive=30d`).
 - Persistido pelo volume Docker `nginx_cache` (em `docker-compose.yml`).
 - TTL de 7 dias para `200`, 5 minutos para `404`. Resposta da API inclui `Cache-Control: public, max-age=31536000, immutable` (paths são imutáveis por desenho — UUID/timestamp no nome).
+- A API envia também `Vary: Accept-Encoding, Origin`. **`Origin` é crítico**: sem ele, os caches (Nginx **e** browser) podem reutilizar uma entrada gravada por um request `<img>` simples (sem header CORS) numa request `fetch(..., { mode: 'cors' })`, fazendo o browser bloquear com `No 'Access-Control-Allow-Origin' header`. Este foi o bug identificado em 2026-05-05 com GIFs no editor V2 (após `gifPlaybackUtils` ter passado a usar `useGifManualCanvas` para todos os GIFs).
 - Cada resposta carrega `X-Cache-Status: MISS|HIT|EXPIRED|...` (auditoria). Cliente:
   ```bash
   curl -sI https://seu-dominio/media/covers/<uid>/library/<uuid>-foo.png | grep -i x-cache
