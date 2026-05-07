@@ -1,13 +1,23 @@
 /**
  * Deteção de GIF e regras para reprodução manual (velocidade / repetições).
- * A reprodução via <img> nativa não permite alterar velocidade nem número de ciclos.
+ *
+ * Nota arquitetural — porque a reprodução é SEMPRE manual:
+ *   1. Konva amostra o pixel buffer do source (`<img>`) no momento do `draw()`
+ *      e não re-amostra a cada frame do GIF; sem orquestração externa, fica
+ *      congelado no primeiro frame.
+ *   2. O `<img>` host onde o browser animaria nativamente é montado com
+ *      tamanho 2×2 px e opacity ≈ 0.02 (invisível); browsers modernos
+ *      suspendem a animação de GIFs em elementos quase invisíveis para
+ *      poupar CPU, deixando o GIF parado mesmo com `Konva.Animation` a
+ *      forçar redraw.
+ *   3. Decoder manual (gifuct-js) num `<canvas>` desenhado frame a frame
+ *      via RAF é determinístico em todos os browsers e ainda permite
+ *      controlar velocidade e número de repetições.
  */
-
-import { clamp, toNum } from '../../lib/editorUtils';
 
 /** Ao importar/colocar um GIF no canvas (biblioteca, arrastar da grelha, etc.). */
 export const DEFAULT_GIF_NODE_PROPS = Object.freeze({
-  gifPlaybackSpeed: 1.05,
+  gifPlaybackSpeed: 1,
   gifInfiniteLoop: true,
   gifRepeatCount: 1,
 });
@@ -61,15 +71,14 @@ export function gifHintFromProps(props) {
 }
 
 /**
- * Quando `true`, usa decodificação frame-a-frame (gifuct-js) em vez de <img>.
- * Velocidade ≠ 1 ou repetição finita exige reprodução manual.
+ * Quando `true`, usa decodificação frame-a-frame (gifuct-js) num `<canvas>`
+ * em vez de `<img>` nativo. Sempre `true` para GIFs: ver nota arquitetural
+ * no topo deste ficheiro.
+ *
+ * O parâmetro `props` é mantido na assinatura para futura extensão (e.g.
+ * desativar animação por opção do utilizador) sem partir os callers.
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars, no-unused-vars
 export function needsManualGifPlayback(props, isGifNode) {
-  if (!isGifNode) return false;
-  const raw = clamp(toNum(props?.gifPlaybackSpeed, 1), 0.25, 4);
-  const speed = Math.round(raw * 1000) / 1000;
-  const infinite = props?.gifInfiniteLoop !== false;
-  if (Math.abs(speed - 1) > 0.01) return true;
-  if (!infinite) return true;
-  return false;
+  return Boolean(isGifNode);
 }

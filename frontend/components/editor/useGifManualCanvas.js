@@ -48,6 +48,9 @@ export function useGifManualCanvas(resolvedUrl, opts, enabled) {
           signal: ac.signal,
           mode: 'cors',
           credentials: 'omit',
+          // Evita cache HTTP do Chrome com entradas antigas (sem CORS) partilhadas
+          // entre `<img>` e `fetch` — causa "No Access-Control-Allow-Origin".
+          cache: 'no-store',
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const buf = await res.arrayBuffer();

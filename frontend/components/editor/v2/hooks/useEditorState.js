@@ -1,9 +1,27 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { MAX_TIMELINE_STEP } from '../../editorConstants';
 
-function deepClone(value) {
-  return JSON.parse(JSON.stringify(value));
-}
+// Issue 03 — imutabilidade estrutural.
+// Antes: cada `patchPage` clonava `pagesV2` inteiro com JSON.parse(JSON.stringify(...));
+// num livro com 80 páginas e 5 MB de pagesV2 isso é desperdício enorme em todo o
+// drag/edit. Agora trabalhamos por referência: a página afectada é shallow-clonada
+// (`draft = { ...oldPage }`), e o snapshot do undo guarda a referência antiga sem
+// clonar. As outras páginas mantêm a mesma referência.
+//
+// Contracto do `patcher`:
+//   - Recebe uma cópia rasa da página (`draft`) e pode reescrever as suas keys
+//     de topo (`nodes`, `meta`, `background`).
+//   - NÃO deve mutar sub-objectos partilhados (ex.: `draft.meta.transition.duration = X`);
+//     em vez disso, faça primeiro `draft.meta = { ...draft.meta }` e só depois
+//     mexa nos campos. Os patchers actuais já seguem este padrão.
+
+const cloneNode = (() => {
+  if (typeof globalThis !== 'undefined' && typeof globalThis.structuredClone === 'function') {
+    return (value) => globalThis.structuredClone(value);
+  }
+  // Fallback para ambientes muito antigos (SSR Node 16-).
+  return (value) => JSON.parse(JSON.stringify(value));
+})();
 
 export default function useEditorState({
   pagesV2,
@@ -31,7 +49,9 @@ export default function useEditorState({
 
   const pushUndoSnapshot = useCallback((pageIndex, pageSnapshot) => {
     if (!pageSnapshot) return;
-    historyRef.current.undo.push({ pageIndex, page: deepClone(pageSnapshot) });
+    // Guarda a referência directa: a página antiga já não vai ser mutada,
+    // porque o `patchPage` cria sempre um novo `draft` para o patcher.
+    historyRef.current.undo.push({ pageIndex, page: pageSnapshot });
     if (historyRef.current.undo.length > 80) {
       historyRef.current.undo.shift();
     }
@@ -41,13 +61,19 @@ export default function useEditorState({
   const patchPage = useCallback((idx, patcher) => {
     setPagesV2((prev) => {
       const base = ensurePagesV2(prev);
-      const next = deepClone(base);
-      if (!next.pages[idx]) return next;
+      const oldPage = base.pages?.[idx];
+      if (!oldPage) return base;
       if (!isApplyingHistoryRef.current) {
-        pushUndoSnapshot(idx, base.pages[idx]);
+        pushUndoSnapshot(idx, oldPage);
       }
-      next.pages[idx] = patcher(next.pages[idx]);
-      return next;
+      // Shallow clone só da página afectada — as restantes mantêm a referência.
+      const draft = { ...oldPage };
+      const result = patcher(draft);
+      const nextPage = result || draft;
+      if (nextPage === oldPage) return base;
+      const newPages = base.pages.slice();
+      newPages[idx] = nextPage;
+      return { ...base, pages: newPages };
     });
     setIsModified(true);
   }, [setPagesV2, ensurePagesV2, pushUndoSnapshot, setIsModified]);
@@ -80,7 +106,7 @@ export default function useEditorState({
 
   const duplicateNodeToCurrentPage = useCallback((nodeLike) => {
     if (!nodeLike) return;
-    const copy = deepClone(nodeLike);
+    const copy = cloneNode(nodeLike);
     copy.id = String(Date.now());
     if (copy.transform) {
       copy.transform = {
@@ -101,18 +127,17 @@ export default function useEditorState({
   const addPage = useCallback((metaPatch = {}) => {
     setPagesV2((prev) => {
       const base = ensurePagesV2(prev);
-      const next = deepClone(base);
       const baseMeta =
         metaPatch && typeof metaPatch === 'object' && Object.keys(metaPatch).length
           ? { orientation: 'landscape', ...metaPatch }
           : { orientation: 'landscape' };
-      next.pages.push({
+      const newPage = {
         id: String(Date.now()),
         background: null,
         nodes: [],
         meta: baseMeta,
-      });
-      return next;
+      };
+      return { ...base, pages: [...(base.pages || []), newPage] };
     });
     setCurrentPage((v) => v + 1);
     setIsModified(true);
@@ -125,10 +150,10 @@ export default function useEditorState({
       const from = Math.max(0, Math.min(base.pages.length - 1, Math.trunc(Number(fromIndex))));
       const to = Math.max(0, Math.min(base.pages.length - 1, Math.trunc(Number(toIndex))));
       if (from === to) return base;
-      const next = deepClone(base);
-      const [moved] = next.pages.splice(from, 1);
-      next.pages.splice(to, 0, moved);
-      const newIdx = next.pages.findIndex((p) => p.id === moved.id);
+      const newPages = base.pages.slice();
+      const [moved] = newPages.splice(from, 1);
+      newPages.splice(to, 0, moved);
+      const newIdx = newPages.findIndex((p) => p.id === moved.id);
       if (typeof requestAnimationFrame === 'function') {
         requestAnimationFrame(() => {
           if (newIdx >= 0) setCurrentPage(newIdx);
@@ -136,7 +161,7 @@ export default function useEditorState({
       } else if (newIdx >= 0) {
         setCurrentPage(newIdx);
       }
-      return next;
+      return { ...base, pages: newPages };
     });
     setIsModified(true);
   }, [setPagesV2, ensurePagesV2, setCurrentPage, setIsModified]);
@@ -144,10 +169,10 @@ export default function useEditorState({
   const deletePage = useCallback(() => {
     setPagesV2((prev) => {
       const base = ensurePagesV2(prev);
-      if (base.pages.length <= 1) return base;
-      const next = deepClone(base);
-      next.pages.splice(currentPage, 1);
-      return next;
+      if (!Array.isArray(base.pages) || base.pages.length <= 1) return base;
+      const newPages = base.pages.slice();
+      newPages.splice(currentPage, 1);
+      return { ...base, pages: newPages };
     });
     setCurrentPage((v) => Math.max(0, v - 1));
     setSelectedNodeId(null);
@@ -157,16 +182,19 @@ export default function useEditorState({
   const applyHistoryEntry = useCallback((entry, toKey) => {
     setPagesV2((prev) => {
       const base = ensurePagesV2(prev);
-      if (!base.pages?.[entry.pageIndex]) return base;
-      const next = deepClone(base);
-      const beforeTarget = deepClone(base.pages[entry.pageIndex]);
-      historyRef.current[toKey].push({ pageIndex: entry.pageIndex, page: beforeTarget });
+      const oldPage = base.pages?.[entry.pageIndex];
+      if (!oldPage) return base;
+      // Empurra a referência actual para a outra pilha (sem clone).
+      historyRef.current[toKey].push({ pageIndex: entry.pageIndex, page: oldPage });
       if (historyRef.current[toKey].length > 80) {
         historyRef.current[toKey].shift();
       }
       isApplyingHistoryRef.current = true;
-      next.pages[entry.pageIndex] = deepClone(entry.page);
-      return next;
+      // Restaura a referência guardada no entry — fica imutável até ao próximo
+      // patchPage, que cria um draft separado e não toca nesta referência.
+      const newPages = base.pages.slice();
+      newPages[entry.pageIndex] = entry.page;
+      return { ...base, pages: newPages };
     });
     setCurrentPage(entry.pageIndex);
     setSelectedNodeId(null);

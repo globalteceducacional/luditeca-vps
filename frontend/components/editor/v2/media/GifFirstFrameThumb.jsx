@@ -20,7 +20,11 @@ export default function GifFirstFrameThumb({ src, storage, className = '', alt =
     (async () => {
       try {
         if (typeof ImageDecoder !== 'undefined') {
-          const res = await fetch(url);
+          const res = await fetch(url, {
+            mode: 'cors',
+            credentials: 'omit',
+            cache: 'no-store',
+          });
           if (!res.ok) throw new Error('fetch');
           const buf = await res.arrayBuffer();
           const dec = new ImageDecoder({ data: buf, type: 'image/gif' });

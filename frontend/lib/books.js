@@ -2,12 +2,38 @@ import { apiFetch } from './apiClient';
 import { normalizeBook } from './apiNormalize';
 import { sanitizeNumericFields } from './sanitizeNumeric';
 
-export const getBooks = async () => {
+/**
+ * Lista o catálogo de livros (cartões leves, sem `pages`/`pages_v2`).
+ *
+ * @param {{ limit?: number, offset?: number }} [params]
+ * @returns {Promise<{ data: any[]|null, total: number, limit?: number, skip?: number, error: { message: string }|null }>}
+ *
+ * Retorno padronizado com `total` para suportar paginação na UI.
+ * Compatível com versões anteriores da API que devolviam array puro.
+ */
+export const getBooks = async (params = {}) => {
   try {
-    const rows = await apiFetch('/books');
-    return { data: rows.map(normalizeBook), error: null };
+    const q = new URLSearchParams();
+    if (params.limit != null) q.set('limit', String(params.limit));
+    if (params.offset != null) q.set('offset', String(params.offset));
+    const qs = q.toString();
+    const row = await apiFetch(qs ? `/books?${qs}` : '/books');
+
+    // Compat: API antiga devolvia array puro.
+    if (Array.isArray(row)) {
+      const data = row.map(normalizeBook);
+      return { data, total: data.length, limit: data.length, skip: 0, error: null };
+    }
+
+    return {
+      data: Array.isArray(row?.data) ? row.data.map(normalizeBook) : [],
+      total: typeof row?.total === 'number' ? row.total : 0,
+      limit: row?.limit,
+      skip: row?.skip,
+      error: null,
+    };
   } catch (e) {
-    return { data: null, error: { message: e.message } };
+    return { data: null, total: 0, error: { message: e.message } };
   }
 };
 
@@ -37,9 +63,22 @@ export const searchBooks = async (params = {}) => {
   }
 };
 
-export const getBook = async (id) => {
+/**
+ * Carrega um livro pelo id.
+ *
+ * @param {string|number} id
+ * @param {{ view?: 'v2'|'legacy'|'both' }} [opts]
+ *   - `view='v2'` (default): a API retorna apenas `pages_v2` hidratado e
+ *     omite o `pages` legado quando há v2 — reduz drasticamente o payload
+ *     e o número de presigns. Editor v2 só precisa de v2.
+ *   - `view='legacy'`: força só `pages` legado.
+ *   - `view='both'`: traz os dois (compatibilidade com clientes antigos).
+ */
+export const getBook = async (id, opts = {}) => {
   try {
-    const row = await apiFetch(`/books/${id}`);
+    const view = opts.view || 'v2';
+    const qs = new URLSearchParams({ view }).toString();
+    const row = await apiFetch(`/books/${id}?${qs}`);
     return { data: normalizeBook(row), error: null };
   } catch (e) {
     return { data: null, error: { message: e.message } };
@@ -94,14 +133,20 @@ export const updateBook = async (id, bookData) => {
       sanitizedData.pages_v2 = sanitizedData.pagesV2;
       delete sanitizedData.pagesV2;
     }
-    const dataSize = new Blob([JSON.stringify(sanitizedData)]).size;
-    if (dataSize > 1000000) {
-      return {
-        data: null,
-        error: {
-          message: `Dados muito grandes (${Math.round((dataSize / 1024 / 1024) * 100) / 100}MB). Remova algumas imagens ou divida em mais livros.`,
-        },
-      };
+    // Issue 04 — limite de 1 MB removido. O backend aceita até 600 MB
+    // (`bodyLimit` em server.ts) e responde comprimido (@fastify/compress).
+    // Acima de 5 MB emitimos um warn em dev para flaggar livros que provavelmente
+    // beneficiam da migração para `book_pages`/`book_page_nodes` (Issue 05,
+    // Sprint 4). Não bloqueamos: o utilizador final não deve perder trabalho.
+    if (typeof window !== 'undefined') {
+      const dataSize = new Blob([JSON.stringify(sanitizedData)]).size;
+      if (dataSize > 5 * 1024 * 1024) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[updateBook] payload grande: ${(dataSize / 1024 / 1024).toFixed(2)} MB. ` +
+            'Considera dividir o livro ou esperar pela migração para tabelas relacionais (Issue 05).',
+        );
+      }
     }
     const row = await apiFetch(`/books/${id}`, {
       method: 'PATCH',

@@ -18,6 +18,8 @@ const WORKFLOW_OPTIONS = [
   { value: 'archived', label: 'Arquivo' },
 ];
 
+const PAGE_SIZE = 50;
+
 export default function Books() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
@@ -33,6 +35,9 @@ export default function Books() {
   const [advKeyword, setAdvKeyword] = useState('');
   const [advLevel, setAdvLevel] = useState('');
   const [showSearchFilters, setShowSearchFilters] = useState(false);
+  // Paginação 1-based; `total` é o total no servidor (quando paginado).
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
 
   const hasActiveSearch =
     Boolean(searchTerm.trim()) ||
@@ -76,13 +81,19 @@ export default function Books() {
       setLoading(true);
       setError(null);
       let data = [];
+      let nextTotal = 0;
       if (!serverSearch) {
-        const { data: rows, error } = await getBooks();
+        const offset = Math.max(0, (page - 1) * PAGE_SIZE);
+        const { data: rows, total: srvTotal, error } = await getBooks({
+          limit: PAGE_SIZE,
+          offset,
+        });
         if (error) throw error;
         data = rows || [];
-        devLog('Livros carregados:', data);
+        nextTotal = typeof srvTotal === 'number' ? srvTotal : data.length;
+        devLog('Livros carregados:', { count: data.length, total: nextTotal, page });
       } else {
-        const { data: rows, error } = await searchBooks({
+        const { data: rows, total: srvTotal, error } = await searchBooks({
           q: searchTerm.trim(),
           character: advCharacter.trim() || undefined,
           collection: advCollection.trim() || undefined,
@@ -92,16 +103,18 @@ export default function Books() {
         });
         if (error) throw error;
         data = rows || [];
-        devLog('Busca catálogo:', { total: data.length });
+        nextTotal = typeof srvTotal === 'number' ? srvTotal : data.length;
+        devLog('Busca catálogo:', { total: nextTotal });
       }
       setBooks(mapBooksWithCoverUrls(data));
+      setTotal(nextTotal);
     } catch (err) {
       console.error('Erro ao carregar livros:', err);
       setError('Falha ao carregar os livros. Por favor, tente novamente.');
     } finally {
       setLoading(false);
     }
-  }, [user, searchTerm, advCharacter, advCollection, advKeyword, advLevel]);
+  }, [user, searchTerm, advCharacter, advCollection, advKeyword, advLevel, page]);
 
   useEffect(() => {
     if (!user) return undefined;
@@ -110,6 +123,11 @@ export default function Books() {
     }, 400);
     return () => window.clearTimeout(t);
   }, [user, loadBooksList]);
+
+  // Reset da paginação quando filtros de busca mudam (debounce já é aplicado em loadBooksList).
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm, advCharacter, advCollection, advKeyword, advLevel]);
   
   // Função para excluir um livro
   const handleDeleteBook = async (id) => {
@@ -151,7 +169,9 @@ export default function Books() {
     }
   };
   
-  if (loading) {
+  // Full-loading só na primeira leitura; mudanças de página/busca mostram os
+  // cartões anteriores e desabilitam os controles enquanto recarregam.
+  if (loading && books.length === 0) {
     return (
       <Layout>
         <div className="flex items-center justify-center h-64">
@@ -288,6 +308,7 @@ export default function Books() {
               </button>
             </div>
           ) : (
+            <>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
               {books.map(book => (
                 <div key={book.id} className="bg-white rounded-lg shadow-sm overflow-hidden">
@@ -356,6 +377,43 @@ export default function Books() {
                 </div>
               ))}
             </div>
+            {/* Paginação só faz sentido quando não há busca ativa (search devolve top 100 sem paginação cliente). */}
+            {!hasActiveSearch && total > PAGE_SIZE ? (
+              <div className="mt-6 flex items-center justify-between gap-3 text-sm text-gray-700">
+                <span>
+                  Mostrando{' '}
+                  <strong>
+                    {Math.min(total, (page - 1) * PAGE_SIZE + 1)}-
+                    {Math.min(total, (page - 1) * PAGE_SIZE + books.length)}
+                  </strong>{' '}
+                  de <strong>{total}</strong>
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page <= 1 || loading}
+                    className="rounded border px-3 py-1 disabled:cursor-not-allowed disabled:opacity-50 hover:bg-gray-50"
+                  >
+                    Anterior
+                  </button>
+                  <span className="px-2 text-gray-500">
+                    Página {page} de {Math.max(1, Math.ceil(total / PAGE_SIZE))}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPage((p) => (p * PAGE_SIZE < total ? p + 1 : p))
+                    }
+                    disabled={page * PAGE_SIZE >= total || loading}
+                    className="rounded border px-3 py-1 disabled:cursor-not-allowed disabled:opacity-50 hover:bg-gray-50"
+                  >
+                    Próxima
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            </>
           )}
         </div>
       </Layout>

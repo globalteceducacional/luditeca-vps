@@ -231,6 +231,9 @@ export default function EditBookV2() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isModified, setIsModified] = useState(false);
+  // Issue 04 — autosave: timestamp da última gravação bem-sucedida (ms epoch).
+  // null enquanto não houve nenhum save desde o load.
+  const [lastSavedAt, setLastSavedAt] = useState(null);
   const [showRulers, setShowRulers] = useState(true);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [leftTab, setLeftTab] = useState('pages');
@@ -993,6 +996,7 @@ export default function EditBookV2() {
     setSaving(false);
     if (!error) {
       setIsModified(false);
+      setLastSavedAt(Date.now());
       if (typeof window !== 'undefined') {
         const key = getDraftStorageKey(id);
         if (key) window.localStorage.removeItem(key);
@@ -1042,6 +1046,43 @@ export default function EditBookV2() {
   useEffect(() => {
     saveBookRef.current = saveBook;
   }, [saveBook]);
+
+  // Issue 04 — autosave: debounce de 5 s desde a última edição.
+  // Resets a cada nova edição (deps: pagesV2, title, etc.). Não dispara
+  // se um save manual já estiver em curso (`saving`), se o livro ainda
+  // está a carregar (`loading`), ou se um upload de capa/anexo está em
+  // curso (evita race com PATCHes paralelos do upload).
+  useEffect(() => {
+    if (!isModified) return;
+    if (saving || loading) return;
+    if (uploadingCover || uploadingAttachment) return;
+    if (!book || !id || !pagesV2) return;
+    const t = window.setTimeout(() => {
+      if (typeof saveBookRef.current === 'function') {
+        void saveBookRef.current();
+      }
+    }, 5000);
+    return () => window.clearTimeout(t);
+  }, [
+    isModified,
+    saving,
+    loading,
+    uploadingCover,
+    uploadingAttachment,
+    book,
+    id,
+    pagesV2,
+    title,
+    description,
+    authorId,
+    categoryId,
+    coverImage,
+    workflowStatus,
+    catalogCollection,
+    catalogLevel,
+    catalogKeywordsStr,
+    catalogCharactersStr,
+  ]);
 
   const playPause = useCallback(() => {
     if (isPlaying) {
@@ -1203,6 +1244,27 @@ export default function EditBookV2() {
                 <span className="hidden sm:inline">Guias</span>
               </button>
             ) : null}
+            {/* Issue 04 — indicador de estado do save. Prioridade: a guardar > por guardar > guardado. */}
+            <div
+              className="hidden text-xs sm:block"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              {saving ? (
+                <span className="text-amber-300">Guardando…</span>
+              ) : isModified ? (
+                <span className="text-slate-500">Alterações por guardar</span>
+              ) : lastSavedAt ? (
+                <span className="text-slate-400">
+                  Salvo às{' '}
+                  {new Date(lastSavedAt).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </span>
+              ) : null}
+            </div>
             <button
               type="button"
               onClick={saveBook}

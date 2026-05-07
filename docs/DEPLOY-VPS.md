@@ -6,7 +6,25 @@
 - **Armazenamento de ficheiros**: disco local na API (`STORAGE_DRIVER=local`, volume Docker `luditeca_storage` em `/app/storage`). Pastas por bucket (`covers`, `pages`, etc.) criadas automaticamente nos uploads.
 - **backend** (`./backend`, Docker): Node 20, Fastify, Prisma (`JWT_SECRET`, `DATABASE_URL`, `PUBLIC_MEDIA_BASE`, `CORS_ORIGIN`).
 - **frontend** (`./frontend`, Docker): Next.js 14 `output: 'standalone'`, variáveis `NEXT_PUBLIC_API_URL` e `NEXT_PUBLIC_MEDIA_BASE_URL` **no momento do build**.
-- **Nginx**: TLS, `client_max_body_size 600m`, proxy `/api/` → API, `/media/` → API (ficheiros locais), `/` → Next.
+- **Nginx**: TLS, `client_max_body_size 600m`, proxy `/api/` → API, `/media/` → API (ficheiros locais, com `proxy_cache` em disco), `/` → Next.
+
+### Cache de mídia (Issue 14)
+
+Para evitar que cada `GET /media/...` chegue à API (que faz `existsSync` + `createReadStream` em disco a cada pedido), o Nginx mantém um cache em disco:
+
+- Definido em `nginx/nginx.conf` (`proxy_cache_path /var/cache/nginx/media ... max_size=2g inactive=30d`).
+- Persistido pelo volume Docker `nginx_cache` (em `docker-compose.yml`).
+- TTL de 7 dias para `200`, 5 minutos para `404`. Em **produção** (`NODE_ENV=production`) a API envia `Cache-Control: public, max-age=31536000, immutable` (paths são imutáveis por desenho — UUID/timestamp no nome).
+- Em **desenvolvimento** a API envia `Cache-Control: no-store`. Razão: sem Nginx em frente, o Chrome tenta gravar tudo no disk cache; ficheiros >1.5 MB batem no limite single-entry e dão `ERR_CACHE_WRITE_FAILURE`, abortando a request. Pior, o Chrome partilhava entradas de cache entre `<img>` (sem CORS) e `fetch(..., { mode: 'cors' })`, fazendo a segunda falhar com `No 'Access-Control-Allow-Origin' header`. Em dev o cache é contraproducente (estamos a iterar); em prod o Nginx absorve a carga.
+- A API envia também `Vary: Accept-Encoding, Origin` em ambos os ambientes. **`Origin` é defesa em profundidade**: caches partilhados (corp proxies, edge networks) podem ignorar `no-store` mas respeitam `Vary`, segregando entradas por-origem. Este foi o bug identificado em 2026-05-05 com GIFs no editor V2 (após `gifPlaybackUtils` ter passado a usar `useGifManualCanvas` para todos os GIFs).
+- Cada resposta carrega `X-Cache-Status: MISS|HIT|EXPIRED|...` (auditoria). Cliente:
+  ```bash
+  curl -sI https://seu-dominio/media/covers/<uid>/library/<uuid>-foo.png | grep -i x-cache
+  ```
+- Limpar cache (raro, ex.: emergência):
+  ```bash
+  docker compose exec nginx sh -c 'rm -rf /var/cache/nginx/media/* && nginx -s reload'
+  ```
 
 ## Preparar o pacote (Windows)
 
@@ -44,6 +62,14 @@ O ficheiro `.env` na raiz de `luditeca-vps` alimenta o `docker-compose.yml` (Pos
    - `NEXT_PUBLIC_MEDIA_BASE_URL=https://seu-dominio/media`
    - `PUBLIC_MEDIA_BASE` na API igual a `NEXT_PUBLIC_MEDIA_BASE_URL` (URL que o browser e a API usam para links públicos).
    - `CORS_ORIGIN=https://seu-dominio` (sem barra final).
+
+> ⚠️ **`CORS_ORIGIN` é obrigatório quando `NODE_ENV=production`.** Se a variável não estiver definida (ou estiver vazia / mal formada), a API aborta o arranque com mensagem clara — ver `parseCorsOrigin()` em `backend/src/server.ts`. Cada entrada deve ser `http(s)://host[:port]` sem barra final ou caminho. Múltiplas origens são separadas por vírgula:
+>
+> ```env
+> CORS_ORIGIN="https://luditeca.com,https://www.luditeca.com,https://staging.luditeca.com"
+> ```
+>
+> Em desenvolvimento, sem `CORS_ORIGIN` definido, o default é `http://localhost:3000,http://localhost:8080`.
 
 Guia passo a passo (DNS Hostinger + Nginx no host + Certbot): **`docs/DOMINIO-HOSTINGER.md`**.
 

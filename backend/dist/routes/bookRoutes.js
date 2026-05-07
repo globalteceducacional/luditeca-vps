@@ -1,4 +1,5 @@
 import { BookWorkflowStatus } from '@prisma/client';
+import pLimit from 'p-limit';
 import { prisma } from '../lib/prisma.js';
 import { writeAuditLog } from '../lib/auditLog.js';
 import { jsonSafe } from '../lib/serialize.js';
@@ -6,6 +7,14 @@ import { requireCmsEditor } from '../plugins/auth.js';
 import { requireAuth } from '../plugins/auth.js';
 import { copyObject, deletePrefix, deleteObject, listAllKeys, presignedGetUrl, } from '../lib/s3.js';
 import { isPagesV2, migratePagesLegacyToV2 } from '../lib/pagesV2/migrate.js';
+import { parseCatalogStringArrayFromBody, persistBookSearchIndex } from '../lib/bookSearchIndex.js';
+/**
+ * Concorrência máxima para presigns (S3/MinIO `GET`) numa única requisição.
+ * 16 dá bom paralelismo sem saturar o backend de objectos para livros com
+ * dezenas de mídias. Aplicado **apenas** ao redor de `presignedGetUrl`,
+ * nunca à iteração de páginas/elementos (evita deadlock por re-entrância).
+ */
+const PRESIGN_CONCURRENCY = 16;
 function toBigIntOrNull(v) {
     if (v === null || v === undefined || v === '')
         return null;
@@ -70,11 +79,13 @@ async function hydrateLegacyPagesMediaUrls(pages, cache) {
     if (!Array.isArray(pages))
         return pages;
     const next = JSON.parse(JSON.stringify(pages));
-    for (const page of next) {
+    const limit = pLimit(PRESIGN_CONCURRENCY);
+    const resolve = (storage) => limit(() => resolveStorageUrl(cache, storage));
+    await Promise.all(next.map(async (page) => {
         const bg = isRecord(page.background) ? page.background : null;
         if (bg) {
             const bgStorage = bg.storage ?? parseStorageFromUrl(bg.url);
-            const signedBg = await resolveStorageUrl(cache, bgStorage);
+            const signedBg = await resolve(bgStorage);
             if (signedBg)
                 bg.url = signedBg;
             if (!bg.storage && bgStorage)
@@ -82,30 +93,32 @@ async function hydrateLegacyPagesMediaUrls(pages, cache) {
             page.background = bg;
         }
         const elements = Array.isArray(page.elements) ? page.elements : [];
-        for (const element of elements) {
+        await Promise.all(elements.map(async (element) => {
             if (!isRecord(element))
-                continue;
+                return;
             const fallbackStorage = parseStorageFromUrl(element.content);
-            const signedEl = await resolveStorageUrl(cache, element.storage ?? element.contentStorage ?? fallbackStorage);
+            const signedEl = await resolve(element.storage ?? element.contentStorage ?? fallbackStorage);
             if (signedEl && element.type === 'image') {
                 element.content = signedEl;
             }
             if (!element.storage && fallbackStorage && element.type === 'image') {
                 element.storage = fallbackStorage;
             }
-        }
-    }
+        }));
+    }));
     return next;
 }
 async function hydratePagesV2MediaUrls(v2, cache) {
     if (!isPagesV2(v2))
         return v2;
     const next = JSON.parse(JSON.stringify(v2));
-    for (const page of next.pages) {
+    const limit = pLimit(PRESIGN_CONCURRENCY);
+    const resolve = (storage) => limit(() => resolveStorageUrl(cache, storage));
+    await Promise.all(next.pages.map(async (page) => {
         const bg = isRecord(page.background) ? page.background : null;
         if (bg) {
             const bgStorage = bg.storage ?? parseStorageFromUrl(bg.url);
-            const signedBg = await resolveStorageUrl(cache, bgStorage);
+            const signedBg = await resolve(bgStorage);
             if (signedBg)
                 bg.url = signedBg;
             if (!bg.storage && bgStorage)
@@ -113,30 +126,38 @@ async function hydratePagesV2MediaUrls(v2, cache) {
             page.background = bg;
         }
         const nodes = Array.isArray(page.nodes) ? page.nodes : [];
-        for (const node of nodes) {
+        await Promise.all(nodes.map(async (node) => {
             if (!isRecord(node) || (node.type !== 'image' && node.type !== 'video'))
-                continue;
+                return;
             const props = isRecord(node.props) ? node.props : null;
             if (!props)
-                continue;
+                return;
             const nodeStorage = props.storage ?? parseStorageFromUrl(props.content);
-            const signedNode = await resolveStorageUrl(cache, nodeStorage);
+            const signedNode = await resolve(nodeStorage);
             if (signedNode)
                 props.content = signedNode;
             if (!props.storage && nodeStorage)
                 props.storage = nodeStorage;
             if (node.type === 'video') {
                 const posterStorage = props.posterStorage ?? parseStorageFromUrl(props.poster);
-                const signedPoster = await resolveStorageUrl(cache, posterStorage);
+                const signedPoster = await resolve(posterStorage);
                 if (signedPoster)
                     props.poster = signedPoster;
                 if (!props.posterStorage && posterStorage)
                     props.posterStorage = posterStorage;
             }
             node.props = props;
-        }
-    }
+        }));
+    }));
     return next;
+}
+function parseBookDetailView(raw) {
+    const s = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+    if (s === 'legacy')
+        return 'legacy';
+    if (s === 'both')
+        return 'both';
+    return 'v2';
 }
 async function finalizeImportSession({ userId, importSessionId, bookId, }) {
     const srcBase = `${userId}/imports/${importSessionId}`;
@@ -321,37 +342,184 @@ async function signLegacyPagesMediaUrls(pages) {
 function bookResponse(b) {
     if (!b)
         return null;
+    const { authorRel, categoryRel, searchIndex: _searchIndex, ...rest } = b;
+    return {
+        ...jsonSafe(rest),
+        authors: authorRel
+            ? { id: Number(authorRel.id), name: authorRel.name }
+            : null,
+        category: categoryRel
+            ? { id: Number(categoryRel.id), name: categoryRel.name }
+            : null,
+    };
+}
+/**
+ * Projeção leve para listagens (catálogo / busca).
+ * Exclui campos pesados: `pages`, `pagesV2`, `searchIndex`, `linkSlidebook`.
+ * Reduz drasticamente o payload de `GET /books` e `GET /books/search`.
+ */
+const BOOK_CARD_SELECT = {
+    id: true,
+    title: true,
+    author: true,
+    description: true,
+    coverImage: true,
+    createdAt: true,
+    workflowStatus: true,
+    authorId: true,
+    categoryId: true,
+    catalogCollection: true,
+    catalogLevel: true,
+    catalogCharacters: true,
+    catalogKeywords: true,
+    authorRel: { select: { id: true, name: true } },
+    categoryRel: { select: { id: true, name: true } },
+};
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function bookCardResponse(b) {
+    if (!b)
+        return null;
     const { authorRel, categoryRel, ...rest } = b;
     return {
         ...jsonSafe(rest),
         authors: authorRel
             ? { id: Number(authorRel.id), name: authorRel.name }
             : null,
+        category: categoryRel
+            ? { id: Number(categoryRel.id), name: categoryRel.name }
+            : null,
     };
 }
+/** Lê e clampa `limit` (1..100, default 50) e `offset` (>=0, default 0). */
+function parseLimitOffset(query) {
+    const limitRaw = parseInt(String(query.limit ?? ''), 10);
+    const offsetRaw = parseInt(String(query.offset ?? ''), 10);
+    const limit = Number.isFinite(limitRaw) ? Math.min(100, Math.max(1, limitRaw)) : 50;
+    const skip = Number.isFinite(offsetRaw) ? Math.max(0, offsetRaw) : 0;
+    return { limit, skip };
+}
+function tokenizeSearchQuery(raw) {
+    return String(raw || '')
+        .split(/\s+/)
+        .map((t) => t.trim())
+        .filter((t) => t.length > 0);
+}
 export async function registerBookRoutes(app) {
-    app.get('/books', { preHandler: requireAuth }, async (_request, reply) => {
-        const rows = await prisma.book.findMany({
-            orderBy: { createdAt: 'desc' },
-            include: { authorRel: true },
-        });
-        return reply.send(rows.map((r) => bookResponse(r)));
+    app.get('/books', { preHandler: requireAuth }, async (request, reply) => {
+        const { limit, skip } = parseLimitOffset(request.query);
+        const [rows, total] = await Promise.all([
+            prisma.book.findMany({
+                orderBy: { createdAt: 'desc' },
+                take: limit,
+                skip,
+                select: BOOK_CARD_SELECT,
+            }),
+            prisma.book.count(),
+        ]);
+        return reply.send(jsonSafe({
+            data: rows.map((r) => bookCardResponse(r)),
+            total,
+            limit,
+            skip,
+        }));
+    });
+    app.get('/books/search', { preHandler: requireAuth }, async (request, reply) => {
+        const q = typeof request.query.q === 'string' ? request.query.q : '';
+        const character = typeof request.query.character === 'string' ? request.query.character : '';
+        const collection = typeof request.query.collection === 'string' ? request.query.collection : '';
+        const keyword = typeof request.query.keyword === 'string' ? request.query.keyword : '';
+        const level = typeof request.query.level === 'string' ? request.query.level : '';
+        const limit = Math.min(100, Math.max(1, parseInt(String(request.query.limit || '50'), 10) || 50));
+        const skip = Math.max(0, parseInt(String(request.query.offset || '0'), 10) || 0);
+        const and = [];
+        for (const t of tokenizeSearchQuery(q)) {
+            and.push({
+                OR: [
+                    { searchIndex: { contains: t, mode: 'insensitive' } },
+                    { title: { contains: t, mode: 'insensitive' } },
+                ],
+            });
+        }
+        const ch = character.trim();
+        if (ch) {
+            and.push({
+                OR: [{ searchIndex: { contains: ch, mode: 'insensitive' } }],
+            });
+        }
+        const col = collection.trim();
+        if (col) {
+            and.push({
+                OR: [
+                    { catalogCollection: { contains: col, mode: 'insensitive' } },
+                    { searchIndex: { contains: col, mode: 'insensitive' } },
+                ],
+            });
+        }
+        const kw = keyword.trim();
+        if (kw) {
+            and.push({
+                OR: [{ searchIndex: { contains: kw, mode: 'insensitive' } }],
+            });
+        }
+        const lv = level.trim();
+        if (lv) {
+            and.push({
+                OR: [
+                    { catalogLevel: { contains: lv, mode: 'insensitive' } },
+                    { searchIndex: { contains: lv, mode: 'insensitive' } },
+                ],
+            });
+        }
+        const where = and.length > 0 ? { AND: and } : {};
+        const [rows, total] = await Promise.all([
+            prisma.book.findMany({
+                where,
+                orderBy: { createdAt: 'desc' },
+                skip,
+                take: limit,
+                select: BOOK_CARD_SELECT,
+            }),
+            prisma.book.count({ where }),
+        ]);
+        const data = rows.map((r) => bookCardResponse(r));
+        return reply.send(jsonSafe({ data, total, limit, skip }));
     });
     app.get('/books/:id', { preHandler: requireAuth }, async (request, reply) => {
         const id = BigInt(request.params.id);
+        const view = parseBookDetailView(request.query.view);
         const b = await prisma.book.findUnique({
             where: { id },
-            include: { authorRel: true },
+            include: { authorRel: true, categoryRel: true },
         });
         if (!b)
             return reply.code(404).send({ error: 'Livro não encontrado.' });
         const resp = bookResponse(b);
         const mediaUrlCache = new Map();
-        resp.pages = await hydrateLegacyPagesMediaUrls(resp.pages, mediaUrlCache);
-        resp.pages_v2 = await hydratePagesV2MediaUrls((resp.pagesV2 ?? resp.pages_v2), mediaUrlCache);
-        const pagesV2 = (resp.pagesV2 ?? resp.pages_v2);
+        const pagesV2Raw = (resp.pagesV2 ?? resp.pages_v2);
+        const hasV2 = isPagesV2(pagesV2Raw);
+        // Decidir o que precisa ser hidratado conforme `view` e disponibilidade.
+        // Modo `v2` quando há v2: só hidrata v2 e omite o legado (economiza
+        // dezenas de presigns + payload). Sem v2, faz fallback para legacy.
+        const hydrateV2 = (view === 'v2' || view === 'both') && hasV2;
+        const hydrateLegacy = view === 'legacy' || view === 'both' || (view === 'v2' && !hasV2);
+        const [hydratedV2, hydratedLegacy] = await Promise.all([
+            hydrateV2
+                ? hydratePagesV2MediaUrls(pagesV2Raw, mediaUrlCache)
+                : Promise.resolve(pagesV2Raw),
+            hydrateLegacy
+                ? hydrateLegacyPagesMediaUrls(resp.pages, mediaUrlCache)
+                : Promise.resolve(resp.pages),
+        ]);
+        // Sempre expor a chave canônica `pages_v2` no payload (snake_case),
+        // removendo o duplicado camelCase que vem do Prisma.
+        delete resp.pagesV2;
+        resp.pages_v2 = hydratedV2;
+        resp.pages = hydratedLegacy;
+        // Modo `v2` com v2 disponível: omite o legado para reduzir payload.
+        if (view === 'v2' && hasV2) {
+            delete resp.pages;
+        }
         const pagesLegacy = resp.pages;
-        const hasV2 = isPagesV2(pagesV2);
         if (!hasV2 && Array.isArray(pagesLegacy) && pagesLegacy.length > 0) {
             // Não salvamos no GET para evitar efeitos colaterais.
             resp.needsMigration = true;
@@ -385,9 +553,41 @@ export async function registerBookRoutes(app) {
         if (pagesV2 != null) {
             createData.pagesV2 = pagesV2;
         }
+        if ('catalog_characters' in body || 'catalogCharacters' in body) {
+            const raw = body.catalog_characters ?? body.catalogCharacters;
+            if (raw === null) {
+                createData.catalogCharacters = null;
+            }
+            else {
+                const arr = parseCatalogStringArrayFromBody(raw);
+                if (arr !== undefined)
+                    createData.catalogCharacters = arr;
+            }
+        }
+        if ('catalog_keywords' in body || 'catalogKeywords' in body) {
+            const raw = body.catalog_keywords ?? body.catalogKeywords;
+            if (raw === null) {
+                createData.catalogKeywords = null;
+            }
+            else {
+                const arr = parseCatalogStringArrayFromBody(raw);
+                if (arr !== undefined)
+                    createData.catalogKeywords = arr;
+            }
+        }
+        if ('catalog_collection' in body || 'catalogCollection' in body) {
+            const v = body.catalog_collection ?? body.catalogCollection;
+            createData.catalogCollection =
+                v == null || String(v).trim() === '' ? null : String(v).trim();
+        }
+        if ('catalog_level' in body || 'catalogLevel' in body) {
+            const v = body.catalog_level ?? body.catalogLevel;
+            createData.catalogLevel =
+                v == null || String(v).trim() === '' ? null : String(v).trim();
+        }
         const created = await prisma.book.create({
             data: createData,
-            include: { authorRel: true },
+            include: { authorRel: true, categoryRel: true },
         });
         let responseBook = created;
         if (importSessionId) {
@@ -419,12 +619,13 @@ export async function registerBookRoutes(app) {
                 });
                 const refreshed = await prisma.book.findUnique({
                     where: { id: BigInt(created.id) },
-                    include: { authorRel: true },
+                    include: { authorRel: true, categoryRel: true },
                 });
                 if (refreshed)
                     responseBook = refreshed;
             }
         }
+        await persistBookSearchIndex(BigInt(responseBook.id));
         await writeAuditLog({
             actorUserId: request.user.id,
             actionCode: 'EVT:BOOK_CREATE',
@@ -476,6 +677,38 @@ export async function registerBookRoutes(app) {
             if (wf)
                 data.workflowStatus = wf;
         }
+        if ('catalog_characters' in clean || 'catalogCharacters' in clean) {
+            const raw = clean.catalog_characters ?? clean.catalogCharacters;
+            if (raw === null) {
+                data.catalogCharacters = null;
+            }
+            else {
+                const arr = parseCatalogStringArrayFromBody(raw);
+                if (arr !== undefined)
+                    data.catalogCharacters = arr;
+            }
+        }
+        if ('catalog_keywords' in clean || 'catalogKeywords' in clean) {
+            const raw = clean.catalog_keywords ?? clean.catalogKeywords;
+            if (raw === null) {
+                data.catalogKeywords = null;
+            }
+            else {
+                const arr = parseCatalogStringArrayFromBody(raw);
+                if (arr !== undefined)
+                    data.catalogKeywords = arr;
+            }
+        }
+        if ('catalog_collection' in clean || 'catalogCollection' in clean) {
+            const v = clean.catalog_collection ?? clean.catalogCollection;
+            data.catalogCollection =
+                v == null || String(v).trim() === '' ? null : String(v).trim();
+        }
+        if ('catalog_level' in clean || 'catalogLevel' in clean) {
+            const v = clean.catalog_level ?? clean.catalogLevel;
+            data.catalogLevel =
+                v == null || String(v).trim() === '' ? null : String(v).trim();
+        }
         const prev = await prisma.book.findUnique({
             where: { id },
             select: { workflowStatus: true, title: true },
@@ -486,15 +719,16 @@ export async function registerBookRoutes(app) {
         if (Object.keys(data).length === 0) {
             const row = await prisma.book.findUnique({
                 where: { id },
-                include: { authorRel: true },
+                include: { authorRel: true, categoryRel: true },
             });
             return reply.send(bookResponse(row));
         }
         const updated = await prisma.book.update({
             where: { id },
             data: data,
-            include: { authorRel: true },
+            include: { authorRel: true, categoryRel: true },
         });
+        await persistBookSearchIndex(id);
         await writeAuditLog({
             actorUserId: request.user.id,
             actionCode: 'EVT:BOOK_UPDATE',
