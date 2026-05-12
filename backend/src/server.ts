@@ -18,7 +18,8 @@ import { registerTelemetryRoutes } from './routes/telemetryRoutes.js';
 import { registerHttpTelemetry } from './telemetry/httpTelemetry.js';
 import { assertBucket } from './lib/s3.js';
 
-const port = Number(process.env.PORT) || 4000;
+/** Omissão 3020 = alinhado com `.env.example` e `frontend/.env.local.example`. Docker define `PORT` explicitamente. */
+const port = Number(process.env.PORT) || 3020;
 const host = process.env.HOST || '0.0.0.0';
 
 /**

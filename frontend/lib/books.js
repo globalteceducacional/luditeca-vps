@@ -2,6 +2,14 @@ import { apiFetch } from './apiClient';
 import { normalizeBook } from './apiNormalize';
 import { sanitizeNumericFields } from './sanitizeNumeric';
 
+const toErrorMessage = (error) => {
+  if (typeof error === 'string') return error;
+  if (error && typeof error.message === 'string' && error.message.trim() !== '') return error.message;
+  return 'Erro inesperado ao processar a solicitação';
+};
+
+const isValidId = (id) => id !== null && id !== undefined && String(id).trim() !== '';
+
 /**
  * Lista o catálogo de livros (cartões leves, sem `pages`/`pages_v2`).
  *
@@ -33,7 +41,7 @@ export const getBooks = async (params = {}) => {
       error: null,
     };
   } catch (e) {
-    return { data: null, total: 0, error: { message: e.message } };
+    return { data: null, total: 0, error: { message: toErrorMessage(e) } };
   }
 };
 
@@ -59,7 +67,7 @@ export const searchBooks = async (params = {}) => {
       error: null,
     };
   } catch (e) {
-    return { data: null, total: 0, error: { message: e.message } };
+    return { data: null, total: 0, error: { message: toErrorMessage(e) } };
   }
 };
 
@@ -76,55 +84,59 @@ export const searchBooks = async (params = {}) => {
  */
 export const getBook = async (id, opts = {}) => {
   try {
+    if (!isValidId(id)) {
+      return { data: null, error: { message: 'ID do livro inválido' } };
+    }
     const view = opts.view || 'v2';
     const qs = new URLSearchParams({ view }).toString();
     const row = await apiFetch(`/books/${id}?${qs}`);
     return { data: normalizeBook(row), error: null };
   } catch (e) {
-    return { data: null, error: { message: e.message } };
+    return { data: null, error: { message: toErrorMessage(e) } };
   }
 };
 
 export const createBook = async (bookData) => {
   try {
-    if (!bookData.title) {
+    if (!bookData || !bookData.title) {
       return {
         data: null,
         error: { message: 'O título do livro é obrigatório' },
       };
     }
-    if (!bookData.pages || !Array.isArray(bookData.pages)) {
-      bookData.pages = [
-        {
-          id: Date.now().toString(),
-          background: '',
-          elements: [],
-          orientation: 'portrait',
-        },
-      ];
-    }
-    const payload = {
+    const fallbackPages = [
+      {
+        id: Date.now().toString(),
+        background: '',
+        elements: [],
+        orientation: 'portrait',
+      },
+    ];
+    const payload = sanitizeNumericFields({
       title: bookData.title,
       author: bookData.author,
       description: bookData.description,
       cover_image: bookData.cover_image,
-      pages: bookData.pages,
+      pages: Array.isArray(bookData.pages) ? bookData.pages : fallbackPages,
       pages_v2: bookData.pages_v2,
       author_id: bookData.author_id,
       category_id: bookData.category_id,
       link_slidebook: bookData.link_slidebook,
       import_session_id: bookData.import_session_id,
       ...(bookData.workflow_status ? { workflow_status: bookData.workflow_status } : {}),
-    };
+    });
     const row = await apiFetch('/books', { method: 'POST', body: payload });
     return { data: normalizeBook(row), error: null };
   } catch (e) {
-    return { data: null, error: { message: e.message } };
+    return { data: null, error: { message: toErrorMessage(e) } };
   }
 };
 
 export const updateBook = async (id, bookData) => {
   try {
+    if (!isValidId(id)) {
+      return { data: null, error: { message: 'ID do livro inválido' } };
+    }
     const cleanBookData = { ...bookData };
     if (cleanBookData.authors) delete cleanBookData.authors;
     const sanitizedData = sanitizeNumericFields(cleanBookData);
@@ -154,15 +166,18 @@ export const updateBook = async (id, bookData) => {
     });
     return { data: normalizeBook(row), error: null };
   } catch (e) {
-    return { data: null, error: { message: e.message } };
+    return { data: null, error: { message: toErrorMessage(e) } };
   }
 };
 
 export const deleteBook = async (id) => {
   try {
+    if (!isValidId(id)) {
+      return { error: { message: 'ID do livro inválido' } };
+    }
     await apiFetch(`/books/${id}`, { method: 'DELETE' });
     return { error: null };
   } catch (e) {
-    return { error: { message: e.message } };
+    return { error: { message: toErrorMessage(e) } };
   }
 };

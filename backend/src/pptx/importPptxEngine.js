@@ -1541,34 +1541,22 @@ async function uploadOriginalPptx({ supabase, userId, bookId, importSessionId, i
   };
 }
 
-export async function runImportPptxEngine(req, res) {
-  if (req.method !== 'POST') {
-    res.status(405).json({ error: 'Método não permitido.' });
-    return;
-  }
-
-  importDebug('POST recebido', {
-    hasAuth: Boolean((req.headers.authorization || '').trim()),
-    contentType: req.headers['content-type']?.slice(0, 80),
-  });
-
+/**
+ * Processamento após multipart resolvido (formidable ou `request.parts()` do Fastify).
+ * Exportado para a rota Fastify consumir o body com @fastify/multipart (compatível com o stream).
+ */
+export async function runImportPptxCore(req, res, { userId, fields, files }) {
   try {
-    const authUserId = await getUserIdFromRequest(req);
-    const userId = authUserId;
+    importDebug('parse OK', {
+      fieldKeys: Object.keys(fields || {}),
+      fileKeys: Object.keys(files || {}),
+    });
 
     let bookId = 'temp-book';
     let importSessionId = null;
     let dryRun = false;
     let fileBuffer;
     let originalName = '';
-
-    // Multipart-only: o frontend envia `FormData` com o ficheiro .pptx.
-    importDebug('parse multipart…');
-    const { fields, files } = await parseForm(req);
-    importDebug('parse OK', {
-      fieldKeys: Object.keys(fields || {}),
-      fileKeys: Object.keys(files || {}),
-    });
 
     const rawFile = Array.isArray(files.file) ? files.file[0] : files.file;
     const rawBookId = Array.isArray(fields.bookId) ? fields.bookId[0] : fields.bookId;
@@ -1986,6 +1974,43 @@ export async function runImportPptxEngine(req, res) {
           ? `Importação parcial: ${pages.length} página(s), ${uploadedSlides.length} com fundo enviado e ${warnings.length} com aviso.`
           : `Importação concluída com ${pages.length} página(s).`,
     });
+  } catch (error) {
+    console.error('[import-pptx]', error);
+    importDebugError('catch final', error, {
+      cause: error?.cause,
+    });
+    const message =
+      error?.message || 'Erro interno ao processar o arquivo PPTX.';
+    const isAuth =
+      /login|autentica|Token|Sessão|usuário/i.test(message) ||
+      message.includes('JWT');
+    const status = isAuth ? 401 : 500;
+    res.status(status).json({
+      error: message,
+      ...(process.env.NODE_ENV === 'development' && error?.stack
+        ? { stack: error.stack }
+        : {}),
+    });
+  }
+}
+
+/** Importação com formidable em `req` (testes ou stack sem Fastify multipart). */
+export async function runImportPptxEngine(req, res) {
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'Método não permitido.' });
+    return;
+  }
+
+  importDebug('POST recebido', {
+    hasAuth: Boolean((req.headers.authorization || '').trim()),
+    contentType: req.headers['content-type']?.slice(0, 80),
+  });
+
+  try {
+    const userId = await getUserIdFromRequest(req);
+    importDebug('parse multipart…');
+    const { fields, files } = await parseForm(req);
+    await runImportPptxCore(req, res, { userId, fields, files });
   } catch (error) {
     console.error('[import-pptx]', error);
     importDebugError('catch final', error, {
