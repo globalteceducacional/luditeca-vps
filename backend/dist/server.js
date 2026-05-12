@@ -5,6 +5,7 @@ import compress from '@fastify/compress';
 import multipart from '@fastify/multipart';
 import path from 'node:path';
 import { createReadStream, existsSync } from 'node:fs';
+import { createGunzip } from 'node:zlib';
 import { registerAuth } from './plugins/auth.js';
 import { registerAuthRoutes } from './routes/authRoutes.js';
 import { registerBookRoutes } from './routes/bookRoutes.js';
@@ -97,7 +98,36 @@ async function main() {
         logger: true,
         bodyLimit: 600 * 1024 * 1024,
     });
-    await app.register(cors, { origin: corsOrigin, credentials: true });
+    await app.register(cors, {
+        origin: corsOrigin,
+        credentials: true,
+        // Permite `Content-Encoding: gzip` no corpo (apiFetch / Issue 04).
+        allowedHeaders: [
+            'Authorization',
+            'Content-Type',
+            'Content-Encoding',
+            'Accept',
+            'X-Requested-With',
+        ],
+    });
+    // Issue 04 — descomprimir JSON gzip enviado pelo CMS (apiFetch) antes do parser.
+    // O Content-Length original refere-se ao stream comprimido; removemos para o
+    // limite `bodyLimit` aplicar ao JSON já expandido.
+    app.addHook('preParsing', async (request, _reply, payload) => {
+        const rawEnc = request.headers['content-encoding'];
+        const enc = typeof rawEnc === 'string' ? rawEnc.toLowerCase().split(',')[0].trim() : '';
+        if (enc !== 'gzip')
+            return payload;
+        const rawCt = request.headers['content-type'];
+        const ct = typeof rawCt === 'string' ? rawCt.toLowerCase() : '';
+        if (!ct.includes('application/json'))
+            return payload;
+        delete request.headers['content-encoding'];
+        delete request.headers['content-length'];
+        const gunzip = createGunzip();
+        payload.pipe(gunzip);
+        return gunzip;
+    });
     // Issue 04 — compressão de respostas. Reduz drasticamente o tamanho de
     // payloads grandes (`/books/:id` com pages_v2, listagens, etc.).
     // - threshold 1 KB evita overhead em respostas pequenas.

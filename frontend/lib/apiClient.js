@@ -24,6 +24,47 @@ export function clearAccessToken() {
   setAccessToken(null);
 }
 
+/** Issue 04 — só comprime JSON quando o UTF-8 excede este tamanho (menos overhead). */
+const GZIP_JSON_MIN_BYTES = 64 * 1024;
+
+function utf8ByteLength(str) {
+  try {
+    if (typeof TextEncoder !== 'undefined') {
+      return new TextEncoder().encode(str).byteLength;
+    }
+  } catch {
+    /* cai no Blob */
+  }
+  try {
+    return new Blob([str]).size;
+  } catch {
+    return str.length;
+  }
+}
+
+/**
+ * Comprime o JSON com gzip no browser (CompressionStream) para reduzir upload
+ * em PATCH/POST grandes. O backend descomprime em `preParsing` (server.ts).
+ */
+async function maybeCompressJsonBody(jsonString) {
+  if (utf8ByteLength(jsonString) < GZIP_JSON_MIN_BYTES) {
+    return { body: jsonString, headers: {} };
+  }
+  if (typeof CompressionStream === 'undefined') {
+    return { body: jsonString, headers: {} };
+  }
+  try {
+    const stream = new Blob([jsonString]).stream().pipeThrough(new CompressionStream('gzip'));
+    const buf = await new Response(stream).arrayBuffer();
+    return {
+      body: buf,
+      headers: { 'Content-Encoding': 'gzip' },
+    };
+  } catch {
+    return { body: jsonString, headers: {} };
+  }
+}
+
 /**
  * fetch à API com JSON e Bearer. `path` começa com / (ex: /books).
  */
@@ -40,7 +81,10 @@ export async function apiFetch(path, options = {}) {
   let body = options.body;
   if (body != null && typeof body === 'object' && !(body instanceof FormData)) {
     headers['Content-Type'] = 'application/json';
-    body = JSON.stringify(body);
+    const jsonString = JSON.stringify(body);
+    const zipped = await maybeCompressJsonBody(jsonString);
+    body = zipped.body;
+    Object.assign(headers, zipped.headers);
   }
 
   let res;
