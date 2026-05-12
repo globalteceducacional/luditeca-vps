@@ -484,6 +484,10 @@ function ImageNode({
       name="selectable"
       x={t.x}
       y={t.y}
+      // O Transformer lê width/height do nó alvo no onTransformEnd; sem isto o Group
+      // pode reportar 0×0 e o redimensionamento grava valores errados (GIFs e imagens).
+      width={t.width}
+      height={t.height}
       rotation={t.rotation}
       opacity={visual?.opacity}
       draggable={!isPreviewMode && !locked}
