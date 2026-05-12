@@ -24,7 +24,9 @@ export default function Login() {
       router.push('/');
     } catch (err) {
       console.error('Erro ao fazer login:', err);
-      setError('Falha ao fazer login. Verifique seu email e senha.');
+      const fallback = 'Falha ao fazer login. Verifique seu email e senha.';
+      const msg = typeof err?.message === 'string' ? err.message.trim() : '';
+      setError(msg && msg !== 'Failed to fetch' ? msg : fallback);
     } finally {
       setLoading(false);
     }

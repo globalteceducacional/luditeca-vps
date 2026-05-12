@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
@@ -38,6 +38,8 @@ export default function Books() {
   // Paginação 1-based; `total` é o total no servidor (quando paginado).
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const latestRequestRef = useRef(0);
+  const isListRefreshing = loading || deleteLoading !== null || workflowSaving !== null;
 
   const hasActiveSearch =
     Boolean(searchTerm.trim()) ||
@@ -45,6 +47,14 @@ export default function Books() {
     Boolean(advCollection.trim()) ||
     Boolean(advKeyword.trim()) ||
     Boolean(advLevel.trim());
+
+  const clearSearchFilters = useCallback(() => {
+    setSearchTerm('');
+    setAdvCharacter('');
+    setAdvCollection('');
+    setAdvKeyword('');
+    setAdvLevel('');
+  }, []);
 
   // Verificar autenticação
   useEffect(() => {
@@ -71,12 +81,9 @@ export default function Books() {
 
   const loadBooksList = useCallback(async () => {
     if (!user) return;
-    const serverSearch =
-      Boolean(searchTerm.trim()) ||
-      Boolean(advCharacter.trim()) ||
-      Boolean(advCollection.trim()) ||
-      Boolean(advKeyword.trim()) ||
-      Boolean(advLevel.trim());
+    const requestId = Date.now() + Math.random();
+    latestRequestRef.current = requestId;
+    const serverSearch = hasActiveSearch;
     try {
       setLoading(true);
       setError(null);
@@ -106,15 +113,18 @@ export default function Books() {
         nextTotal = typeof srvTotal === 'number' ? srvTotal : data.length;
         devLog('Busca catálogo:', { total: nextTotal });
       }
+      if (latestRequestRef.current !== requestId) return;
       setBooks(mapBooksWithCoverUrls(data));
       setTotal(nextTotal);
     } catch (err) {
+      if (latestRequestRef.current !== requestId) return;
       console.error('Erro ao carregar livros:', err);
       setError('Falha ao carregar os livros. Por favor, tente novamente.');
     } finally {
+      if (latestRequestRef.current !== requestId) return;
       setLoading(false);
     }
-  }, [user, searchTerm, advCharacter, advCollection, advKeyword, advLevel, page]);
+  }, [user, hasActiveSearch, searchTerm, advCharacter, advCollection, advKeyword, advLevel, page]);
 
   useEffect(() => {
     if (!user) return undefined;
@@ -143,7 +153,11 @@ export default function Books() {
         await loadBooksList();
       } catch (err) {
         console.error('Erro ao excluir livro:', err);
-        alert('Falha ao excluir o livro. Por favor, tente novamente.');
+        const msg =
+          typeof err?.message === 'string' && err.message.trim() !== ''
+            ? err.message
+            : 'Falha ao excluir o livro. Por favor, tente novamente.';
+        alert(msg);
       } finally {
         setDeleteLoading(null);
       }
@@ -163,7 +177,11 @@ export default function Books() {
       await loadBooksList();
     } catch (err) {
       console.error(err);
-      alert('Não foi possível atualizar o estado editorial.');
+      const msg =
+        typeof err?.message === 'string' && err.message.trim() !== ''
+          ? err.message
+          : 'Não foi possível atualizar o estado editorial.';
+      alert(msg);
     } finally {
       setWorkflowSaving(null);
     }
@@ -198,7 +216,8 @@ export default function Books() {
             </div>
             <button
               onClick={handleCreateBook}
-              className="flex items-center px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              disabled={isListRefreshing}
+              className="flex items-center px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <FiPlus className="mr-2" />
               Novo Livro
@@ -211,8 +230,9 @@ export default function Books() {
               <input
                 type="text"
                 placeholder="Busca por título, texto na ficha, autor, categoria, palavras-chave…"
-                className="w-full px-4 py-2 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-2 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-gray-50"
                 value={searchTerm}
+                disabled={isListRefreshing}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
               <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
@@ -223,7 +243,8 @@ export default function Books() {
             </div>
             <button
               type="button"
-              className="text-sm text-blue-600 hover:underline"
+              className="text-sm text-blue-600 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline"
+              disabled={isListRefreshing}
               onClick={() => setShowSearchFilters((v) => !v)}
             >
               {showSearchFilters ? 'Ocultar filtros' : 'Filtros (personagem, coleção, palavra-chave, nível)'}
@@ -233,8 +254,9 @@ export default function Books() {
                 <label className="block text-sm">
                   <span className="text-gray-600">Personagem</span>
                   <input
-                    className="mt-1 w-full rounded border px-2 py-1.5"
+                    className="mt-1 w-full rounded border px-2 py-1.5 disabled:cursor-not-allowed disabled:bg-gray-100"
                     value={advCharacter}
+                    disabled={isListRefreshing}
                     onChange={(e) => setAdvCharacter(e.target.value)}
                     placeholder="Nome do personagem"
                   />
@@ -242,8 +264,9 @@ export default function Books() {
                 <label className="block text-sm">
                   <span className="text-gray-600">Coleção</span>
                   <input
-                    className="mt-1 w-full rounded border px-2 py-1.5"
+                    className="mt-1 w-full rounded border px-2 py-1.5 disabled:cursor-not-allowed disabled:bg-gray-100"
                     value={advCollection}
+                    disabled={isListRefreshing}
                     onChange={(e) => setAdvCollection(e.target.value)}
                     placeholder="Nome da coleção"
                   />
@@ -251,8 +274,9 @@ export default function Books() {
                 <label className="block text-sm">
                   <span className="text-gray-600">Palavra-chave</span>
                   <input
-                    className="mt-1 w-full rounded border px-2 py-1.5"
+                    className="mt-1 w-full rounded border px-2 py-1.5 disabled:cursor-not-allowed disabled:bg-gray-100"
                     value={advKeyword}
+                    disabled={isListRefreshing}
                     onChange={(e) => setAdvKeyword(e.target.value)}
                     placeholder="Termo do índice"
                   />
@@ -260,8 +284,9 @@ export default function Books() {
                 <label className="block text-sm">
                   <span className="text-gray-600">Nível</span>
                   <input
-                    className="mt-1 w-full rounded border px-2 py-1.5"
+                    className="mt-1 w-full rounded border px-2 py-1.5 disabled:cursor-not-allowed disabled:bg-gray-100"
                     value={advLevel}
+                    disabled={isListRefreshing}
                     onChange={(e) => setAdvLevel(e.target.value)}
                     placeholder="Ex.: 6º ano, iniciante…"
                   />
@@ -272,7 +297,17 @@ export default function Books() {
           
           {error && (
             <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6">
-              {error}
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <span>{error}</span>
+                <button
+                  type="button"
+                  disabled={isListRefreshing}
+                  onClick={() => void loadBooksList()}
+                  className="self-start rounded bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Tentar novamente
+                </button>
+              </div>
             </div>
           )}
           
@@ -283,7 +318,8 @@ export default function Books() {
               </p>
               <button
                 onClick={handleCreateBook}
-                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                disabled={isListRefreshing}
+                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Criar meu primeiro livro
               </button>
@@ -296,20 +332,25 @@ export default function Books() {
               <button
                 type="button"
                 onClick={() => {
-                  setSearchTerm('');
-                  setAdvCharacter('');
-                  setAdvCollection('');
-                  setAdvKeyword('');
-                  setAdvLevel('');
+                  clearSearchFilters();
                 }}
-                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                disabled={isListRefreshing}
+                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Limpar pesquisa
               </button>
             </div>
           ) : (
             <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {loading ? (
+              <div className="mb-3 rounded border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-700">
+                Atualizando resultados...
+              </div>
+            ) : null}
+            <div
+              className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4"
+              aria-busy={loading}
+            >
               {books.map(book => (
                 <div key={book.id} className="bg-white rounded-lg shadow-sm overflow-hidden">
                   <div 
@@ -344,9 +385,11 @@ export default function Books() {
                     <label className="block text-[10px] uppercase text-gray-500 mb-0.5">Estado editorial</label>
                     <select
                       value={book.workflow_status || 'draft'}
-                      disabled={workflowSaving === book.id}
+                      disabled={isListRefreshing}
                       onChange={(e) => handleWorkflowChange(book.id, e.target.value)}
-                      className="text-xs border rounded w-full mb-2 px-1 py-1 bg-white"
+                      className={`text-xs border rounded w-full px-1 py-1 bg-white disabled:cursor-not-allowed disabled:bg-gray-100 ${
+                        workflowSaving === book.id ? 'mb-1' : 'mb-2'
+                      }`}
                     >
                       {WORKFLOW_OPTIONS.map((o) => (
                         <option key={o.value} value={o.value}>
@@ -354,11 +397,15 @@ export default function Books() {
                         </option>
                       ))}
                     </select>
+                    {workflowSaving === book.id ? (
+                      <p className="mb-2 text-[10px] text-blue-600">Salvando estado editorial…</p>
+                    ) : null}
                     
                     <div className="flex justify-between">
                       <button
                         onClick={() => router.push(`/books/${book.id}/edit`)}
-                        className="flex items-center px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600"
+                        disabled={isListRefreshing}
+                        className="flex items-center px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <FiEdit className="mr-1" size={12} />
                         Editar
@@ -366,8 +413,8 @@ export default function Books() {
                       
                       <button
                         onClick={() => handleDeleteBook(book.id)}
-                        className="flex items-center px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600"
-                        disabled={deleteLoading === book.id}
+                        className="flex items-center px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={isListRefreshing || deleteLoading === book.id}
                       >
                         <FiTrash2 className="mr-1" size={12} />
                         {deleteLoading === book.id ? 'Excluindo...' : 'Excluir'}
@@ -392,7 +439,7 @@ export default function Books() {
                   <button
                     type="button"
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={page <= 1 || loading}
+                    disabled={page <= 1 || isListRefreshing}
                     className="rounded border px-3 py-1 disabled:cursor-not-allowed disabled:opacity-50 hover:bg-gray-50"
                   >
                     Anterior
@@ -405,7 +452,7 @@ export default function Books() {
                     onClick={() =>
                       setPage((p) => (p * PAGE_SIZE < total ? p + 1 : p))
                     }
-                    disabled={page * PAGE_SIZE >= total || loading}
+                    disabled={page * PAGE_SIZE >= total || isListRefreshing}
                     className="rounded border px-3 py-1 disabled:cursor-not-allowed disabled:opacity-50 hover:bg-gray-50"
                   >
                     Próxima

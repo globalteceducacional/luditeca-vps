@@ -30,7 +30,7 @@ export function clearAccessToken() {
 export async function apiFetch(path, options = {}) {
   const base = getApiBaseUrl();
   if (!base) {
-    throw new Error('Configure NEXT_PUBLIC_API_URL (ex.: http://localhost:4000 ou https://seu-dominio/api).');
+    throw new Error('Configure NEXT_PUBLIC_API_URL (ex.: http://localhost:3020 ou https://seu-dominio/api).');
   }
   const url = path.startsWith('http') ? path : `${base}${path.startsWith('/') ? path : `/${path}`}`;
   const headers = { ...(options.headers || {}) };
@@ -43,7 +43,20 @@ export async function apiFetch(path, options = {}) {
     body = JSON.stringify(body);
   }
 
-  const res = await fetch(url, { ...options, headers, body });
+  let res;
+  try {
+    res = await fetch(url, { ...options, headers, body });
+  } catch (e) {
+    const msg = e && typeof e.message === 'string' ? e.message : '';
+    const looksNetwork =
+      e instanceof TypeError || /failed to fetch|networkerror|load failed/i.test(msg);
+    if (looksNetwork) {
+      throw new Error(
+        `Sem ligação à API (${base}). Inicie o backend: na raiz do repo rode "npm install" uma vez e depois "npm run dev", ou noutro terminal "cd backend" e "npm run dev".`,
+      );
+    }
+    throw e;
+  }
   if (res.status === 204) return null;
 
   const text = await res.text();

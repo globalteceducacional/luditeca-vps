@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import compress from '@fastify/compress';
 import multipart from '@fastify/multipart';
 import path from 'node:path';
 import { createReadStream, existsSync } from 'node:fs';
@@ -16,7 +17,8 @@ import { registerAdminAuditRoutes } from './routes/adminAuditRoutes.js';
 import { registerTelemetryRoutes } from './routes/telemetryRoutes.js';
 import { registerHttpTelemetry } from './telemetry/httpTelemetry.js';
 import { assertBucket } from './lib/s3.js';
-const port = Number(process.env.PORT) || 4000;
+/** Omissão 3020 = alinhado com `.env.example` e `frontend/.env.local.example`. Docker define `PORT` explicitamente. */
+const port = Number(process.env.PORT) || 3020;
 const host = process.env.HOST || '0.0.0.0';
 /**
  * Faz parse da variável `CORS_ORIGIN` (lista separada por vírgulas, sem
@@ -36,7 +38,12 @@ function parseCorsOrigin() {
                 'por vírgula, sem barra final. ' +
                 'Ex.: CORS_ORIGIN="https://luditeca.com,https://www.luditeca.com"');
         }
-        return ['http://localhost:3000', 'http://localhost:8080'];
+        return [
+            'http://localhost:3000',
+            'http://localhost:8080',
+            'http://127.0.0.1:3000',
+            'http://127.0.0.1:8080',
+        ];
     }
     const list = raw
         .split(',')
@@ -91,6 +98,18 @@ async function main() {
         bodyLimit: 600 * 1024 * 1024,
     });
     await app.register(cors, { origin: corsOrigin, credentials: true });
+    // Issue 04 — compressão de respostas. Reduz drasticamente o tamanho de
+    // payloads grandes (`/books/:id` com pages_v2, listagens, etc.).
+    // - threshold 1 KB evita overhead em respostas pequenas.
+    // - encodings em ordem de preferência: brotli (melhor rácio) > gzip > deflate.
+    // - rotas binárias (`/media/*`) são excluídas via `customTypes` para não
+    //   sobrecarregar a CPU comprimindo imagens/vídeos já comprimidos.
+    await app.register(compress, {
+        global: true,
+        threshold: 1024,
+        encodings: ['br', 'gzip', 'deflate'],
+        customTypes: /^(?:application\/json|text\/|application\/javascript)/,
+    });
     await app.register(multipart, {
         limits: { fileSize: 500 * 1024 * 1024 },
     });
@@ -98,7 +117,10 @@ async function main() {
     registerHttpTelemetry(app);
     app.get('/health', async () => ({ ok: true, ts: new Date().toISOString() }));
     // Servidor de arquivos local para desenvolvimento (STORAGE_DRIVER=local).
-    app.get('/media/*', async (request, reply) => {
+    // `compress: false` — o hook global do @fastify/compress não deve tocar neste
+    // stream binário; em alguns casos interferia com a cadeia `onSend` do CORS e
+    // o Chrome recebia resposta sem `Access-Control-Allow-Origin` em `fetch()`.
+    app.get('/media/*', { compress: false }, async (request, reply) => {
         const wildcard = String(request.params['*'] || '').replace(/^\/+/, '');
         if (!wildcard || wildcard.includes('..')) {
             return reply.code(400).send({ error: 'Caminho inválido.' });
@@ -122,7 +144,38 @@ async function main() {
         if (!existsSync(absPath)) {
             return reply.code(404).send({ error: 'Arquivo não encontrado.' });
         }
+        // Estratégia de Cache-Control depende do ambiente:
+        //
+        // PROD (NODE_ENV=production):
+        //   `public, max-age=31536000, immutable` — paths são imutáveis por desenho
+        //   (UUID/timestamp no nome). O Nginx em frente (proxy_cache em disco, ver
+        //   nginx/nginx.conf) absorve a maioria dos hits, e o browser do utilizador
+        //   final cacheia agressivamente porque o reverse proxy gere bem a response.
+        //
+        // DEV (qualquer outro NODE_ENV):
+        //   `no-store` — desactiva cache do browser. Sem Nginx em frente, o Chrome
+        //   tenta gravar tudo na cache de disco; ficheiros grandes (>1.5 MB) batem
+        //   no limite single-entry e devolvem `ERR_CACHE_WRITE_FAILURE`, abortando
+        //   a request. Ainda pior: o Chrome cacheia respostas de `<img>` sem CORS
+        //   e devolve-as a `fetch(..., { mode: 'cors' })`, dando "No
+        //   Access-Control-Allow-Origin" mesmo com o servidor a enviar o header.
+        //   Em dev o ganho de cache é nulo (estamos a iterar) e o custo é alto.
+        //
+        // `Vary` mantém `Origin` mesmo em dev: além de o `no-store` cobrir o caso
+        // do Chrome, alguns proxies/edge caches (corp networks) podem ignorar
+        // `no-store` e continuar a partilhar entradas — o `Vary: Origin` é defesa
+        // em profundidade.
+        const isProd = process.env.NODE_ENV === 'production';
+        reply.header('Cache-Control', isProd ? 'public, max-age=31536000, immutable' : 'no-store');
+        reply.header('Vary', 'Accept-Encoding, Origin');
         reply.type(contentTypeByExt(absPath));
+        // CORS explícito: garante `Access-Control-Allow-Origin` mesmo que o hook
+        // global do @fastify/cors não corra como esperado em `reply.send(stream)`.
+        const reqOrigin = request.headers.origin;
+        if (typeof reqOrigin === 'string' && reqOrigin && corsOrigin.includes(reqOrigin)) {
+            reply.header('Access-Control-Allow-Origin', reqOrigin);
+            reply.header('Access-Control-Allow-Credentials', 'true');
+        }
         return reply.send(createReadStream(absPath));
     });
     await registerAuthRoutes(app);
