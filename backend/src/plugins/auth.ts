@@ -44,3 +44,5 @@ export function requireRoles(allowed: UserRole[]) {
 
 export const requireAdmin = requireRoles(['admin']);
 export const requireCmsEditor = requireRoles(['admin', 'editor']);
+/** App infantil: aluno/professor; admin/editor para testes no mesmo build. */
+export const requireAppUser = requireRoles(['aluno', 'professor', 'admin', 'editor']);

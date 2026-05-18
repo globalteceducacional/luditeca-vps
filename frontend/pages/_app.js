@@ -1,15 +1,27 @@
+import 'bootstrap/dist/css/bootstrap.min.css';
+import '@fortawesome/fontawesome-free/css/all.min.css';
+import 'animate.css';
 import '../styles/globals.css';
 import '../styles/fonts.css';
+import '../styles/argon-luditeca.css';
+
 import { AuthProvider } from '../contexts/auth';
 import { devLog } from '../lib/devLog';
 
-function MyApp({ Component, pageProps }) {
+function Passthrough({ children }) {
+  return children;
+}
+
+function LuditecaApp({ Component, pageProps }) {
+  const Layout = Component.layout || Passthrough;
   devLog('_app renderizado');
   return (
     <AuthProvider>
-      <Component {...pageProps} />
+      <Layout>
+        <Component {...pageProps} />
+      </Layout>
     </AuthProvider>
   );
 }
 
-export default MyApp; 
+export default LuditecaApp;

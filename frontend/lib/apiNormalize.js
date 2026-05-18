@@ -28,6 +28,13 @@ export function normalizeBook(b) {
     catalog_keywords: asStringArray(b.catalogKeywords ?? b.catalog_keywords),
     catalog_collection: b.catalogCollection ?? b.catalog_collection ?? '',
     catalog_level: b.catalogLevel ?? b.catalog_level ?? '',
+    book_type: b.bookType ?? b.book_type ?? null,
+    age_range: b.ageRange ?? b.age_range ?? '',
+    quiz: b.bookQuiz ?? b.book_quiz ?? b.quiz ?? [],
+    soundtrack_url: b.soundtrackUrl ?? b.soundtrack_url ?? '',
+    pdf_url: b.pdfUrl ?? b.pdf_url ?? '',
+    epub_url: b.epubUrl ?? b.epub_url ?? '',
+    is_pdf: Boolean(b.isPdf ?? b.is_pdf),
   };
 }
 

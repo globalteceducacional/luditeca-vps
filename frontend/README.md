@@ -119,8 +119,12 @@ luditeca-front/
 │       ├── ProTimeline.js
 │       ├── v2/                    # panels/, media/, hooks/, lib/ — ver editor/v2/README.md
 │       └── canvas/                # Utilitários de snap/viewport
+├── hooks/
+│   └── useNewBookWizard.js       # Lógica partilhada do assistente «novo livro»
 ├── pages/
 │   └── books/
+│       ├── new.js                # Novo livro (Argon CMS + Reactstrap)
+│       ├── new-legacy.js          # UI legado (EditorLayout); só URL direta
 │       └── [id]/
 │           ├── edit.js            # Reexporta edit-v2
 │           └── edit-v2.jsx        # Página de edição do livro
@@ -130,9 +134,8 @@ luditeca-front/
 ## 📚 Guia de Uso
 
 1. **Criar Novo Livro**
-   - Acesse a página de livros
-   - Clique em "Novo Livro"
-   - Configure os detalhes básicos
+   - Aceda a `/books` e use **Novo livro** (assistente Argon em `/books/new`: metadados, capítulos, PPTX opcional).
+   - Após criar, abre-se o editor visual (`/books/[id]/edit-v2`).
 
 2. **Editar Páginas**
    - Use a barra de ferramentas superior

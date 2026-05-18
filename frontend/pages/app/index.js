@@ -1,8 +1,48 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/router';
-import Head from 'next/head';
+import { FiBook, FiGrid, FiImage, FiLayers, FiMessageCircle } from 'react-icons/fi';
 import { useAuth } from '../../contexts/auth';
-import { ROLES } from '../../lib/roles';
+import AppHubCard from '../../components/app/AppHubCard';
+import AppShell from '../../components/app/AppShell';
+import { APP_ROLES, isRole } from '../../lib/roles';
+
+const SECTIONS = [
+  {
+    href: '/app/library',
+    title: 'Biblioteca',
+    description: 'Livros publicados para leitura',
+    icon: FiBook,
+    accent: 'success',
+  },
+  {
+    href: '/app/activities',
+    title: 'Atividades',
+    description: 'Quiz, flashcards e mais',
+    icon: FiGrid,
+    accent: 'primary',
+  },
+  {
+    href: '/app/libras',
+    title: 'LIBRAS',
+    description: 'Lições de sinais',
+    icon: FiMessageCircle,
+    accent: 'info',
+  },
+  {
+    href: '/app/puzzle',
+    title: 'Quebra-cabeça',
+    description: 'Monte as imagens',
+    icon: FiLayers,
+    accent: 'warning',
+  },
+  {
+    href: '/app/coloring',
+    title: 'Pinturas',
+    description: 'Páginas para colorir',
+    icon: FiImage,
+    accent: 'danger',
+  },
+];
 
 export default function AppHome() {
   const router = useRouter();
@@ -10,32 +50,25 @@ export default function AppHome() {
 
   useEffect(() => {
     if (!loading && !user) router.replace('/login');
-    if (!loading && user && ![ROLES.aluno, ROLES.professor].includes(user.role)) {
-      router.replace('/books');
-    }
+    if (!loading && user && !isRole(user, APP_ROLES)) router.replace('/books');
   }, [loading, user, router]);
 
-  if (loading) return null;
-  if (!user) return null;
+  if (loading || !user) return null;
+
+  const displayName = user.email?.split('@')[0] || user.role;
 
   return (
-    <>
-      <Head>
-        <title>App | Luditeca</title>
-      </Head>
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
-        <div className="max-w-lg w-full bg-white rounded-lg shadow p-6">
-          <h1 className="text-xl font-bold mb-2">Área do App</h1>
-          <p className="text-gray-700">
-            Você está logado como <b>{user.role}</b>. Esta área é destinada a alunos e professores.
-          </p>
-          <p className="text-gray-500 mt-3 text-sm">
-            Próximo passo: conectar aqui o app (leitura, progresso, favoritos, etc.).
-          </p>
-        </div>
-      </div>
-    </>
+    <AppShell title="Mundo Lúdico" backHref="/books">
+      <p className="luditeca-app-intro">
+        Olá, <strong>{displayName}</strong>! Escolha uma área:
+      </p>
+      <ul className="luditeca-app-hub-grid">
+        {SECTIONS.map((section) => (
+          <li key={section.href}>
+            <AppHubCard {...section} />
+          </li>
+        ))}
+      </ul>
+    </AppShell>
   );
 }
-
-

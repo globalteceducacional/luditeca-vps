@@ -3,18 +3,20 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
 import { toast } from 'react-hot-toast';
-import { FaArrowLeft, FaImage } from 'react-icons/fa';
+import { Alert, Button, Form, FormGroup, Input, Spinner } from 'reactstrap';
 import { useAuth } from '../../../contexts/auth';
 import { getAuthor, updateAuthor } from '../../../lib/authors';
 import { getFileUrl } from '../../../lib/mediaUrl';
 import { uploadFile } from '../../../lib/storageApi';
 import Layout from '../../../components/Layout';
+import ArgonCmsShell from '../../../components/argon/ArgonCmsShell';
+import ArgonFormCard from '../../../components/argon/ArgonFormCard';
 import { ADMIN_ONLY, isRole } from '../../../lib/roles';
 
 export default function EditAuthor() {
   const router = useRouter();
   const { id } = router.query;
-  
+
   const [name, setName] = useState('');
   const [bio, setBio] = useState('');
   const [photoUrl, setPhotoUrl] = useState('');
@@ -22,61 +24,34 @@ export default function EditAuthor() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [uploading, setUploading] = useState(false);
-  
+
   const { user, loading: isLoading } = useAuth();
 
-  // Verificar autenticação
   useEffect(() => {
-    if (!isLoading && !user) {
-      router.push('/login');
-    }
-    if (!isLoading && user && !isRole(user, ADMIN_ONLY)) {
-      router.replace('/books');
-    }
+    if (!isLoading && !user) router.push('/login');
+    if (!isLoading && user && !isRole(user, ADMIN_ONLY)) router.replace('/books');
   }, [isLoading, user, router]);
 
-  // Carregar dados do autor
   useEffect(() => {
-    if (id && user) {
-      fetchAuthor();
-    }
+    if (id && user) fetchAuthor();
   }, [id, user]);
 
-  // Função para buscar dados do autor
   const fetchAuthor = async () => {
     try {
       setLoading(true);
-      const { data, error } = await getAuthor(id);
-      
-      if (error) {
-        throw error;
-      }
-
-      if (!data) {
-        throw new Error('Autor não encontrado');
-      }
-      
-      console.log('Dados do autor carregados:', data);
-      
-      // Definir dados nos estados
+      const { data, error: fetchErr } = await getAuthor(id);
+      if (fetchErr) throw fetchErr;
+      if (!data) throw new Error('Autor não encontrado');
       setName(data.name || '');
       setBio(data.bio || '');
-      
-      // Processar URL da foto
-      let photoUrlToUse = '';
+      let url = '';
       if (data.photo_url) {
-        if (data.photo_url.startsWith('http')) {
-          photoUrlToUse = data.photo_url;
-        } else {
-          photoUrlToUse = getFileUrl('authors', data.photo_url);
-        }
+        url = data.photo_url.startsWith('http')
+          ? data.photo_url
+          : getFileUrl('autores', data.photo_url);
       }
-      
-      console.log('URL da foto processada:', photoUrlToUse);
-      setPhotoUrl(photoUrlToUse);
-      
+      setPhotoUrl(url);
     } catch (err) {
-      console.error('Erro ao carregar autor:', err);
       setError(err.message || 'Erro ao carregar o autor');
       toast.error(err.message || 'Erro ao carregar o autor');
     } finally {
@@ -84,7 +59,6 @@ export default function EditAuthor() {
     }
   };
 
-  // Função para upload direto da imagem
   const handlePhotoUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -93,12 +67,11 @@ export default function EditAuthor() {
     try {
       if (!user?.id) throw new Error('Utilizador não autenticado');
       const fileExt = file.name.split('.').pop();
-      // Enviar path relativo; o backend separa por usuário.
       const fileName = `autor_${id || 'edit'}_${Date.now()}.${fileExt}`;
       const { url } = await uploadFile('autores', fileName, file);
       setPhotoUrl(url);
-      toast.success('Foto enviada com sucesso!');
-    } catch (err) {
+      toast.success('Foto enviada.');
+    } catch {
       setError('Erro ao fazer upload da foto');
       toast.error('Erro ao fazer upload da foto');
     } finally {
@@ -110,138 +83,85 @@ export default function EditAuthor() {
     e.preventDefault();
     setSaving(true);
     setError(null);
-
     try {
-      // Validação básica
-      if (!name.trim()) {
-        throw new Error('O nome do autor é obrigatório');
-      }
-
-      const authorData = {
+      if (!name.trim()) throw new Error('O nome do autor é obrigatório');
+      const { error: updateErr } = await updateAuthor(id, {
         name: name.trim(),
         bio: bio.trim() || null,
-        photo_url: photoUrl
-      };
-
-      console.log('Enviando dados atualizados do autor:', authorData);
-      
-      const { data, error } = await updateAuthor(id, authorData);
-      
-      if (error) {
-        console.error('Erro retornado pela função updateAuthor:', error);
-        throw new Error(error.message || 'Erro ao atualizar o autor');
-      }
-      
-      toast.success('Autor atualizado com sucesso!');
+        photo_url: photoUrl,
+      });
+      if (updateErr) throw new Error(updateErr.message || 'Erro ao atualizar o autor');
+      toast.success('Autor atualizado.');
       router.push('/authors');
     } catch (err) {
-      console.error('Exceção capturada no handleSubmit:', err);
       setError(err.message);
       toast.error(err.message);
     } finally {
       setSaving(false);
     }
   };
-  
+
   if (isLoading || loading) {
     return (
       <Layout>
-        <div className="text-center p-8">Carregando...</div>
+        <ArgonCmsShell title="Editar autor" loading loadingLabel="A carregar…" />
       </Layout>
     );
   }
-  
+
   return (
     <Layout>
-      <div className="container mx-auto px-4 py-8">
-        <div className="flex items-center justify-between mb-6">
-          <Link href="/authors" className="flex items-center text-blue-600 hover:text-blue-800">
-            <FaArrowLeft className="mr-2" />
-            Voltar para Autores
-          </Link>
-          <h1 className="text-2xl font-bold">Editar Autor</h1>
-        </div>
-        
-        {error && (
-          <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4">
-            {error}
-          </div>
-        )}
-        
-        <form onSubmit={handleSubmit} className="bg-white shadow-md rounded px-8 pt-6 pb-8 mb-4">
-          <div className="mb-4">
-            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="name">
-              Nome do Autor*
-            </label>
-            <input
-              id="name"
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-              required
-            />
-          </div>
-          
-          <div className="mb-4">
-            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="bio">
-              Biografia
-            </label>
-            <textarea
-              id="bio"
-              value={bio}
-              onChange={(e) => setBio(e.target.value)}
-              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-              rows="4"
-            />
-          </div>
-          
-          <div className="mb-4">
-            <label className="block text-gray-700 text-sm font-bold mb-2">
-              Foto do Autor
-            </label>
-            <div className="flex items-center gap-4">
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handlePhotoUpload}
-                disabled={uploading}
-                className="block"
+      <Head>
+        <title>Editar autor | Luditeca</title>
+      </Head>
+      <ArgonCmsShell
+        title="Editar autor"
+        subtitle="Atualize os dados do autor."
+        headerExtra={
+          <Button color="link" size="sm" tag={Link} href="/authors" className="p-0">
+            ← Voltar
+          </Button>
+        }
+      >
+        {error ? <Alert color="danger">{error}</Alert> : null}
+        <ArgonFormCard title="Dados do autor">
+          <Form onSubmit={handleSubmit}>
+            <FormGroup>
+              <label className="form-control-label">Nome *</label>
+              <Input
+                className="luditeca-form-control"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
               />
-              {uploading && <span className="text-blue-600 text-sm">Enviando...</span>}
-              {photoUrl && (
-                <div className="text-sm text-green-600">Imagem selecionada</div>
-              )}
-            </div>
-            {photoUrl && (
-              <div className="mt-4 border rounded p-4">
-                <p className="text-sm text-gray-500 mb-2">Prévia:</p>
-                <img src={photoUrl} alt="Foto do autor" className="max-h-48 object-contain" />
-              </div>
-            )}
-          </div>
-          
-          <div className="flex items-center justify-between">
-            <button
-              type="submit"
-              disabled={saving}
-              className={`bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline ${
-                saving ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-            >
-              {saving ? 'Salvando...' : 'Salvar Alterações'}
-            </button>
-          </div>
-        </form>
-      </div>
+            </FormGroup>
+            <FormGroup>
+              <label className="form-control-label">Biografia</label>
+              <Input
+                className="luditeca-form-control"
+                type="textarea"
+                rows="4"
+                value={bio}
+                onChange={(e) => setBio(e.target.value)}
+              />
+            </FormGroup>
+            <FormGroup>
+              <label className="form-control-label">Foto</label>
+              <Input type="file" accept="image/*" onChange={handlePhotoUpload} disabled={uploading} />
+              {uploading ? <small className="text-muted">A enviar…</small> : null}
+              {photoUrl ? (
+                <div className="mt-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={photoUrl} alt="Prévia" className="img-fluid rounded" style={{ maxHeight: 192 }} />
+                </div>
+              ) : null}
+            </FormGroup>
+            <Button color="primary" type="submit" disabled={saving}>
+              {saving ? <Spinner size="sm" /> : 'Guardar alterações'}
+            </Button>
+          </Form>
+        </ArgonFormCard>
+      </ArgonCmsShell>
     </Layout>
   );
 }
-
-export async function getServerSideProps({ params }) {
-  return {
-    props: {
-      id: params?.id || null
-    }
-  };
-} 

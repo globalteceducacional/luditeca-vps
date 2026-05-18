@@ -1,0 +1,22 @@
+---
+description: Guia da Área do Administrador para integração front/back
+globs: src/pages/AdminPanel.jsx,src/pages/BookEditor.jsx,src/pages/ActivityEditor.jsx,src/pages/LibrasEditor.jsx,src/components/admin/**,src/components/AdminLoginModal.jsx,base44/entities/**
+alwaysApply: false
+---
+
+# Área do Administrador — integração
+
+Antes de alterar ou portar código admin, leia `docs/INTEGRACAO-AREA-ADMIN.md`.
+
+## Regras rápidas
+
+- Acesso: `user.role === 'admin'` + sessão `localStorage.admin_session` (senha modal padrão `0000`).
+- Rotas: `/admin`, `/admin/book/:id`, `/admin/libras/:id`, `/admin/activity/:id`.
+- Entidades Base44: `Book`, `Activity`, `LibrasLesson`, `PuzzleGame`, `ColoringPage`.
+- Upload: `base44.integrations.Core.UploadFile({ file })`.
+- App infantil só consome registros com `is_published: true` (Libras usa `list('order')`).
+- Pinturas: merge com `src/lib/coloringPages.js` (`DEFAULT_COLORING_PAGES`).
+
+## Ao integrar em outro projeto
+
+Preservar contratos em `base44/entities/*.jsonc`. Não confiar só em senha no `localStorage` — validar `admin` no backend.

@@ -10,8 +10,11 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@fortawesome/fontawesome-free": "^5.15.4",
     "animate.css": "^4.1.1",
+    "bootstrap": "^4.6.2",
     "buffer": "^6.0.3",
+    "classnames": "^2.5.1",
     "client-only": "^0.0.1",
     "fast-xml-parser": "^5.5.9",
     "formidable": "^3.5.4",
@@ -24,6 +27,7 @@
     "react-hot-toast": "^2.5.2",
     "react-icons": "^4.12.0",
     "react-konva": "^18.2.14",
+    "reactstrap": "^8.10.1",
     "use-image": "^1.1.4",
     "uuid": "^11.1.0"
   },

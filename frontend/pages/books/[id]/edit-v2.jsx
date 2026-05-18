@@ -21,18 +21,14 @@ import { toast } from 'react-hot-toast';
 
 import EditorLayout from '../../../components/EditorLayout';
 import RulersOverlay from '../../../components/editor/RulersOverlay';
-import BottomDock from '../../../components/editor/v2/panels/BottomDock';
+import PanelSkeleton from '../../../components/editor/v2/panels/PanelSkeleton';
 import {
   endEditorMetric,
   reportEditorMetric,
   startEditorMetric,
 } from '../../../components/editor/v2/lib/editorMetrics';
 import useEditorState from '../../../components/editor/v2/hooks/useEditorState';
-import LayerManagerPanel from '../../../components/editor/v2/panels/LayerManagerPanel';
 import PageSidebar from '../../../components/editor/v2/panels/PageSidebar';
-import PropertiesInspector from '../../../components/editor/v2/panels/PropertiesInspector';
-import ShapeSidebar from '../../../components/editor/v2/panels/ShapeSidebar';
-import AudioLibraryPickModal from '../../../components/editor/v2/media/AudioLibraryPickModal';
 import { useAuth } from '../../../contexts/auth';
 import { getAuthors } from '../../../lib/authors';
 import { getBook, updateBook } from '../../../lib/books';
@@ -54,6 +50,28 @@ import { DEFAULT_GIF_NODE_PROPS } from '../../../components/editor/gifPlaybackUt
 const CanvasStageKonva = dynamic(
   () => import('../../../components/editor/CanvasStageKonva'),
   { ssr: false },
+);
+
+// Etapa 2.3 (Issue 15) — code-splitting de painéis pesados; mantêm `ssr: false` como o canvas.
+const PropertiesInspector = dynamic(
+  () => import('../../../components/editor/v2/panels/PropertiesInspector'),
+  { ssr: false, loading: () => <PanelSkeleton /> },
+);
+const LayerManagerPanel = dynamic(
+  () => import('../../../components/editor/v2/panels/LayerManagerPanel'),
+  { ssr: false, loading: () => <PanelSkeleton /> },
+);
+const ShapeSidebar = dynamic(
+  () => import('../../../components/editor/v2/panels/ShapeSidebar'),
+  { ssr: false, loading: () => <PanelSkeleton /> },
+);
+const BottomDock = dynamic(
+  () => import('../../../components/editor/v2/panels/BottomDock'),
+  { ssr: false, loading: () => <PanelSkeleton /> },
+);
+const AudioLibraryPickModal = dynamic(
+  () => import('../../../components/editor/v2/media/AudioLibraryPickModal'),
+  { ssr: false, loading: () => null },
 );
 
 const WORKFLOW_OPTIONS = [

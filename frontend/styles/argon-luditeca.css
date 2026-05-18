@@ -1,0 +1,736 @@
+/* Ajustes Luditeca sobre Argon Dashboard (MIT — Creative Tim) */
+
+/* Hub /admin: abas horizontais com scroll em viewport estreito (evita esmagar ou partir layout) */
+.admin-hub-tabs-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin-left: -0.25rem;
+  margin-right: -0.25rem;
+  padding-bottom: 0.25rem;
+}
+
+.admin-hub-tabs-scroll .nav-pills .nav-link {
+  white-space: nowrap;
+}
+
+/**
+ * CMS com sidebar: o Argon posiciona `.navbar-top` como absolute no topo do
+ * `main-content` (fora do fluxo). O `mt--7` do template serve para sobrepor
+ * uma faixa `header.bg-gradient-*`; sem essa faixa o margem negativa cortava
+ * cards/abas no topo. Reservamos altura para a barra superior aqui e tiramos
+ * `mt--7` dos Containers (`ArgonCmsShell`, /books, /admin).
+ */
+.navbar-vertical.fixed-left + .main-content {
+  padding-top: 5.75rem;
+}
+
+@media (max-width: 767.98px) {
+  .navbar-vertical.fixed-left + .main-content {
+    padding-top: 5.25rem;
+  }
+}
+
+/* Transição suave entre rotas (feel próximo da demo Argon admin). */
+.argon-page-transition {
+  animation: luditeca-page-in 0.32s ease-out;
+  padding-top: 0.5rem;
+}
+
+@keyframes luditeca-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Navbar superior: Argon define `.main-content .navbar-top { background: transparent }` */
+.main-content .navbar-top.luditeca-navbar-top.bg-gradient-primary {
+  background: linear-gradient(87deg, #5e72e4 0, #825ee4 100%) !important;
+  box-shadow: 0 1px 6px rgba(50, 50, 93, 0.12);
+  /* Argon zera padding horizontal; garantimos respiro vertical no título e no utilizador */
+  padding-top: 1rem !important;
+  padding-bottom: 1rem !important;
+}
+
+/* Sidebar clara + ícones em círculos coloridos (`icon-shape`) */
+.luditeca-sidenav.navbar-light .navbar-nav .nav-link {
+  color: #525f7f !important;
+  font-weight: 500;
+  padding-top: 0.55rem;
+  padding-bottom: 0.55rem;
+}
+
+.luditeca-sidenav.navbar-light .navbar-nav .nav-link:hover {
+  background-color: rgba(94, 114, 228, 0.07);
+  color: #32325d !important;
+}
+
+.luditeca-sidenav.navbar-light .navbar-nav .nav-link.active {
+  background-color: rgba(94, 114, 228, 0.11);
+  color: #5e72e4 !important;
+}
+
+.luditeca-sidenav.navbar-light .navbar-nav .nav-link.active::before {
+  border-left-color: #5e72e4;
+}
+
+.luditeca-sidenav-brand .navbar-brand:hover .text-primary {
+  color: #324cdd !important;
+}
+
+.luditeca-sidenav-nav .luditeca-sidenav-item {
+  animation: luditeca-nav-item-in 0.4s ease backwards;
+}
+
+.luditeca-sidenav-nav .luditeca-sidenav-item:nth-child(1) {
+  animation-delay: 0.04s;
+}
+.luditeca-sidenav-nav .luditeca-sidenav-item:nth-child(2) {
+  animation-delay: 0.08s;
+}
+.luditeca-sidenav-nav .luditeca-sidenav-item:nth-child(3) {
+  animation-delay: 0.12s;
+}
+.luditeca-sidenav-nav .luditeca-sidenav-item:nth-child(4) {
+  animation-delay: 0.16s;
+}
+.luditeca-sidenav-nav .luditeca-sidenav-item:nth-child(5) {
+  animation-delay: 0.2s;
+}
+.luditeca-sidenav-nav .luditeca-sidenav-item:nth-child(6) {
+  animation-delay: 0.24s;
+}
+.luditeca-sidenav-nav .luditeca-sidenav-item:nth-child(7) {
+  animation-delay: 0.28s;
+}
+.luditeca-sidenav-nav .luditeca-sidenav-item:nth-child(8) {
+  animation-delay: 0.32s;
+}
+.luditeca-sidenav-nav .luditeca-sidenav-item:nth-child(9) {
+  animation-delay: 0.36s;
+}
+.luditeca-sidenav-nav .luditeca-sidenav-item:nth-child(10) {
+  animation-delay: 0.4s;
+}
+.luditeca-sidenav-nav .luditeca-sidenav-item:nth-child(11) {
+  animation-delay: 0.44s;
+}
+.luditeca-sidenav-nav .luditeca-sidenav-item:nth-child(12) {
+  animation-delay: 0.48s;
+}
+
+@keyframes luditeca-nav-item-in {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* ========== CMS Luditeca — superfície Argon (demo admin Creative Tim) ========== */
+
+.luditeca-cms-shell {
+  padding-bottom: 2rem;
+}
+
+/* Cabeçalho de página (título + subtítulo + CTA) */
+.luditeca-page-header .luditeca-page-header-title {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: #32325d;
+}
+
+.luditeca-page-header .luditeca-page-header-accent {
+  display: block;
+  width: 3rem;
+  height: 4px;
+  border-radius: 2px;
+  margin-top: 0.65rem;
+  background: linear-gradient(87deg, #5e72e4 0, #825ee4 100%);
+}
+
+/* Botão principal com gradiente (como na demo Argon) */
+.luditeca-btn-gradient.btn-primary {
+  background: linear-gradient(87deg, #5e72e4 0, #825ee4 100%) !important;
+  border: none !important;
+  box-shadow: 0 4px 14px rgba(94, 114, 228, 0.35);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.luditeca-btn-gradient.btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(94, 114, 228, 0.45);
+}
+
+.luditeca-btn-gradient.btn-primary:disabled {
+  opacity: 0.65;
+  transform: none;
+}
+
+/* Cartões dentro da área CMS */
+.argon-page-transition .card.shadow {
+  border: 0 !important;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  box-shadow: 0 0 2rem 0 rgba(136, 152, 170, 0.13) !important;
+}
+
+.argon-page-transition .card.shadow.card-profile {
+  transition: transform 0.22s ease, box-shadow 0.22s ease;
+}
+
+.argon-page-transition .card.shadow.card-profile:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 14px 34px rgba(50, 50, 93, 0.14) !important;
+}
+
+.argon-page-transition .card.shadow > .card-header.border-0 {
+  background: linear-gradient(180deg, #f8f9fe 0%, #ffffff 55%);
+}
+
+.argon-page-transition .card.shadow > .card-header h3,
+.argon-page-transition .card.shadow > .card-header .mb-0.h3 {
+  font-weight: 600;
+  color: #32325d;
+}
+
+/* Tabelas em cartões */
+.argon-page-transition .card .table thead th {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8898aa !important;
+  background-color: #f6f9fc;
+  border-bottom-width: 1px;
+}
+
+.argon-page-transition .card .table-flush tbody tr:hover {
+  background-color: rgba(94, 114, 228, 0.04);
+}
+
+/* Hub /admin — pills com ícones, ativo em gradiente */
+.admin-hub-tabs-scroll .nav-pills .nav-link {
+  border-radius: 0.375rem;
+  font-weight: 500;
+  transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+  color: #525f7f;
+}
+
+.admin-hub-tabs-scroll .nav-pills .nav-link:not(.active):hover {
+  background-color: rgba(94, 114, 228, 0.08);
+  color: #324cdd;
+}
+
+.admin-hub-tabs-scroll .nav-pills .nav-link.active {
+  background: linear-gradient(87deg, #5e72e4 0, #825ee4 100%) !important;
+  color: #fff !important;
+  box-shadow: 0 4px 14px rgba(94, 114, 228, 0.35);
+}
+
+.admin-hub-tabs-scroll .nav-pills .nav-link i {
+  opacity: 0.95;
+}
+
+/* Pesquisa CMS — ícone em destaque */
+.luditeca-search-field .input-group-text {
+  background: linear-gradient(87deg, rgba(94, 114, 228, 0.12) 0, rgba(130, 94, 228, 0.12) 100%);
+  border-color: #e9ecef !important;
+  color: #5e72e4;
+}
+
+.luditeca-search-field .form-control,
+.luditeca-search-field input.form-control {
+  border-left: 0;
+}
+
+/* Formulários CMS */
+.argon-page-transition .form-control-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #525f7f;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.luditeca-form-control.form-control,
+.luditeca-form-control.custom-select {
+  border-radius: 0.375rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.luditeca-form-control.form-control:focus,
+.luditeca-form-control.custom-select:focus {
+  border-color: rgba(94, 114, 228, 0.55);
+  box-shadow: 0 0 0 1px rgba(94, 114, 228, 0.2);
+}
+
+/* Alertas */
+.argon-page-transition .alert {
+  border: 0;
+  border-radius: 0.5rem;
+}
+
+.argon-page-transition .alert-danger {
+  box-shadow: 0 4px 14px rgba(245, 54, 92, 0.15);
+}
+
+.argon-page-transition .alert-info {
+  box-shadow: 0 4px 14px rgba(17, 205, 239, 0.15);
+}
+
+/* Empty state / ícones grandes em cartões */
+.argon-page-transition .card .ni-books.text-muted {
+  opacity: 0.35;
+}
+
+/* Botões outline secundários no CMS */
+.argon-page-transition .btn-outline-secondary:hover {
+  border-color: #cbd3da;
+  background-color: #f7fafc;
+}
+
+/* Tabelas/listagens legadas com utilitários Tailwind ainda presentes */
+.main-content .container-fluid {
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+}
+
+/* App infantil mantém o próprio shell (sem sidebar Argon) */
+body.bg-default {
+  min-height: 100vh;
+}
+
+/* ---------- Área /app (skin Argon leve) ---------- */
+
+.luditeca-app-shell {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #f8f9fe 0%, #eef1f9 55%, #f7fafc 100%);
+}
+
+.luditeca-app-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: rgba(255, 255, 255, 0.95);
+  border-bottom: 1px solid rgba(94, 114, 228, 0.12);
+  box-shadow: 0 1px 6px rgba(50, 50, 93, 0.06);
+}
+
+.luditeca-app-header-inner {
+  max-width: 56rem;
+  margin: 0 auto;
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.luditeca-app-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.375rem;
+  color: #5e72e4;
+  transition: background-color 0.15s ease;
+}
+
+.luditeca-app-back:hover {
+  background-color: rgba(94, 114, 228, 0.08);
+  color: #324cdd;
+  text-decoration: none;
+}
+
+.luditeca-app-title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #32325d;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.luditeca-app-main {
+  max-width: 56rem;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 2rem;
+}
+
+.luditeca-app-intro {
+  color: #525f7f;
+  margin-bottom: 1.5rem;
+  line-height: 1.5;
+}
+
+.luditeca-app-hub-grid {
+  display: grid;
+  gap: 1rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+@media (min-width: 576px) {
+  .luditeca-app-hub-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.luditeca-app-hub-card {
+  display: block;
+  background: #fff;
+  border-radius: 0.5rem;
+  border: 0;
+  box-shadow: 0 0 2rem 0 rgba(136, 152, 170, 0.12);
+  overflow: hidden;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+  text-decoration: none !important;
+}
+
+.luditeca-app-hub-card:hover {
+  box-shadow: 0 4px 20px rgba(50, 50, 93, 0.15);
+  transform: translateY(-2px);
+}
+
+.luditeca-app-hub-card-bar {
+  display: block;
+  height: 4px;
+}
+
+.luditeca-app-accent-primary .luditeca-app-hub-card-bar {
+  background: linear-gradient(87deg, #5e72e4 0, #825ee4 100%);
+}
+
+.luditeca-app-accent-success .luditeca-app-hub-card-bar {
+  background: linear-gradient(87deg, #2dce89 0, #2dcecc 100%);
+}
+
+.luditeca-app-accent-info .luditeca-app-hub-card-bar {
+  background: linear-gradient(87deg, #11cdef 0, #1171ef 100%);
+}
+
+.luditeca-app-accent-warning .luditeca-app-hub-card-bar {
+  background: linear-gradient(87deg, #fb6340 0, #fbb140 100%);
+}
+
+.luditeca-app-accent-danger .luditeca-app-hub-card-bar {
+  background: linear-gradient(87deg, #f5365c 0, #f56036 100%);
+}
+
+.luditeca-app-hub-card-body {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  padding: 1.25rem;
+}
+
+.luditeca-app-hub-icon {
+  flex-shrink: 0;
+}
+
+.luditeca-app-hub-text {
+  min-width: 0;
+}
+
+.luditeca-app-hub-title {
+  display: block;
+  font-weight: 700;
+  color: #32325d;
+  font-size: 1rem;
+}
+
+.luditeca-app-hub-desc {
+  display: block;
+  font-size: 0.875rem;
+  color: #8898aa;
+  margin-top: 0.25rem;
+  line-height: 1.4;
+}
+
+.luditeca-app-list-grid {
+  display: grid;
+  gap: 1rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+@media (min-width: 576px) {
+  .luditeca-app-list-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.luditeca-app-list-card {
+  display: flex;
+  gap: 1rem;
+  background: #fff;
+  border-radius: 0.5rem;
+  border: 0;
+  box-shadow: 0 0 1.25rem rgba(136, 152, 170, 0.1);
+  padding: 1rem;
+  text-decoration: none !important;
+  transition: box-shadow 0.2s ease;
+}
+
+.luditeca-app-list-card:hover {
+  box-shadow: 0 4px 16px rgba(50, 50, 93, 0.12);
+}
+
+.luditeca-app-list-card-thumb {
+  width: 5rem;
+  height: 7rem;
+  flex-shrink: 0;
+  border-radius: 0.375rem;
+  background: #f7fafc;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.luditeca-app-list-card-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.luditeca-app-list-card-title {
+  font-weight: 600;
+  color: #32325d;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.luditeca-app-list-card-desc {
+  font-size: 0.875rem;
+  color: #8898aa;
+  margin: 0.25rem 0 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.luditeca-app-media-card {
+  background: #fff;
+  border-radius: 0.5rem;
+  box-shadow: 0 0 1.25rem rgba(136, 152, 170, 0.1);
+  overflow: hidden;
+  list-style: none;
+}
+
+.luditeca-app-media-card-image {
+  position: relative;
+  background: #f7fafc;
+}
+
+.luditeca-app-media-card-image--video {
+  aspect-ratio: 16 / 9;
+}
+
+.luditeca-app-media-card-image--square {
+  aspect-ratio: 1 / 1;
+}
+
+.luditeca-app-media-card-image--coloring {
+  aspect-ratio: 4 / 3;
+}
+
+.luditeca-app-media-card-body {
+  padding: 1rem;
+}
+
+.luditeca-app-media-card-title {
+  font-weight: 700;
+  color: #32325d;
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.luditeca-app-media-card-meta {
+  font-size: 0.75rem;
+  color: #8898aa;
+  text-transform: uppercase;
+  margin-top: 0.25rem;
+  letter-spacing: 0.03em;
+}
+
+.luditeca-app-media-card-text {
+  font-size: 0.875rem;
+  color: #525f7f;
+  margin: 0.5rem 0 0;
+}
+
+.luditeca-app-stack {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.luditeca-app-stack-item + .luditeca-app-stack-item {
+  margin-top: 0.75rem;
+}
+
+.luditeca-app-stack-link {
+  display: block;
+  background: #fff;
+  border-radius: 0.5rem;
+  box-shadow: 0 0 1.25rem rgba(136, 152, 170, 0.1);
+  padding: 1rem;
+  text-decoration: none !important;
+  transition: box-shadow 0.2s ease;
+}
+
+.luditeca-app-stack-link:hover {
+  box-shadow: 0 4px 16px rgba(50, 50, 93, 0.12);
+}
+
+.luditeca-app-stack-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #5e72e4;
+  letter-spacing: 0.04em;
+}
+
+.luditeca-app-stack-title {
+  font-weight: 600;
+  color: #32325d;
+  margin: 0.35rem 0 0;
+}
+
+.luditeca-app-stack-desc {
+  font-size: 0.875rem;
+  color: #8898aa;
+  margin: 0.35rem 0 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.luditeca-app-status {
+  color: #525f7f;
+}
+
+.luditeca-app-empty {
+  color: #8898aa;
+}
+
+.luditeca-app-alert {
+  border: 0;
+  border-radius: 0.5rem;
+}
+
+/**
+ * Sidebar vertical Argon + Reactstrap Collapse:
+ * Em md+ o toggler fica oculto; se o collapse iniciar fechado, o menu parece vazio.
+ * Garantir que o painel de navegação é visível em desktop mesmo durante animações.
+ */
+@media (min-width: 768px) {
+  #sidenav-main .navbar-collapse {
+    display: flex !important;
+    flex-direction: column;
+    flex: 1;
+    height: auto !important;
+    max-height: none !important;
+    opacity: 1 !important;
+    overflow: visible !important;
+    visibility: visible !important;
+  }
+
+  #sidenav-main .navbar-collapse .navbar-nav {
+    width: 100%;
+  }
+}
+
+/* ---------- Estados vazios, formulários, loading auth ---------- */
+
+.luditeca-empty-state-desc {
+  max-width: 26rem;
+  line-height: 1.5;
+}
+
+.luditeca-empty-state-card {
+  border-radius: 0.5rem;
+}
+
+.luditeca-empty-state-inline {
+  background: linear-gradient(180deg, rgba(94, 114, 228, 0.04) 0%, transparent 100%);
+  border-radius: 0.375rem;
+}
+
+/* Formulários CMS em cartão */
+.luditeca-form-card {
+  border-radius: 0.5rem;
+}
+
+.luditeca-form-card-header {
+  background: linear-gradient(180deg, #f8f9fe 0%, #ffffff 100%);
+  padding-top: 1.25rem;
+  padding-bottom: 1rem;
+}
+
+.luditeca-form-card .form-control,
+.luditeca-form-card .custom-select {
+  border-radius: 0.375rem;
+}
+
+.luditeca-form-card .form-control:focus,
+.luditeca-form-card .custom-select:focus {
+  border-color: rgba(94, 114, 228, 0.55);
+  box-shadow: 0 0 0 1px rgba(94, 114, 228, 0.15);
+}
+
+/* Loading antes do shell CMS (auth) */
+.luditeca-auth-loading {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(165deg, #f8f9fe 0%, #eef1f9 45%, #f7fafc 100%);
+}
+
+.luditeca-auth-loading .luditeca-auth-loading-brand {
+  font-weight: 700;
+  font-size: 1.5rem;
+  color: #5e72e4;
+  letter-spacing: -0.02em;
+  margin-bottom: 1.5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .argon-page-transition,
+  .luditeca-sidenav-nav .luditeca-sidenav-item,
+  .luditeca-sidenav.animate__animated,
+  .argon-page-transition .card.shadow.card-profile,
+  .luditeca-cms-shell.animate__animated {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .argon-page-transition .card.shadow.card-profile:hover {
+    transform: none;
+  }
+
+  .luditeca-btn-gradient.btn-primary:hover:not(:disabled) {
+    transform: none;
+  }
+
+  .luditeca-app-hub-card:hover {
+    transform: none;
+  }
+}

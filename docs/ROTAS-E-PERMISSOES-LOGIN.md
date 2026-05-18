@@ -32,6 +32,7 @@ Ficheiros de origem: `backend/src/plugins/auth.ts`, `backend/src/lib/roles.ts`, 
 | `requireAuth` | Qualquer utilizador autenticado | **401** `Não autenticado.` |
 | `requireCmsEditor` | `admin`, `editor` | **401** se não autenticado; **403** `Sem permissão.` se for `professor`/`aluno`. |
 | `requireAdmin` | `admin` | **401** / **403** conforme acima. |
+| `requireAppUser` | `aluno`, `professor`, `admin`, `editor` | Leitura na app infantil (`/app/*`). `admin`/`editor` incluídos para testes no mesmo build. |
 
 ---
 
@@ -114,7 +115,38 @@ Todas as rotas abaixo usam **requireCmsEditor** (`admin` ou `editor`):
 
 ---
 
-## 8. Outros
+## 8. Conteúdo CMS (atividades, LIBRAS, puzzle, pinturas)
+
+Todas usam **requireCmsEditor** (`admin` ou `editor`):
+
+| Recurso | Listagem | Detalhe | Criar | Atualizar | Apagar | Extra |
+|---------|----------|---------|-------|-----------|--------|-------|
+| Atividades | `GET /activities` | `GET /activities/:id` | `POST /activities` | `PATCH /activities/:id` | `DELETE /activities/:id` | query `is_published` |
+| LIBRAS | `GET /libras-lessons` | `GET /libras-lessons/:id` | `POST /libras-lessons` | `PATCH /libras-lessons/:id` | `DELETE /libras-lessons/:id` | `PATCH /libras-lessons/reorder` |
+| Puzzle | `GET /puzzle-games` | `GET /puzzle-games/:id` | `POST /puzzle-games` | `PATCH /puzzle-games/:id` | `DELETE /puzzle-games/:id` | |
+| Pinturas | `GET /coloring-pages` | `GET /coloring-pages/:id` | `POST /coloring-pages` | `PATCH /coloring-pages/:id` | `DELETE /coloring-pages/:id` | |
+
+---
+
+## 9. API da app infantil (`/app/*`)
+
+Todas usam **requireAppUser**. Retornam apenas conteúdo **publicado** (livros: `workflow_status = published`; demais: `is_published = true`).
+
+| Método | Rota | Notas |
+|--------|------|--------|
+| `GET` | `/app/books` | Lista leve (sem `pages_v2` completo) |
+| `GET` | `/app/books/:id` | Detalhe com `pages_v2` hidratado; query `view=v2\|legacy\|both` |
+| `GET` | `/app/activities` | |
+| `GET` | `/app/activities/:id` | |
+| `GET` | `/app/libras-lessons` | Ordenado por `sort_order` |
+| `GET` | `/app/puzzle-games` | |
+| `GET` | `/app/coloring-pages` | |
+
+Token de **aluno** ou **professor** que chame `PATCH /puzzle-games/:id` (CMS) recebe **403**.
+
+---
+
+## 10. Outros
 
 | Método | Rota | Permissão |
 |--------|------|-----------|
@@ -122,7 +154,7 @@ Todas as rotas abaixo usam **requireCmsEditor** (`admin` ou `editor`):
 
 ---
 
-## 9. Portal Next.js (CMS) — rotas de página e quem acede
+## 11. Portal Next.js (CMS) — rotas de página e quem acede
 
 Comportamento resumido (ver `frontend/pages/*`, `frontend/components/Layout.js`, `frontend/lib/roles.js`):
 
@@ -131,14 +163,15 @@ Comportamento resumido (ver `frontend/pages/*`, `frontend/components/Layout.js`,
 | `/login`, `/forgot-password`, `/reset-password` | Qualquer visitante. |
 | `/`, `/books`, `/books/new`, `/books/[id]/edit`, `/books/[id]/edit-v2`, `/profile` | Utilizador autenticado com papel **admin** ou **editor** (CMS). |
 | `/authors`, `/authors/*`, `/categories`, `/categories/*` | Só **admin** (links no layout). |
+| `/admin`, `/admin/puzzle`, `/admin/coloring`, `/admin/activities`, `/admin/libras` | **admin** ou **editor** (hub e gestão de conteúdo). |
 | `/admin/users`, `/admin/audit` | Só **admin**. |
-| `/app` | **aluno** ou **professor** (área do app; não é CMS de livros). |
+| `/app`, `/app/library`, `/app/activities`, `/app/libras`, `/app/puzzle`, `/app/coloring` | **aluno**, **professor** (e **admin**/**editor** para testes). |
 
 Se um **aluno** ou **professor** aceder a rotas do CMS, o `Layout` redireciona para `/app`.
 
 ---
 
-## 10. Resumo visual (matriz rápida)
+## 12. Resumo visual (matriz rápida)
 
 Legenda por coluna: **books GET** = `GET /books` e `GET /books/:id` (`requireAuth`); **books escrita** = `POST|PATCH|DELETE /books` (`requireCmsEditor`).
 

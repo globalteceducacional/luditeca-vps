@@ -22,6 +22,13 @@ enum BookWorkflowStatus {
   archived
 }
 
+/// Tipo editorial do livro (imutável após criação).
+enum BookType {
+  animated
+  interactive
+  digital
+}
+
 model User {
   id           String   @id @default(uuid())
   email        String   @unique
@@ -122,6 +129,13 @@ model Book {
   categoryId      BigInt?             @map("category_id")
   linkSlidebook   String?             @map("link_slidebook")
   workflowStatus  BookWorkflowStatus  @default(draft) @map("workflow_status")
+  bookType        BookType?           @map("book_type")
+  ageRange        String?             @map("age_range")
+  bookQuiz        Json?               @map("book_quiz")
+  soundtrackUrl   String?             @map("soundtrack_url")
+  pdfUrl          String?             @map("pdf_url")
+  epubUrl         String?             @map("epub_url")
+  isPdf           Boolean             @default(false) @map("is_pdf")
   /// Personagens (lista de strings) para catálogo e busca.
   catalogCharacters Json?             @map("catalog_characters")
   /// Nome da coleção editorial.
@@ -136,8 +150,79 @@ model Book {
   authorRel   Author?   @relation(fields: [authorId], references: [id])
   categoryRel Category? @relation(fields: [categoryId], references: [id])
   mediaFiles   MediaFile[]
+  activities   Activity[]
 
   @@map("books")
+}
+
+/// Atividades educativas (quiz, flashcard, etc.) — consumo na app com is_published.
+model Activity {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  icon        String?
+  type        String
+  questions   Json     @default("[]")
+  isPublished Boolean  @default(false) @map("is_published")
+  badgeReward String?  @map("badge_reward")
+  bookId      BigInt?  @map("book_id")
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  book Book? @relation(fields: [bookId], references: [id], onDelete: SetNull)
+
+  @@index([isPublished])
+  @@index([bookId])
+  @@map("activities")
+}
+
+/// Lições LIBRAS ordenadas (sem is_published — visibilidade por listagem).
+model LibrasLesson {
+  id           String   @id @default(uuid())
+  word         String
+  category     String?
+  imageUrl     String?  @map("image_url")
+  description  String?
+  quizQuestion String?  @map("quiz_question")
+  quizOptions  Json?    @map("quiz_options")
+  quizCorrect  Int?     @map("quiz_correct")
+  sortOrder    Int      @default(0) @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([sortOrder])
+  @@map("libras_lessons")
+}
+
+model PuzzleGame {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  imageUrl    String   @map("image_url")
+  pieceCount  Int      @default(15) @map("piece_count")
+  caption     String?
+  isPublished Boolean  @default(false) @map("is_published")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([isPublished])
+  @@map("puzzle_games")
+}
+
+model ColoringPage {
+  id          String   @id @default(uuid())
+  title       String
+  imageUrl    String?  @map("image_url")
+  defaultId   String?  @map("default_id")
+  svgType     String?  @map("svg_type")
+  isPublished Boolean  @default(false) @map("is_published")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([isPublished])
+  @@index([defaultId])
+  @@map("coloring_pages")
 }
 
 model MediaFile {

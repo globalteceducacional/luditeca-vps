@@ -1,5 +1,4 @@
 import { BookWorkflowStatus } from '@prisma/client';
-import pLimit from 'p-limit';
 import { prisma } from '../lib/prisma.js';
 import { writeAuditLog } from '../lib/auditLog.js';
 import { jsonSafe } from '../lib/serialize.js';
@@ -8,13 +7,8 @@ import { requireAuth } from '../plugins/auth.js';
 import { copyObject, deletePrefix, deleteObject, listAllKeys, presignedGetUrl, } from '../lib/s3.js';
 import { isPagesV2, migratePagesLegacyToV2 } from '../lib/pagesV2/migrate.js';
 import { parseCatalogStringArrayFromBody, persistBookSearchIndex } from '../lib/bookSearchIndex.js';
-/**
- * Concorrência máxima para presigns (S3/MinIO `GET`) numa única requisição.
- * 16 dá bom paralelismo sem saturar o backend de objectos para livros com
- * dezenas de mídias. Aplicado **apenas** ao redor de `presignedGetUrl`,
- * nunca à iteração de páginas/elementos (evita deadlock por re-entrância).
- */
-const PRESIGN_CONCURRENCY = 16;
+import { hydrateLegacyPagesMediaUrls, hydratePagesV2MediaUrls, parseBookDetailView, } from '../lib/bookMediaHydrate.js';
+import { BOOK_CARD_SELECT, bookCardResponse, bookResponse, parseLimitOffset, } from '../lib/bookSerialize.js';
 function toBigIntOrNull(v) {
     if (v === null || v === undefined || v === '')
         return null;
@@ -23,9 +17,6 @@ function toBigIntOrNull(v) {
 }
 function isNonEmptyString(v) {
     return typeof v === 'string' && v.trim().length > 0;
-}
-function isRecord(v) {
-    return !!v && typeof v === 'object' && !Array.isArray(v);
 }
 const WORKFLOW_SET = new Set([
     BookWorkflowStatus.draft,
@@ -40,124 +31,6 @@ function parseBookWorkflowStatus(v) {
     if (!WORKFLOW_SET.has(s))
         return undefined;
     return s;
-}
-async function resolveStorageUrl(cache, storage) {
-    if (!isRecord(storage))
-        return null;
-    const bucket = isNonEmptyString(storage.bucket) ? String(storage.bucket) : '';
-    const filePath = isNonEmptyString(storage.filePath) ? String(storage.filePath) : '';
-    if (!bucket || !filePath)
-        return null;
-    const key = `${bucket}:${filePath}`;
-    if (cache.has(key))
-        return cache.get(key) || null;
-    try {
-        const signed = await presignedGetUrl(bucket, filePath, 3600);
-        cache.set(key, signed);
-        return signed;
-    }
-    catch {
-        return null;
-    }
-}
-function parseStorageFromUrl(rawUrl) {
-    if (!isNonEmptyString(rawUrl))
-        return null;
-    try {
-        const parsed = new URL(String(rawUrl));
-        const path = parsed.pathname.replace(/^\/+/, '');
-        const [bucket, ...rest] = path.split('/');
-        if (!bucket || rest.length === 0)
-            return null;
-        return { bucket, filePath: rest.join('/') };
-    }
-    catch {
-        return null;
-    }
-}
-async function hydrateLegacyPagesMediaUrls(pages, cache) {
-    if (!Array.isArray(pages))
-        return pages;
-    const next = JSON.parse(JSON.stringify(pages));
-    const limit = pLimit(PRESIGN_CONCURRENCY);
-    const resolve = (storage) => limit(() => resolveStorageUrl(cache, storage));
-    await Promise.all(next.map(async (page) => {
-        const bg = isRecord(page.background) ? page.background : null;
-        if (bg) {
-            const bgStorage = bg.storage ?? parseStorageFromUrl(bg.url);
-            const signedBg = await resolve(bgStorage);
-            if (signedBg)
-                bg.url = signedBg;
-            if (!bg.storage && bgStorage)
-                bg.storage = bgStorage;
-            page.background = bg;
-        }
-        const elements = Array.isArray(page.elements) ? page.elements : [];
-        await Promise.all(elements.map(async (element) => {
-            if (!isRecord(element))
-                return;
-            const fallbackStorage = parseStorageFromUrl(element.content);
-            const signedEl = await resolve(element.storage ?? element.contentStorage ?? fallbackStorage);
-            if (signedEl && element.type === 'image') {
-                element.content = signedEl;
-            }
-            if (!element.storage && fallbackStorage && element.type === 'image') {
-                element.storage = fallbackStorage;
-            }
-        }));
-    }));
-    return next;
-}
-async function hydratePagesV2MediaUrls(v2, cache) {
-    if (!isPagesV2(v2))
-        return v2;
-    const next = JSON.parse(JSON.stringify(v2));
-    const limit = pLimit(PRESIGN_CONCURRENCY);
-    const resolve = (storage) => limit(() => resolveStorageUrl(cache, storage));
-    await Promise.all(next.pages.map(async (page) => {
-        const bg = isRecord(page.background) ? page.background : null;
-        if (bg) {
-            const bgStorage = bg.storage ?? parseStorageFromUrl(bg.url);
-            const signedBg = await resolve(bgStorage);
-            if (signedBg)
-                bg.url = signedBg;
-            if (!bg.storage && bgStorage)
-                bg.storage = bgStorage;
-            page.background = bg;
-        }
-        const nodes = Array.isArray(page.nodes) ? page.nodes : [];
-        await Promise.all(nodes.map(async (node) => {
-            if (!isRecord(node) || (node.type !== 'image' && node.type !== 'video'))
-                return;
-            const props = isRecord(node.props) ? node.props : null;
-            if (!props)
-                return;
-            const nodeStorage = props.storage ?? parseStorageFromUrl(props.content);
-            const signedNode = await resolve(nodeStorage);
-            if (signedNode)
-                props.content = signedNode;
-            if (!props.storage && nodeStorage)
-                props.storage = nodeStorage;
-            if (node.type === 'video') {
-                const posterStorage = props.posterStorage ?? parseStorageFromUrl(props.poster);
-                const signedPoster = await resolve(posterStorage);
-                if (signedPoster)
-                    props.poster = signedPoster;
-                if (!props.posterStorage && posterStorage)
-                    props.posterStorage = posterStorage;
-            }
-            node.props = props;
-        }));
-    }));
-    return next;
-}
-function parseBookDetailView(raw) {
-    const s = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
-    if (s === 'legacy')
-        return 'legacy';
-    if (s === 'both')
-        return 'both';
-    return 'v2';
 }
 async function finalizeImportSession({ userId, importSessionId, bookId, }) {
     const srcBase = `${userId}/imports/${importSessionId}`;
@@ -337,66 +210,6 @@ async function signLegacyPagesMediaUrls(pages) {
             }
         }
     }
-}
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function bookResponse(b) {
-    if (!b)
-        return null;
-    const { authorRel, categoryRel, searchIndex: _searchIndex, ...rest } = b;
-    return {
-        ...jsonSafe(rest),
-        authors: authorRel
-            ? { id: Number(authorRel.id), name: authorRel.name }
-            : null,
-        category: categoryRel
-            ? { id: Number(categoryRel.id), name: categoryRel.name }
-            : null,
-    };
-}
-/**
- * Projeção leve para listagens (catálogo / busca).
- * Exclui campos pesados: `pages`, `pagesV2`, `searchIndex`, `linkSlidebook`.
- * Reduz drasticamente o payload de `GET /books` e `GET /books/search`.
- */
-const BOOK_CARD_SELECT = {
-    id: true,
-    title: true,
-    author: true,
-    description: true,
-    coverImage: true,
-    createdAt: true,
-    workflowStatus: true,
-    authorId: true,
-    categoryId: true,
-    catalogCollection: true,
-    catalogLevel: true,
-    catalogCharacters: true,
-    catalogKeywords: true,
-    authorRel: { select: { id: true, name: true } },
-    categoryRel: { select: { id: true, name: true } },
-};
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function bookCardResponse(b) {
-    if (!b)
-        return null;
-    const { authorRel, categoryRel, ...rest } = b;
-    return {
-        ...jsonSafe(rest),
-        authors: authorRel
-            ? { id: Number(authorRel.id), name: authorRel.name }
-            : null,
-        category: categoryRel
-            ? { id: Number(categoryRel.id), name: categoryRel.name }
-            : null,
-    };
-}
-/** Lê e clampa `limit` (1..100, default 50) e `offset` (>=0, default 0). */
-function parseLimitOffset(query) {
-    const limitRaw = parseInt(String(query.limit ?? ''), 10);
-    const offsetRaw = parseInt(String(query.offset ?? ''), 10);
-    const limit = Number.isFinite(limitRaw) ? Math.min(100, Math.max(1, limitRaw)) : 50;
-    const skip = Number.isFinite(offsetRaw) ? Math.max(0, offsetRaw) : 0;
-    return { limit, skip };
 }
 function tokenizeSearchQuery(raw) {
     return String(raw || '')

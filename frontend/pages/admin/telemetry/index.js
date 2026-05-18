@@ -1,7 +1,23 @@
 import { useEffect, useState, useCallback } from 'react';
 import Head from 'next/head';
+import Link from 'next/link';
 import { useRouter } from 'next/router';
+import {
+  Alert,
+  Button,
+  Card,
+  CardBody,
+  Col,
+  Form,
+  FormGroup,
+  Input,
+  Row,
+  Spinner,
+  Table,
+} from 'reactstrap';
 import Layout from '../../../components/Layout';
+import ArgonEmptyState from '../../../components/argon/ArgonEmptyState';
+import ArgonCmsShell, { ArgonTableCard } from '../../../components/argon/ArgonCmsShell';
 import { useAuth } from '../../../contexts/auth';
 import { ROLES } from '../../../lib/roles';
 import { fetchTechnicalLogs } from '../../../lib/technicalLogs';
@@ -56,130 +72,164 @@ export default function AdminTelemetryPage() {
   };
 
   return (
-    <>
+    <Layout>
       <Head>
-        <title>Telemetria técnica | Luditeca CMS</title>
+        <title>Telemetria técnica | Luditeca</title>
       </Head>
-      <Layout>
-        <div className="container mx-auto max-w-7xl px-4 py-6">
-          <h1 className="mb-2 text-2xl font-bold">Telemetria técnica</h1>
-          <p className="mb-6 text-sm text-gray-600">
-            Erros HTTP lentos ou com falha, rotas <code className="rounded bg-gray-100 px-1">/media</code> com 4xx/5xx,
-            excepções não tratadas e eventos do editor (ex.: falha de reprodução de vídeo). Latência de referência:{' '}
-            <code className="rounded bg-gray-100 px-1">TELEMETRY_SLOW_MS</code> (default 3000 ms).
-          </p>
-
-          <form onSubmit={applyFilters} className="mb-6 flex flex-wrap items-end gap-3">
-            <div>
-              <label className="mb-1 block text-xs text-gray-600">Nível</label>
-              <select
-                value={levelFilter}
-                onChange={(e) => setLevelFilter(e.target.value)}
-                className="rounded border px-2 py-1"
-              >
-                <option value="">Todos</option>
-                <option value="error">error</option>
-                <option value="warn">warn</option>
-                <option value="info">info</option>
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs text-gray-600">Categoria (contém)</label>
-              <input
-                value={categoryFilter}
-                onChange={(e) => setCategoryFilter(e.target.value)}
-                className="w-48 rounded border px-2 py-1"
-                placeholder="http, client:video…"
-              />
-            </div>
-            <button type="submit" className="rounded bg-blue-600 px-4 py-1 text-sm text-white hover:bg-blue-700">
-              Aplicar
-            </button>
-            <button
-              type="button"
-              className="rounded border px-4 py-1 text-sm"
-              onClick={() => {
-                setLevelFilter('');
-                setCategoryFilter('');
-                setOffset(0);
-                setReloadNonce((n) => n + 1);
-              }}
-            >
-              Limpar
-            </button>
-          </form>
-
-          {error ? (
-            <div className="mb-4 rounded border border-red-200 bg-red-50 p-4 text-red-800">{error}</div>
-          ) : null}
-
+      <ArgonCmsShell
+        title="Telemetria técnica"
+        subtitle="Erros HTTP, rotas /media e eventos do editor."
+        headerExtra={
+          <Button color="link" size="sm" tag={Link} href="/admin" className="p-0">
+            ← Hub admin
+          </Button>
+        }
+      >
+        <Card className="shadow border-0 mb-4">
+          <CardBody>
+            <Form onSubmit={applyFilters}>
+              <Row>
+                <Col md="3">
+                  <FormGroup>
+                    <label className="form-control-label">Nível</label>
+                    <Input
+                      type="select"
+                      value={levelFilter}
+                      onChange={(e) => setLevelFilter(e.target.value)}
+                    >
+                      <option value="">Todos</option>
+                      <option value="error">error</option>
+                      <option value="warn">warn</option>
+                      <option value="info">info</option>
+                    </Input>
+                  </FormGroup>
+                </Col>
+                <Col md="4">
+                  <FormGroup>
+                    <label className="form-control-label">Categoria (contém)</label>
+                    <Input
+                      value={categoryFilter}
+                      onChange={(e) => setCategoryFilter(e.target.value)}
+                      placeholder="http, client:video…"
+                    />
+                  </FormGroup>
+                </Col>
+                <Col md="5" className="d-flex align-items-end">
+                  <Button color="primary" type="submit" className="mr-2">
+                    Aplicar
+                  </Button>
+                  <Button
+                    color="secondary"
+                    type="button"
+                    onClick={() => {
+                      setLevelFilter('');
+                      setCategoryFilter('');
+                      setOffset(0);
+                      setReloadNonce((n) => n + 1);
+                    }}
+                  >
+                    Limpar
+                  </Button>
+                </Col>
+              </Row>
+            </Form>
+          </CardBody>
+        </Card>
+        {error ? <Alert color="danger">{error}</Alert> : null}
+        <ArgonTableCard title="Registos">
           {loading ? (
-            <p className="text-gray-600">A carregar…</p>
+            <div className="text-center py-4">
+              <Spinner color="primary" />
+            </div>
           ) : (
             <>
-              <p className="mb-2 text-sm text-gray-600">
+              <p className="text-muted small mb-3">
                 {total} registo(s) — página {Math.floor(offset / limit) + 1}
               </p>
-              <div className="overflow-x-auto rounded border bg-white">
-                <table className="min-w-full text-left text-sm">
-                  <thead className="border-b bg-gray-50">
+              <div className="table-responsive">
+                <Table className="align-items-center table-flush" size="sm">
+                  <thead className="thead-light">
                     <tr>
-                      <th className="p-2">Data</th>
-                      <th className="p-2">Nível</th>
-                      <th className="p-2">Categoria</th>
-                      <th className="p-2">Mensagem</th>
-                      <th className="p-2">HTTP</th>
-                      <th className="p-2">ms</th>
-                      <th className="p-2">Utilizador</th>
-                      <th className="p-2">request_id</th>
+                      <th>Data</th>
+                      <th>Nível</th>
+                      <th>Categoria</th>
+                      <th>Mensagem</th>
+                      <th>HTTP</th>
+                      <th>ms</th>
+                      <th>Utilizador</th>
+                      <th>request_id</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((r) => (
-                      <tr key={r.id} className="border-b align-top hover:bg-gray-50">
-                        <td className="whitespace-nowrap p-2 text-xs text-gray-600">
-                          {r.createdAt ? new Date(r.createdAt).toLocaleString() : '—'}
-                        </td>
-                        <td className="p-2 font-mono text-xs">{r.level}</td>
-                        <td className="max-w-[10rem] truncate p-2 font-mono text-xs" title={r.category}>
-                          {r.category}
-                        </td>
-                        <td className="max-w-md p-2 text-xs" title={r.message}>
-                          {r.message}
-                        </td>
-                        <td className="p-2 font-mono text-xs">{r.statusCode ?? '—'}</td>
-                        <td className="p-2 font-mono text-xs">{r.durationMs ?? '—'}</td>
-                        <td className="max-w-[8rem] truncate p-2 text-xs">{r.userId || '—'}</td>
-                        <td className="max-w-[8rem] truncate p-2 font-mono text-[10px]" title={r.requestId}>
-                          {r.requestId || '—'}
+                    {rows.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="p-0 border-0">
+                          <ArgonEmptyState
+                            variant="inline"
+                            icon="ni ni-chart-bar-32"
+                            iconShape="secondary"
+                            title="Sem registos"
+                            description="Não há eventos de telemetria para estes filtros ou período."
+                            secondaryLabel="Limpar filtros"
+                            onSecondary={() => {
+                              setLevelFilter('');
+                              setCategoryFilter('');
+                              setOffset(0);
+                              setReloadNonce((n) => n + 1);
+                            }}
+                          />
                         </td>
                       </tr>
-                    ))}
+                    ) : (
+                      rows.map((r) => (
+                        <tr key={r.id}>
+                          <td className="text-nowrap small text-muted">
+                            {r.createdAt ? new Date(r.createdAt).toLocaleString() : '—'}
+                          </td>
+                          <td className="font-monospace small">{r.level}</td>
+                          <td className="small text-truncate" style={{ maxWidth: 120 }} title={r.category}>
+                            {r.category}
+                          </td>
+                          <td className="small" style={{ maxWidth: 280 }} title={r.message}>
+                            {r.message}
+                          </td>
+                          <td className="font-monospace small">{r.statusCode ?? '—'}</td>
+                          <td className="font-monospace small">{r.durationMs ?? '—'}</td>
+                          <td className="small text-truncate" style={{ maxWidth: 100 }}>
+                            {r.userId || '—'}
+                          </td>
+                          <td className="font-monospace small text-truncate" style={{ maxWidth: 100 }} title={r.requestId}>
+                            {r.requestId || '—'}
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
-                </table>
+                </Table>
               </div>
-              <div className="mt-4 flex gap-2">
-                <button
-                  type="button"
+              <div className="mt-3">
+                <Button
+                  color="default"
+                  size="sm"
                   disabled={offset === 0}
-                  className="rounded border px-3 py-1 text-sm disabled:opacity-40"
+                  className="mr-2"
                   onClick={() => setOffset((o) => Math.max(0, o - limit))}
                 >
                   Anterior
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button
+                  color="default"
+                  size="sm"
                   disabled={offset + limit >= total}
-                  className="rounded border px-3 py-1 text-sm disabled:opacity-40"
                   onClick={() => setOffset((o) => o + limit)}
                 >
                   Seguinte
-                </button>
+                </Button>
               </div>
             </>
           )}
-        </div>
-      </Layout>
-    </>
+        </ArgonTableCard>
+      </ArgonCmsShell>
+    </Layout>
   );
 }

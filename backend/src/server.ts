@@ -16,6 +16,11 @@ import { registerImportPptxRoute } from './routes/importPptxRoute.js';
 import { registerUserRoutes } from './routes/userRoutes.js';
 import { registerAdminAuditRoutes } from './routes/adminAuditRoutes.js';
 import { registerTelemetryRoutes } from './routes/telemetryRoutes.js';
+import { registerActivityRoutes } from './routes/activityRoutes.js';
+import { registerLibrasLessonRoutes } from './routes/librasLessonRoutes.js';
+import { registerPuzzleGameRoutes } from './routes/puzzleGameRoutes.js';
+import { registerColoringPageRoutes } from './routes/coloringPageRoutes.js';
+import { registerAppRoutes } from './routes/appRoutes.js';
 import { registerHttpTelemetry } from './telemetry/httpTelemetry.js';
 import { assertBucket } from './lib/s3.js';
 
@@ -46,8 +51,10 @@ function parseCorsOrigin(): string[] {
     }
     return [
       'http://localhost:3000',
+      'http://localhost:3001',
       'http://localhost:8080',
       'http://127.0.0.1:3000',
+      'http://127.0.0.1:3001',
       'http://127.0.0.1:8080',
     ];
   }
@@ -250,6 +257,11 @@ async function main() {
   await registerUserRoutes(app);
   await registerTelemetryRoutes(app);
   await registerAdminAuditRoutes(app);
+  await registerActivityRoutes(app);
+  await registerLibrasLessonRoutes(app);
+  await registerPuzzleGameRoutes(app);
+  await registerColoringPageRoutes(app);
+  await registerAppRoutes(app);
 
   await app.listen({ port, host });
   app.log.info(`API http://${host}:${port}`);

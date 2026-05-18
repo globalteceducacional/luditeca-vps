@@ -16,6 +16,11 @@ import { registerImportPptxRoute } from './routes/importPptxRoute.js';
 import { registerUserRoutes } from './routes/userRoutes.js';
 import { registerAdminAuditRoutes } from './routes/adminAuditRoutes.js';
 import { registerTelemetryRoutes } from './routes/telemetryRoutes.js';
+import { registerActivityRoutes } from './routes/activityRoutes.js';
+import { registerLibrasLessonRoutes } from './routes/librasLessonRoutes.js';
+import { registerPuzzleGameRoutes } from './routes/puzzleGameRoutes.js';
+import { registerColoringPageRoutes } from './routes/coloringPageRoutes.js';
+import { registerAppRoutes } from './routes/appRoutes.js';
 import { registerHttpTelemetry } from './telemetry/httpTelemetry.js';
 import { assertBucket } from './lib/s3.js';
 /** Omissão 3020 = alinhado com `.env.example` e `frontend/.env.local.example`. Docker define `PORT` explicitamente. */
@@ -217,6 +222,11 @@ async function main() {
     await registerUserRoutes(app);
     await registerTelemetryRoutes(app);
     await registerAdminAuditRoutes(app);
+    await registerActivityRoutes(app);
+    await registerLibrasLessonRoutes(app);
+    await registerPuzzleGameRoutes(app);
+    await registerColoringPageRoutes(app);
+    await registerAppRoutes(app);
     await app.listen({ port, host });
     app.log.info(`API http://${host}:${port}`);
     app.log.info({ corsOrigin }, 'CORS origins permitidas');

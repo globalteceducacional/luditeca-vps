@@ -112,18 +112,32 @@ export const createBook = async (bookData) => {
         orientation: 'portrait',
       },
     ];
+    const useTypeFlow = Boolean(bookData.book_type);
     const payload = sanitizeNumericFields({
       title: bookData.title,
       author: bookData.author,
       description: bookData.description,
       cover_image: bookData.cover_image,
-      pages: Array.isArray(bookData.pages) ? bookData.pages : fallbackPages,
+      pages: useTypeFlow
+        ? Array.isArray(bookData.pages)
+          ? bookData.pages
+          : []
+        : Array.isArray(bookData.pages)
+          ? bookData.pages
+          : fallbackPages,
       pages_v2: bookData.pages_v2,
       author_id: bookData.author_id,
       category_id: bookData.category_id,
       link_slidebook: bookData.link_slidebook,
       import_session_id: bookData.import_session_id,
       ...(bookData.workflow_status ? { workflow_status: bookData.workflow_status } : {}),
+      ...(bookData.book_type ? { book_type: bookData.book_type } : {}),
+      ...(bookData.age_range != null ? { age_range: bookData.age_range } : {}),
+      ...(bookData.quiz != null ? { quiz: bookData.quiz } : {}),
+      ...(bookData.soundtrack_url != null ? { soundtrack_url: bookData.soundtrack_url } : {}),
+      ...(bookData.pdf_url != null ? { pdf_url: bookData.pdf_url } : {}),
+      ...(bookData.epub_url != null ? { epub_url: bookData.epub_url } : {}),
+      ...(bookData.is_pdf != null ? { is_pdf: bookData.is_pdf } : {}),
     });
     const row = await apiFetch('/books', { method: 'POST', body: payload });
     return { data: normalizeBook(row), error: null };

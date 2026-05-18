@@ -2,9 +2,23 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
+import {
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  Col,
+  Form,
+  FormGroup,
+  Input,
+  InputGroup,
+  InputGroupAddon,
+  InputGroupText,
+} from 'reactstrap';
+import ArgonAuth from '../layouts/ArgonAuth';
 import { apiFetch } from '../lib/apiClient';
 
-export default function ResetPassword() {
+function ResetPasswordPage() {
   const router = useRouter();
   const [token, setToken] = useState('');
   const [password, setPassword] = useState('');
@@ -45,77 +59,75 @@ export default function ResetPassword() {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-100 px-4">
+    <Col lg="5" md="7">
       <Head>
-        <title>Nova senha | Luditeca CMS</title>
+        <title>Nova senha | Luditeca</title>
       </Head>
-      <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
-        <h1 className="text-2xl font-bold text-center mb-6">Definir nova senha</h1>
-
-        {ok ? (
-          <div className="text-center space-y-4">
-            <p className="text-green-700">Senha atualizada. Pode iniciar sessão.</p>
-            <Link href="/login" className="inline-block text-blue-600 hover:underline">
-              Ir para o login
-            </Link>
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {error && (
-              <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded text-sm">
-                {error}
-              </div>
-            )}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Token</label>
-              <input
-                type="text"
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
-                placeholder="Cole o token do email ou do link (?token=)"
-              />
+      <Card className="bg-secondary shadow border-0">
+        <CardHeader className="bg-transparent">
+          <h2 className="text-center mb-0">Definir nova senha</h2>
+        </CardHeader>
+        <CardBody className="px-lg-5 py-lg-5">
+          {ok ? (
+            <div className="text-center">
+              <p className="text-success mb-4">Senha atualizada. Pode iniciar sessão.</p>
+              <Button color="primary" tag={Link} href="/login">
+                Ir para o login
+              </Button>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nova senha</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={6}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Confirmar senha</label>
-              <input
-                type="password"
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-                required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={loading}
-              className={`w-full py-2 px-4 rounded-md text-white font-medium ${
-                loading ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'
-              }`}
-            >
-              {loading ? 'A guardar…' : 'Guardar nova senha'}
-            </button>
-          </form>
-        )}
-
-        <p className="mt-6 text-center text-sm text-gray-600">
-          <Link href="/login" className="text-blue-600 hover:underline">
-            Voltar ao login
-          </Link>
-        </p>
-      </div>
-    </div>
+          ) : (
+            <Form onSubmit={handleSubmit}>
+              {error ? <div className="alert alert-danger">{error}</div> : null}
+              <FormGroup>
+                <InputGroup className="input-group-alternative mb-3">
+                  <InputGroupAddon addonType="prepend">
+                    <InputGroupText>
+                      <i className="ni ni-key-25" />
+                    </InputGroupText>
+                  </InputGroupAddon>
+                  <Input
+                    placeholder="Token"
+                    value={token}
+                    onChange={(e) => setToken(e.target.value)}
+                    required
+                  />
+                </InputGroup>
+              </FormGroup>
+              <FormGroup>
+                <Input
+                  type="password"
+                  placeholder="Nova senha"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  minLength={6}
+                />
+              </FormGroup>
+              <FormGroup>
+                <Input
+                  type="password"
+                  placeholder="Confirmar senha"
+                  value={confirm}
+                  onChange={(e) => setConfirm(e.target.value)}
+                  required
+                />
+              </FormGroup>
+              <Button color="primary" block type="submit" disabled={loading}>
+                {loading ? 'A guardar…' : 'Guardar nova senha'}
+              </Button>
+            </Form>
+          )}
+          {!ok ? (
+            <p className="text-center mt-4 mb-0">
+              <Link href="/login">Voltar ao login</Link>
+            </p>
+          ) : null}
+        </CardBody>
+      </Card>
+    </Col>
   );
 }
+
+ResetPasswordPage.layout = ArgonAuth;
+
+export default ResetPasswordPage;

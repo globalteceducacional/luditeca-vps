@@ -1,9 +1,25 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
+import {
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  Col,
+  Form,
+  FormGroup,
+  Input,
+  InputGroup,
+  InputGroupAddon,
+  InputGroupText,
+  Row,
+} from 'reactstrap';
+import ArgonAuth from '../layouts/ArgonAuth';
 import { useAuth } from '../contexts/auth';
+import { ROLES } from '../lib/roles';
 
-export default function Login() {
+function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
@@ -15,16 +31,17 @@ export default function Login() {
     e.preventDefault();
     setError(null);
     setLoading(true);
-
     try {
       const result = await login(email, password);
-      if (!result.success) {
-        throw new Error(result.error || 'Falha no login');
+      if (!result.success) throw new Error(result.error || 'Falha no login');
+      const role = result.user?.role;
+      if (role === ROLES.aluno || role === ROLES.professor) {
+        router.push('/app');
+      } else {
+        router.push('/books');
       }
-      router.push('/');
     } catch (err) {
-      console.error('Erro ao fazer login:', err);
-      const fallback = 'Falha ao fazer login. Verifique seu email e senha.';
+      const fallback = 'Falha ao fazer login. Verifique email e senha.';
       const msg = typeof err?.message === 'string' ? err.message.trim() : '';
       setError(msg && msg !== 'Failed to fetch' ? msg : fallback);
     } finally {
@@ -33,68 +50,73 @@ export default function Login() {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-100">
-      <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
-        <h1 className="text-2xl font-bold text-center mb-6">Login</h1>
-
-        {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-            {error}
+    <Col lg="5" md="7">
+      <Card className="bg-secondary shadow border-0">
+        <CardHeader className="bg-transparent pb-4">
+          <div className="text-muted text-center mt-2">
+            <h2 className="text-default">Entrar</h2>
           </div>
-        )}
-
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-              Senha
-            </label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className={`w-full py-2 px-4 ${
-              loading ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'
-            } text-white font-medium rounded-md transition`}
-          >
-            {loading ? 'Entrando...' : 'Entrar'}
-          </button>
-
-          <p className="text-center text-sm mt-3">
-            <Link href="/forgot-password" className="text-blue-600 hover:underline">
-              Esqueci a senha
-            </Link>
-          </p>
-        </form>
-
-        <div className="mt-6 text-center">
-          <Link href="/" className="text-sm text-blue-600 hover:text-blue-800">
-            Voltar para a página inicial
+        </CardHeader>
+        <CardBody className="px-lg-5 py-lg-5">
+          {error && (
+            <div className="alert alert-danger" role="alert">
+              {error}
+            </div>
+          )}
+          <Form onSubmit={handleLogin} role="form">
+            <FormGroup className="mb-3">
+              <InputGroup className="input-group-alternative">
+                <InputGroupAddon addonType="prepend">
+                  <InputGroupText>
+                    <i className="ni ni-email-83" />
+                  </InputGroupText>
+                </InputGroupAddon>
+                <Input
+                  placeholder="Email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  autoComplete="email"
+                />
+              </InputGroup>
+            </FormGroup>
+            <FormGroup>
+              <InputGroup className="input-group-alternative">
+                <InputGroupAddon addonType="prepend">
+                  <InputGroupText>
+                    <i className="ni ni-lock-circle-open" />
+                  </InputGroupText>
+                </InputGroupAddon>
+                <Input
+                  placeholder="Senha"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  autoComplete="current-password"
+                />
+              </InputGroup>
+            </FormGroup>
+            <div className="text-center">
+              <Button className="my-4" color="primary" type="submit" disabled={loading}>
+                {loading ? 'A entrar…' : 'Entrar'}
+              </Button>
+            </div>
+          </Form>
+        </CardBody>
+      </Card>
+      <Row className="mt-3">
+        <Col className="text-center" xs="12">
+          <Link href="/forgot-password" className="text-light">
+            <small>Esqueceu a senha?</small>
           </Link>
-        </div>
-      </div>
-    </div>
+        </Col>
+      </Row>
+    </Col>
   );
 }
+
+LoginPage.layout = ArgonAuth;
+
+export default LoginPage;

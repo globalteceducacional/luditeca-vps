@@ -10,6 +10,8 @@ export default function Document() {
           href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Raleway:wght@400;500;700&family=Poppins:wght@400;500;700&family=Nunito:wght@400;500;700&family=Merriweather:wght@400;500;700&family=Dosis:wght@400;500;700&display=swap"
           rel="stylesheet"
         />
+        <link rel="stylesheet" href="/argon/plugins/nucleo/css/nucleo.css" />
+        <link rel="stylesheet" href="/argon/css/nextjs-argon-dashboard.min.css" />
       </Head>
       <body>
         <Main />
