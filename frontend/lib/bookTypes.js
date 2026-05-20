@@ -30,6 +30,33 @@ export function getBookTypeMeta(id) {
   return BOOK_TYPES.find((t) => t.id === id) || null;
 }
 
+export function getBookTypeLabel(id) {
+  const meta = getBookTypeMeta(id);
+  if (meta) return meta.title;
+  const s = String(id || '').trim();
+  return s || null;
+}
+
+export function bookTypeBadgeColor(id) {
+  switch (id) {
+    case 'animated':
+      return 'primary';
+    case 'interactive':
+      return 'warning';
+    case 'digital':
+      return 'info';
+    default:
+      return 'secondary';
+  }
+}
+
+/** Rota de edição CMS: fluxo por tipo ou editor visual v2 (legado). */
+export function getBookEditHref(book) {
+  const id = book?.id;
+  if (!id) return '/books';
+  return book?.book_type ? `/books/${id}/edit-flow` : `/books/${id}/edit-v2`;
+}
+
 /** Ordenação numérica por nome de ficheiro (Base44). */
 export function sortFilesByNumericName(files) {
   return [...files].sort((a, b) =>

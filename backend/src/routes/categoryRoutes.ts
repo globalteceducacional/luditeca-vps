@@ -23,12 +23,16 @@ export async function registerCategoryRoutes(app: FastifyInstance) {
     },
   );
 
-  // Escrita: somente ADM
-  app.post('/categories', { preHandler: requireAdmin }, async (request, reply) => {
+  // Criação no fluxo do livro: admin + editor (edição/apagar continuam só ADM)
+  app.post('/categories', { preHandler: requireCmsEditor }, async (request, reply) => {
     const body = request.body as Record<string, unknown>;
+    const name = String(body.name || '').trim();
+    if (!name) {
+      return reply.code(400).send({ error: 'O nome da categoria é obrigatório.' });
+    }
     const row = await prisma.category.create({
       data: {
-        name: String(body.name || ''),
+        name,
         imageUrl: body.image_url != null ? String(body.image_url) : null,
       },
     });

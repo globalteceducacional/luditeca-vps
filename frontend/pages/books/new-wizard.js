@@ -17,6 +17,7 @@ import Layout from '../../components/Layout';
 import ArgonCmsShell from '../../components/argon/ArgonCmsShell';
 import ArgonFormCard from '../../components/argon/ArgonFormCard';
 import LoadingProgressOverlay from '../../components/LoadingProgressOverlay';
+import BookCreateMetadata from '../../components/books/create/BookCreateMetadata';
 import { useNewBookWizard } from '../../hooks/useNewBookWizard';
 
 const STEP_LABELS = ['Início', 'Metadados', 'Capítulos', 'Conteúdo'];
@@ -104,90 +105,28 @@ export default function NewBookWizardPage() {
                     {w.step === 1 ? (
                       <>
                         <h4 className="mb-4 text-dark font-weight-bold">Metadados</h4>
-                        <FormGroup>
-                          <label className="form-control-label">Título *</label>
-                          <Input
-                            className="luditeca-form-control"
-                            value={w.title}
-                            onChange={(e) => w.setTitle(e.target.value)}
-                            required
-                          />
-                        </FormGroup>
-                        <FormGroup>
-                          <label className="form-control-label">Autor</label>
-                          <Input
-                            className="luditeca-form-control"
-                            type="select"
-                            value={w.authorId}
-                            onChange={(e) => w.setAuthorId(e.target.value)}
-                          >
-                            <option value="">Selecione um autor</option>
-                            {w.loadingAuthors ? (
-                              <option disabled>A carregar…</option>
-                            ) : (
-                              w.authors.map((author) => (
-                                <option key={author.id} value={author.id}>
-                                  {author.name}
-                                </option>
-                              ))
-                            )}
-                          </Input>
-                        </FormGroup>
-                        <FormGroup>
-                          <label className="form-control-label">Categoria</label>
-                          <Input
-                            className="luditeca-form-control"
-                            type="select"
-                            value={w.categoryId}
-                            onChange={(e) => w.setCategoryId(e.target.value)}
-                          >
-                            <option value="">Selecione uma categoria</option>
-                            {w.loadingCategories ? (
-                              <option disabled>A carregar…</option>
-                            ) : (
-                              w.categories.map((category) => (
-                                <option key={category.id} value={category.id}>
-                                  {category.name}
-                                </option>
-                              ))
-                            )}
-                          </Input>
-                        </FormGroup>
-                        <FormGroup>
-                          <label className="form-control-label">Descrição</label>
-                          <Input
-                            className="luditeca-form-control"
-                            type="textarea"
-                            rows={4}
-                            value={w.description}
-                            onChange={(e) => w.setDescription(e.target.value)}
-                          />
-                        </FormGroup>
-                        <FormGroup>
-                          <label className="form-control-label">Capa</label>
-                          <div className="d-flex flex-wrap align-items-center mb-2">
-                            <label className="btn btn-primary btn-sm mb-0 luditeca-btn-gradient">
-                              <i className="ni ni-image mr-1" />
-                              {w.uploadingCover ? 'A enviar…' : 'Enviar imagem'}
-                              <input
-                                type="file"
-                                accept="image/*"
-                                className="d-none"
-                                onChange={w.handleCoverUpload}
-                                disabled={w.uploadingCover}
-                              />
-                            </label>
-                            {w.coverImage ? (
-                              <span className="small text-success ml-3">Capa definida</span>
-                            ) : null}
-                          </div>
-                          {w.coverImage ? (
-                            <div className="border rounded p-3 bg-light mt-2">
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={w.coverImage} alt="" className="img-fluid" style={{ maxHeight: 220 }} />
-                            </div>
-                          ) : null}
-                        </FormGroup>
+                        <BookCreateMetadata
+                          form={{
+                            title: w.title,
+                            description: w.description,
+                            age_range: '',
+                            author_id: w.authorId,
+                            category_id: w.categoryId,
+                            cover_image: w.coverImage,
+                            workflow_status: 'draft',
+                          }}
+                          onChange={w.patchWizardForm}
+                          authors={w.authors}
+                          categories={w.categories}
+                          onAuthorCreated={w.onAuthorCreated}
+                          onCategoryCreated={w.onCategoryCreated}
+                          loadingAuthors={w.loadingAuthors}
+                          loadingCategories={w.loadingCategories}
+                          onCoverUpload={w.handleCoverUpload}
+                          uploadingCover={w.uploadingCover}
+                          showAgeRange={false}
+                          showWorkflow={false}
+                        />
                       </>
                     ) : null}
 

@@ -16,6 +16,7 @@ import {
 import { isPagesV2, migratePagesLegacyToV2 } from '../lib/pagesV2/migrate.js';
 import { parseCatalogStringArrayFromBody, persistBookSearchIndex } from '../lib/bookSearchIndex.js';
 import {
+  hydrateBookAssetUrls,
   hydrateLegacyPagesMediaUrls,
   hydratePagesV2MediaUrls,
   parseBookDetailView,
@@ -31,7 +32,10 @@ import {
   parseBookType,
   parseOptionalString,
   parseOptionalUrl,
+  validateBookTypePages,
+  validateDigitalBookAssets,
 } from '../lib/bookTypes.js';
+import { BookType } from '@prisma/client';
 
 function toBigIntOrNull(v: unknown): bigint | null {
   if (v === null || v === undefined || v === '') return null;
@@ -439,6 +443,8 @@ export async function registerBookRoutes(app: FastifyInstance) {
         resp.needsMigration = true;
         resp.pages_v2_suggested = migratePagesLegacyToV2(pagesLegacy);
       }
+
+      await hydrateBookAssetUrls(resp, mediaUrlCache);
       return reply.send(resp);
     },
   );
@@ -485,6 +491,13 @@ export async function registerBookRoutes(app: FastifyInstance) {
         body.link_slidebook != null ? String(body.link_slidebook) : null,
     };
     if (bookType) {
+      if (bookType === BookType.digital) {
+        const digCheck = validateDigitalBookAssets(body);
+        if (!digCheck.ok) return reply.code(400).send({ error: digCheck.error });
+      } else {
+        const pagesCheck = validateBookTypePages(bookType, pages);
+        if (!pagesCheck.ok) return reply.code(400).send({ error: pagesCheck.error });
+      }
       createData.bookType = bookType;
       const ageRange = parseOptionalString(body.age_range ?? body.ageRange);
       if (ageRange !== undefined) createData.ageRange = ageRange;
@@ -665,7 +678,13 @@ export async function registerBookRoutes(app: FastifyInstance) {
 
       const prev = await prisma.book.findUnique({
         where: { id },
-        select: { workflowStatus: true, title: true, bookType: true },
+        select: {
+          workflowStatus: true,
+          title: true,
+          bookType: true,
+          pdfUrl: true,
+          epubUrl: true,
+        },
       });
       if (!prev) {
         return reply.code(404).send({ error: 'Livro não encontrado.' });
@@ -708,6 +727,30 @@ export async function registerBookRoutes(app: FastifyInstance) {
       }
       if ('is_pdf' in clean || 'isPdf' in clean) {
         data.isPdf = Boolean(clean.is_pdf ?? clean.isPdf);
+      }
+
+      const effectiveType = prev.bookType ?? data.bookType;
+      if (effectiveType && 'pages' in clean) {
+        const pagesCheck = validateBookTypePages(
+          effectiveType as BookType,
+          clean.pages,
+        );
+        if (!pagesCheck.ok) return reply.code(400).send({ error: pagesCheck.error });
+      }
+      if (effectiveType === BookType.digital) {
+        const merged = {
+          pdf_url: 'pdfUrl' in data ? data.pdfUrl : prev.pdfUrl,
+          epub_url: 'epubUrl' in data ? data.epubUrl : prev.epubUrl,
+        };
+        if (
+          'pdfUrl' in data ||
+          'epubUrl' in data ||
+          'pdf_url' in clean ||
+          'epub_url' in clean
+        ) {
+          const digCheck = validateDigitalBookAssets(merged);
+          if (!digCheck.ok) return reply.code(400).send({ error: digCheck.error });
+        }
       }
 
       if (Object.keys(data).length === 0) {

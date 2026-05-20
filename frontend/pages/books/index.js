@@ -32,6 +32,7 @@ import WorkflowStatusSelect, {
 import { CMS_BOOK_CARD_CLASS } from '../../lib/cmsUiClasses';
 import { CMS_ROLES, isRole } from '../../lib/roles';
 import { devLog } from '../../lib/devLog';
+import { bookTypeBadgeColor, getBookEditHref, getBookTypeLabel } from '../../lib/bookTypes';
 
 const PAGE_SIZE = 50;
 
@@ -343,12 +344,23 @@ export default function Books() {
                       </div>
                       <CardBody className="pt-3">
                         <div className="d-flex justify-content-between align-items-start mb-2">
-                          <h4 className="mb-0 text-truncate" title={book.title}>
+                          <h4 className="mb-0 text-truncate pr-2" title={book.title}>
                             {book.title || 'Sem título'}
                           </h4>
-                          <Badge color={workflowBadgeColor(book.workflow_status)} pill>
-                            {WORKFLOW_LABEL[book.workflow_status] || book.workflow_status}
-                          </Badge>
+                          <div className="d-flex flex-column align-items-end flex-shrink-0">
+                            {book.book_type ? (
+                              <Badge
+                                color={bookTypeBadgeColor(book.book_type)}
+                                pill
+                                className="mb-1"
+                              >
+                                {getBookTypeLabel(book.book_type)}
+                              </Badge>
+                            ) : null}
+                            <Badge color={workflowBadgeColor(book.workflow_status)} pill>
+                              {WORKFLOW_LABEL[book.workflow_status] || book.workflow_status}
+                            </Badge>
+                          </div>
                         </div>
                         <p className="text-sm text-muted mb-1">
                           <strong>Autor:</strong> {book.authors?.name || 'Desconhecido'}
@@ -373,13 +385,7 @@ export default function Books() {
                             size="sm"
                             outline
                             disabled={isListRefreshing}
-                            onClick={() =>
-                              router.push(
-                                book.book_type
-                                  ? `/books/${book.id}/edit-flow`
-                                  : `/books/${book.id}/edit-v2`,
-                              )
-                            }
+                            onClick={() => router.push(getBookEditHref(book))}
                           >
                             <i className="ni ni-ruler-pencil mr-1" />
                             Editar

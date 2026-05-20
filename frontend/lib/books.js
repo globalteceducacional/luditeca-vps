@@ -146,6 +146,10 @@ export const createBook = async (bookData) => {
   }
 };
 
+/**
+ * Atualiza metadados e conteúdo de um livro (PATCH parcial).
+ * Aceita fluxo por tipo (`book_type`, `pages`, `quiz`, `pdf_url`, …) e editor v2 (`pages_v2`).
+ */
 export const updateBook = async (id, bookData) => {
   try {
     if (!isValidId(id)) {
@@ -153,6 +157,9 @@ export const updateBook = async (id, bookData) => {
     }
     const cleanBookData = { ...bookData };
     if (cleanBookData.authors) delete cleanBookData.authors;
+    // book_type é imutável no servidor; não reenviar em PATCH acidental.
+    if (cleanBookData.book_type != null) delete cleanBookData.book_type;
+    if (cleanBookData.bookType != null) delete cleanBookData.bookType;
     const sanitizedData = sanitizeNumericFields(cleanBookData);
     // Mantém compat: backend aceita pages_v2 / pagesV2. Padronizamos pages_v2.
     if (sanitizedData.pagesV2 && !sanitizedData.pages_v2) {

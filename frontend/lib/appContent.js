@@ -1,4 +1,5 @@
 import { apiFetch } from './apiClient';
+import { normalizeBook } from './apiNormalize';
 
 const toError = (e) =>
   (e && typeof e.message === 'string' && e.message) || 'Erro inesperado';
@@ -14,8 +15,9 @@ async function listApp(path, params = {}) {
   try {
     const qs = buildQuery(params);
     const row = await apiFetch(qs ? `${path}?${qs}` : path);
+    const raw = Array.isArray(row?.data) ? row.data : [];
     return {
-      data: Array.isArray(row?.data) ? row.data : [],
+      data: path.startsWith('/app/books') ? raw.map(normalizeAppBookCard) : raw,
       total: row?.total ?? 0,
       error: null,
     };
@@ -37,9 +39,20 @@ export function listAppBooks(params) {
   return listApp('/app/books', params);
 }
 
-export function getAppBook(id, view = 'v2') {
+/**
+ * Detalhe de livro publicado na app.
+ * @param {string|number} id
+ * @param {'v2'|'legacy'|'both'} [view] — use `both` para livros por tipo (`book_type` + legado).
+ */
+export async function getAppBook(id, view = 'both') {
   const qs = view ? `?view=${encodeURIComponent(view)}` : '';
-  return getApp(`/app/books/${id}${qs}`);
+  const res = await getApp(`/app/books/${id}${qs}`);
+  if (res.error || !res.data) return res;
+  return { data: normalizeBook(res.data), error: null };
+}
+
+export function normalizeAppBookCard(row) {
+  return normalizeBook(row);
 }
 
 export function listAppActivities(params) {

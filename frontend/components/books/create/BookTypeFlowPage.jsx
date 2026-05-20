@@ -93,6 +93,10 @@ export default function BookTypeFlowPage({ bookType, bookId = null }) {
               onChange={flow.patchForm}
               authors={flow.authors}
               categories={flow.categories}
+              onAuthorCreated={flow.onAuthorCreated}
+              onCategoryCreated={flow.onCategoryCreated}
+              loadingAuthors={flow.loadingAuthors}
+              loadingCategories={flow.loadingCategories}
               onCoverUpload={onCoverUpload}
               uploadingCover={flow.uploading}
             />
@@ -144,6 +148,8 @@ export default function BookTypeFlowPage({ bookType, bookId = null }) {
         </Form>
 
         <p className="small text-muted mt-4 mb-0">
+          Publicar na app infantil: defina <strong>Estado editorial → Publicado</strong> nos metadados.
+          <br />
           Fluxos alternativos:{' '}
           <Link href="/books/new-wizard">assistente capítulos/PPTX</Link>
           {' · '}

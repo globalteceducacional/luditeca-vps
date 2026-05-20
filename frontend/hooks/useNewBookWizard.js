@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import { toast } from 'react-hot-toast';
 import { createBook } from '../lib/books';
@@ -234,6 +234,38 @@ export function useNewBookWizard() {
 
   const goBackStep = () => setStep((s) => Math.max(s === 1 ? 0 : s - 1, 0));
 
+  const sortByName = (list) =>
+    [...list].sort((a, b) =>
+      String(a.name || '').localeCompare(String(b.name || ''), 'pt', { sensitivity: 'base' }),
+    );
+
+  const onAuthorCreated = useCallback((author) => {
+    setAuthors((prev) => {
+      const without = prev.filter((a) => String(a.id) !== String(author.id));
+      return sortByName([...without, author]);
+    });
+    setAuthorId(String(author.id));
+  }, []);
+
+  const onCategoryCreated = useCallback((category) => {
+    setCategories((prev) => {
+      const without = prev.filter((c) => String(c.id) !== String(category.id));
+      return sortByName([...without, category]);
+    });
+    setCategoryId(String(category.id));
+  }, []);
+
+  const patchWizardForm = useCallback(
+    (patch) => {
+      if (patch.title !== undefined) setTitle(patch.title);
+      if (patch.description !== undefined) setDescription(patch.description);
+      if (patch.author_id !== undefined) setAuthorId(patch.author_id);
+      if (patch.category_id !== undefined) setCategoryId(patch.category_id);
+      if (patch.cover_image !== undefined) setCoverImage(patch.cover_image);
+    },
+    [],
+  );
+
   return {
     authLoading,
     user,
@@ -265,5 +297,8 @@ export function useNewBookWizard() {
     handleSubmit,
     handlePptxImport,
     goBackStep,
+    onAuthorCreated,
+    onCategoryCreated,
+    patchWizardForm,
   };
 }

@@ -1,4 +1,6 @@
 import { FormGroup, Input, Label } from 'reactstrap';
+import WorkflowStatusSelect from '../../argon/WorkflowStatusSelect';
+import BookCatalogPickers from './BookCatalogPickers';
 
 const fc = 'luditeca-form-control';
 
@@ -7,8 +9,15 @@ export default function BookCreateMetadata({
   onChange,
   authors = [],
   categories = [],
+  onAuthorCreated,
+  onCategoryCreated,
   onCoverUpload,
   uploadingCover,
+  loadingAuthors = false,
+  loadingCategories = false,
+  showAgeRange = true,
+  showWorkflow = true,
+  allowQuickCreate = true,
 }) {
   const set = (key, value) => onChange({ [key]: value });
 
@@ -33,47 +42,46 @@ export default function BookCreateMetadata({
           onChange={(e) => set('description', e.target.value)}
         />
       </FormGroup>
-      <FormGroup>
-        <Label className="form-control-label">Faixa etária</Label>
-        <Input
-          className={fc}
-          placeholder="Ex.: 4–7 anos"
-          value={form.age_range}
-          onChange={(e) => set('age_range', e.target.value)}
-        />
-      </FormGroup>
-      <FormGroup>
-        <Label className="form-control-label">Autor (catálogo)</Label>
-        <Input
-          className={fc}
-          type="select"
-          value={form.author_id}
-          onChange={(e) => set('author_id', e.target.value)}
-        >
-          <option value="">— opcional —</option>
-          {authors.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </Input>
-      </FormGroup>
-      <FormGroup>
-        <Label className="form-control-label">Categoria</Label>
-        <Input
-          className={fc}
-          type="select"
-          value={form.category_id}
-          onChange={(e) => set('category_id', e.target.value)}
-        >
-          <option value="">— opcional —</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </Input>
-      </FormGroup>
+      {showAgeRange ? (
+        <FormGroup>
+          <Label className="form-control-label">Faixa etária</Label>
+          <Input
+            className={fc}
+            placeholder="Ex.: 4–7 anos"
+            value={form.age_range}
+            onChange={(e) => set('age_range', e.target.value)}
+          />
+        </FormGroup>
+      ) : null}
+
+      <BookCatalogPickers
+        authorId={form.author_id}
+        categoryId={form.category_id}
+        onAuthorIdChange={(v) => set('author_id', v)}
+        onCategoryIdChange={(v) => set('category_id', v)}
+        authors={authors}
+        categories={categories}
+        onAuthorCreated={onAuthorCreated}
+        onCategoryCreated={onCategoryCreated}
+        loadingAuthors={loadingAuthors}
+        loadingCategories={loadingCategories}
+        disabled={uploadingCover}
+        allowQuickCreate={allowQuickCreate}
+      />
+
+      {showWorkflow ? (
+        <FormGroup>
+          <Label className="form-control-label">Estado editorial</Label>
+          <WorkflowStatusSelect
+            value={form.workflow_status}
+            onChange={(v) => set('workflow_status', v)}
+            disabled={uploadingCover}
+          />
+          <p className="small text-muted mb-0 mt-1">
+            «Publicado» torna o livro visível na app infantil (quando o resto do conteúdo estiver pronto).
+          </p>
+        </FormGroup>
+      ) : null}
       <FormGroup>
         <Label className="form-control-label">Capa</Label>
         <Input

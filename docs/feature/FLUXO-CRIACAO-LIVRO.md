@@ -37,9 +37,12 @@ Documento para alinhar o **BookEditor** do app Vite/Base44 com o CMS **Next.js +
 
 | Passo | Rota | Componente |
 |--------|------|------------|
-| Assistente criação | `/books/new` | `pages/books/new.js` + hook [`useNewBookWizard.js`](../../frontend/hooks/useNewBookWizard.js) |
+| Escolha de tipo | `/books/new` | Picker → `/books/new/[tipo]` |
+| Criação/edição por tipo | `/books/new/[bookType]`, `/books/[id]/edit-flow` | `BookTypeFlowPage` + `useBookTypeFlow` |
+| Assistente capítulos/PPTX | `/books/new-wizard` | [`useNewBookWizard.js`](../../frontend/hooks/useNewBookWizard.js) → `edit-v2` |
 | Legado (não linkado) | `/books/new-legacy` | `EditorLayout` + Tailwind |
-| Edição contínua | `/books/[id]/edit-v2` | `edit-v2.jsx` (Konva + `pages_v2`) |
+| Edição visual v2 | `/books/[id]/edit-v2` | Konva + `pages_v2` (livros sem `book_type`) |
+| App infantil | `/app/library/[id]` | Leitor v2 ou leitores por tipo (`AppBookTypeReaders`) |
 
 ### 2.3 Estado inicial do formulário (Base44)
 
@@ -145,15 +148,15 @@ flowchart TD
   A[Login JWT] --> B{role admin ou editor?}
   B -->|Não| C[Redirect /app ou /login]
   B -->|Sim| D[/books → Novo livro]
-  D --> E[/books/new — assistente Argon]
-  E --> F[Passo 0 Intro]
-  F --> G[Passo 1 Metadados]
-  G --> H[Passo 2 Capítulos]
-  H --> I[Passo 3 PPTX opcional]
-  I --> J[POST /books workflow_status draft]
-  J --> K[/books/id/edit-v2 editor Konva]
-  K --> L[PATCH /books até published]
-  L --> M[GET /app/books visível na app]
+  D --> E[/books/new — escolher tipo]
+  E --> F[/books/new/animated|interactive|digital]
+  F --> G[POST /books com book_type]
+  G --> H[/books/id/edit-flow]
+  H --> I[workflow_status published]
+  I --> J[/app/library — leitor por tipo]
+  D --> W[/books/new-wizard — assistente PPTX]
+  W --> K[/books/id/edit-v2 editor Konva]
+  K --> I
 ```
 
 ### 3.1 Assistente `/books/new` (4 passos)

@@ -35,6 +35,7 @@ import { listColoringPages, updateColoringPage } from '../../lib/coloringPages';
 import { listLibrasLessons } from '../../lib/librasLessons';
 import { listPuzzleGames, updatePuzzleGame } from '../../lib/puzzleGames';
 import { CMS_ROLES, isRole } from '../../lib/roles';
+import { bookTypeBadgeColor, getBookEditHref, getBookTypeLabel } from '../../lib/bookTypes';
 
 const TABS = [
   { id: 'books', label: 'LIVROS', icon: 'ni ni-book-bookmark' },
@@ -235,6 +236,7 @@ export default function AdminHub() {
                           <thead className="thead-light">
                             <tr>
                               <th scope="col">Título</th>
+                              <th scope="col">Tipo</th>
                               <th scope="col">Autor</th>
                               <th scope="col">Estado</th>
                               <th scope="col" />
@@ -243,7 +245,7 @@ export default function AdminHub() {
                           <tbody>
                             {books.length === 0 ? (
                               <tr>
-                                <td colSpan={4} className="p-0 border-0">
+                                <td colSpan={5} className="p-0 border-0">
                                   <ArgonEmptyState
                                     variant="inline"
                                     icon="ni ni-book-bookmark"
@@ -261,6 +263,15 @@ export default function AdminHub() {
                                   <th scope="row">
                                     <span className="font-weight-bold mb-0">{b.title}</span>
                                   </th>
+                                  <td>
+                                    {b.book_type ? (
+                                      <Badge color={bookTypeBadgeColor(b.book_type)} pill>
+                                        {getBookTypeLabel(b.book_type)}
+                                      </Badge>
+                                    ) : (
+                                      <span className="text-muted text-sm">Editor v2</span>
+                                    )}
+                                  </td>
                                   <td>{authorName(b)}</td>
                                   <td style={{ minWidth: 160 }}>
                                     <WorkflowStatusSelect
@@ -281,7 +292,7 @@ export default function AdminHub() {
                                       size="sm"
                                       outline
                                       tag={Link}
-                                      href={`/books/${b.id}/edit-v2`}
+                                      href={getBookEditHref(b)}
                                     >
                                       Editar
                                     </Button>

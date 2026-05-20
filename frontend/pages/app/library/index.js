@@ -8,6 +8,7 @@ import AppShell from '../../../components/app/AppShell';
 import AppStatusBlock from '../../../components/app/AppStatusBlock';
 import { listAppBooks } from '../../../lib/appContent';
 import { getFileUrl } from '../../../lib/mediaUrl';
+import { getBookTypeLabel } from '../../../lib/bookTypes';
 import { APP_ROLES, isRole } from '../../../lib/roles';
 
 function coverUrl(book) {
@@ -68,6 +69,11 @@ export default function AppLibraryPage() {
                   </div>
                   <div className="min-w-0 flex-grow-1">
                     <h2 className="luditeca-app-list-card-title">{book.title}</h2>
+                    {book.book_type ? (
+                      <p className="text-xs text-violet-700 font-medium mb-1">
+                        {getBookTypeLabel(book.book_type)}
+                      </p>
+                    ) : null}
                     {book.description ? <p className="luditeca-app-list-card-desc">{book.description}</p> : null}
                   </div>
                 </Link>

@@ -97,6 +97,33 @@ export function useBookTypeFlow({ bookType, bookId = null }) {
     setForm((prev) => ({ ...prev, ...patch }));
   }, []);
 
+  const sortByName = (list) =>
+    [...list].sort((a, b) =>
+      String(a.name || '').localeCompare(String(b.name || ''), 'pt', { sensitivity: 'base' }),
+    );
+
+  const onAuthorCreated = useCallback(
+    (author) => {
+      setAuthors((prev) => {
+        const without = prev.filter((a) => String(a.id) !== String(author.id));
+        return sortByName([...without, author]);
+      });
+      patchForm({ author_id: String(author.id) });
+    },
+    [patchForm],
+  );
+
+  const onCategoryCreated = useCallback(
+    (category) => {
+      setCategories((prev) => {
+        const without = prev.filter((c) => String(c.id) !== String(category.id));
+        return sortByName([...without, category]);
+      });
+      patchForm({ category_id: String(category.id) });
+    },
+    [patchForm],
+  );
+
   useEffect(() => {
     if (!authLoading && !user) router.replace('/login');
     if (!authLoading && user && !isRole(user, CMS_ROLES)) router.replace('/app');
@@ -257,5 +284,9 @@ export function useBookTypeFlow({ bookType, bookId = null }) {
     setError,
     handleSubmit,
     isEdit,
+    onAuthorCreated,
+    onCategoryCreated,
+    loadingAuthors: loadingMeta,
+    loadingCategories: loadingMeta,
   };
 }

@@ -22,12 +22,16 @@ export async function registerAuthorRoutes(app: FastifyInstance) {
     },
   );
 
-  // Escrita: somente ADM
-  app.post('/authors', { preHandler: requireAdmin }, async (request, reply) => {
+  // Criação no fluxo do livro: admin + editor (edição/apagar continuam só ADM)
+  app.post('/authors', { preHandler: requireCmsEditor }, async (request, reply) => {
     const body = request.body as Record<string, unknown>;
+    const name = String(body.name || '').trim();
+    if (!name) {
+      return reply.code(400).send({ error: 'O nome do autor é obrigatório.' });
+    }
     const row = await prisma.author.create({
       data: {
-        name: String(body.name || ''),
+        name,
         bio: body.bio != null ? String(body.bio) : null,
         photoUrl: body.photo_url != null ? String(body.photo_url) : null,
       },

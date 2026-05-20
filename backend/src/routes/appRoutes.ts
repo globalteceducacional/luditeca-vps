@@ -9,6 +9,7 @@ import {
 } from '../lib/contentApi.js';
 import { parsePagination } from '../lib/contentTypes.js';
 import {
+  hydrateBookAssetUrls,
   hydrateLegacyPagesMediaUrls,
   hydratePagesV2MediaUrls,
   parseBookDetailView,
@@ -68,6 +69,7 @@ async function buildPublishedBookDetail(
     resp.pages_v2_suggested = migratePagesLegacyToV2(pagesLegacy);
   }
 
+  await hydrateBookAssetUrls(resp, mediaUrlCache);
   return { status: 200, body: resp };
 }
 

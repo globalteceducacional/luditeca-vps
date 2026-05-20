@@ -80,10 +80,49 @@ export async function hydrateLegacyPagesMediaUrls(pages: unknown, cache: Map<str
           }
         }),
       );
+
+      // Fluxo por tipo (animated / interactive): `image_url` plano na página/cena.
+      if (isNonEmptyString(page.image_url)) {
+        const imgStorage = parseStorageFromUrl(page.image_url);
+        const signedImg = await resolve(imgStorage);
+        if (signedImg) page.image_url = signedImg;
+      }
     }),
   );
 
   return next;
+}
+
+/** Presign de URLs de assets do livro (capa, trilha, PDF, EPUB). */
+export async function hydrateBookAssetUrls(
+  book: Record<string, unknown>,
+  cache: Map<string, string>,
+) {
+  const limit = pLimit(PRESIGN_CONCURRENCY);
+  const resolve = (storage: unknown) => limit(() => resolveStorageUrl(cache, storage));
+
+  const pairs: Array<[string, string]> = [
+    ['soundtrackUrl', 'soundtrack_url'],
+    ['pdfUrl', 'pdf_url'],
+    ['epubUrl', 'epub_url'],
+    ['coverImage', 'cover_image'],
+  ];
+
+  await Promise.all(
+    pairs.map(async ([camel, snake]) => {
+      const raw = book[camel] ?? book[snake];
+      if (!isNonEmptyString(raw)) return;
+      const storage = parseStorageFromUrl(raw);
+      if (!storage) return;
+      const signed = await resolve(storage);
+      if (signed) {
+        book[camel] = signed;
+        book[snake] = signed;
+      }
+    }),
+  );
+
+  return book;
 }
 
 export async function hydratePagesV2MediaUrls(v2: unknown, cache: Map<string, string>) {
