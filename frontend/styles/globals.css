@@ -1,5 +1,44 @@
 @tailwind base;
 @tailwind components;
+
+@layer components {
+  .luditeca-app-shell {
+    @apply font-sans text-luditeca-ink;
+  }
+
+  .app-card {
+    @apply bg-luditeca-surface rounded-2xl border border-luditeca-primary-100 overflow-hidden shadow-luditeca-sm;
+  }
+
+  .app-panel {
+    @apply bg-luditeca-primary-50 rounded-xl overflow-hidden border border-luditeca-primary-100;
+  }
+
+  .app-panel-padded {
+    @apply app-panel p-4;
+  }
+
+  .app-btn-nav {
+    @apply inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-luditeca-primary-200 text-luditeca-body disabled:opacity-40 hover:bg-luditeca-primary-50 transition-colors;
+  }
+
+  .app-choice-default {
+    @apply w-full text-left px-4 py-3 rounded-xl border border-luditeca-primary-200 text-luditeca-ink hover:bg-luditeca-primary-50 transition-colors;
+  }
+
+  .app-choice-branch {
+    @apply w-full text-left px-4 py-3 rounded-xl border border-luditeca-accent-200 text-luditeca-accent-900 hover:bg-luditeca-accent-soft disabled:opacity-40 transition-colors;
+  }
+
+  .app-link-reset {
+    @apply text-sm text-luditeca-muted underline hover:text-luditeca-primary-600;
+  }
+
+  .app-badge-type {
+    @apply text-xs text-luditeca-accent-700 font-medium;
+  }
+}
+
 @tailwind utilities;
 
 html,

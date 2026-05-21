@@ -1,20 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
-import {
-  Alert,
-  Button,
-  Card,
-  CardBody,
-  Media,
-  Spinner,
-  Table,
-} from 'reactstrap';
+import { Media, Table } from 'reactstrap';
 import { useAuth } from '../../contexts/auth';
 import { getCategories, deleteCategory } from '../../lib/categories';
 import { getFileUrl } from '../../lib/mediaUrl';
 import Layout from '../../components/Layout';
+import ArgonFormCard from '../../components/argon/ArgonFormCard';
 import ArgonCmsShell, { ArgonTableCard } from '../../components/argon/ArgonCmsShell';
+import { LuditecaAlert, LuditecaButton } from '../../components/argon/luditeca';
 import ArgonEmptyState from '../../components/argon/ArgonEmptyState';
 import ArgonSearchInput from '../../components/argon/ArgonSearchInput';
 import { CMS_ROLES, ROLES, isRole } from '../../lib/roles';
@@ -87,6 +81,7 @@ export default function Categories() {
       </Head>
       <Layout>
         <ArgonCmsShell
+          contentConstrained
           title="Categorias"
           subtitle={
             canManageCategories
@@ -96,21 +91,27 @@ export default function Categories() {
           actionLabel={canManageCategories ? 'Nova categoria' : undefined}
           actionIcon={canManageCategories ? 'ni ni-fat-add' : undefined}
           onAction={canManageCategories ? () => router.push('/categories/new') : undefined}
-          loading={loading}
+          loading={loading && categories.length === 0}
+          loadingVariant="table"
+          loadingLabel="Lista de categorias"
         >
-          <Card className="shadow border-0 mb-4">
-            <CardBody>
-              <ArgonSearchInput
-                value={searchTerm}
-                onChange={setSearchTerm}
-                placeholder="Pesquisar categoria…"
-              />
-            </CardBody>
-          </Card>
+          <ArgonFormCard className="mb-4 luditeca-search-card">
+            <ArgonSearchInput
+              value={searchTerm}
+              onChange={setSearchTerm}
+              placeholder="Pesquisar categoria…"
+            />
+          </ArgonFormCard>
 
-          {error ? <Alert color="danger">{error}</Alert> : null}
+          {error ? <LuditecaAlert color="danger">{error}</LuditecaAlert> : null}
 
-          {categories.length === 0 ? (
+          {loading && categories.length > 0 ? (
+            <div className="luditeca-refresh-bar mb-3" role="status" aria-live="polite">
+              <div className="luditeca-refresh-bar-inner" />
+            </div>
+          ) : null}
+
+          {categories.length === 0 && !loading ? (
             canManageCategories ? (
               <ArgonEmptyState
                 icon="ni ni-tag"
@@ -166,24 +167,23 @@ export default function Categories() {
                         </th>
                         {canManageCategories ? (
                           <td className="text-right">
-                            <Button
-                              color="primary"
+                            <LuditecaButton
+                              variant="outline"
                               size="sm"
-                              outline
                               className="mr-2"
                               onClick={() => router.push(`/categories/${cat.id}/edit`)}
                             >
                               Editar
-                            </Button>
-                            <Button
-                              color="danger"
+                            </LuditecaButton>
+                            <LuditecaButton
+                              variant="danger"
                               size="sm"
-                              outline
                               disabled={deleteLoading === cat.id}
+                              loading={deleteLoading === cat.id}
                               onClick={() => handleDeleteCategory(cat.id)}
                             >
-                              {deleteLoading === cat.id ? <Spinner size="sm" /> : 'Excluir'}
-                            </Button>
+                              Excluir
+                            </LuditecaButton>
                           </td>
                         ) : null}
                       </tr>

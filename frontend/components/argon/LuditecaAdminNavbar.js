@@ -9,6 +9,7 @@ import {
   UncontrolledDropdown,
 } from 'reactstrap';
 import { useAuth } from '../../contexts/auth';
+import LuditecaThemeToggle from './LuditecaThemeToggle';
 
 export default function LuditecaAdminNavbar({ brandText = 'Luditeca' }) {
   const router = useRouter();
@@ -25,7 +26,7 @@ export default function LuditecaAdminNavbar({ brandText = 'Luditeca' }) {
 
   return (
     <Navbar
-      className="navbar-top navbar-dark bg-gradient-primary luditeca-navbar-top"
+      className="navbar-top navbar-light luditeca-navbar-top border-bottom"
       expand="md"
       id="navbar-main"
     >
@@ -34,6 +35,7 @@ export default function LuditecaAdminNavbar({ brandText = 'Luditeca' }) {
           {brandText}
         </span>
         <Nav className="align-items-center ml-auto" navbar>
+          <LuditecaThemeToggle className="mr-2" />
           <UncontrolledDropdown nav inNavbar>
             <DropdownToggle className="pr-0" nav caret>
               <span className="avatar avatar-sm rounded-circle bg-white text-default d-inline-flex align-items-center justify-content-center">

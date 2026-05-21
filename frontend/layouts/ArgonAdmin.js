@@ -3,15 +3,10 @@ import { useRouter } from 'next/router';
 import { Container } from 'reactstrap';
 import LuditecaAdminNavbar from '../components/argon/LuditecaAdminNavbar';
 import LuditecaSidebar from '../components/argon/LuditecaSidebar';
-import {
-  ADMIN_NAV,
-  APP_PREVIEW_NAV,
-  CMS_ACCOUNT_NAV,
-  CMS_METADATA_NAV,
-  CMS_NAV,
-} from '../lib/argonRoutes';
+import { buildCmsSidebarGroups } from '../lib/argonRoutes';
 import { CMS_ROLES, ROLES, isRole } from '../lib/roles';
 import { useAuth } from '../contexts/auth';
+import { useCmsTheme } from '../contexts/cmsTheme';
 
 function titleFromPath(pathname) {
   if (pathname.startsWith('/books')) return 'Livros';
@@ -34,55 +29,37 @@ export default function ArgonAdmin({ children }) {
   const mainRef = useRef(null);
   const router = useRouter();
   const { user } = useAuth();
+  const { resolved: cmsTheme } = useCmsTheme();
 
   useEffect(() => {
     document.documentElement.scrollTop = 0;
     if (mainRef.current) mainRef.current.scrollTop = 0;
   }, [router.pathname]);
 
-  const routes = [...CMS_NAV];
-  if (isRole(user, CMS_ROLES)) {
-    routes.push(...CMS_METADATA_NAV);
-    routes.push(...CMS_ACCOUNT_NAV);
-  }
-  if (user?.role === ROLES.admin) {
-    routes.push(...ADMIN_NAV);
-  }
-  if (
-    user?.role === ROLES.admin ||
-    user?.role === ROLES.editor ||
-    user?.role === ROLES.aluno ||
-    user?.role === ROLES.professor
-  ) {
+  let sidebarGroups = buildCmsSidebarGroups(user);
+  if (!isRole(user, CMS_ROLES)) {
+    sidebarGroups = sidebarGroups.filter((g) => g.id === 'preview');
+  } else {
     const isAppOnly = user?.role === ROLES.aluno || user?.role === ROLES.professor;
-    if (!isAppOnly) routes.push(...APP_PREVIEW_NAV);
+    if (isAppOnly) {
+      sidebarGroups = sidebarGroups.filter((g) => g.id === 'preview');
+    }
   }
 
   return (
-    <>
-      <LuditecaSidebar routes={routes} />
+    <div className="luditeca-cms-chrome" data-luditeca-theme={cmsTheme}>
+      <LuditecaSidebar groups={sidebarGroups} />
       <div className="main-content" ref={mainRef}>
         <LuditecaAdminNavbar brandText={titleFromPath(router.pathname)} />
         <div className="argon-page-transition" key={router.asPath}>
           {children}
         </div>
         <Container fluid>
-          <footer className="footer pt-0 pb-4">
-            <div className="text-center text-muted text-sm">
-              Luditeca · UI baseada em{' '}
-              <a
-                href="https://www.creative-tim.com/product/argon-dashboard-react"
-                target="_blank"
-                rel="noreferrer"
-                className="font-weight-bold"
-              >
-                Argon Dashboard
-              </a>{' '}
-              (MIT)
-            </div>
+          <footer className="footer pt-0 pb-4 luditeca-footer-minimal">
+            <div className="text-center">© {new Date().getFullYear()} Luditeca</div>
           </footer>
         </Container>
       </div>
-    </>
+    </div>
   );
 }

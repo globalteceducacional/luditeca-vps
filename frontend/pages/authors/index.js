@@ -1,22 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
-import {
-  Alert,
-  Button,
-  Card,
-  CardBody,
-  Col,
-  Media,
-  Row,
-  Spinner,
-  Table,
-} from 'reactstrap';
+import { Col, Media, Row, Table } from 'reactstrap';
 import { useAuth } from '../../contexts/auth';
 import { getAuthors, deleteAuthor } from '../../lib/authors';
 import { getFileUrl } from '../../lib/mediaUrl';
 import Layout from '../../components/Layout';
+import ArgonFormCard from '../../components/argon/ArgonFormCard';
 import ArgonCmsShell, { ArgonTableCard } from '../../components/argon/ArgonCmsShell';
+import { LuditecaAlert, LuditecaButton } from '../../components/argon/luditeca';
 import ArgonEmptyState from '../../components/argon/ArgonEmptyState';
 import ArgonSearchInput from '../../components/argon/ArgonSearchInput';
 import { CMS_ROLES, ROLES, isRole } from '../../lib/roles';
@@ -91,6 +83,7 @@ export default function Authors() {
       </Head>
       <Layout>
         <ArgonCmsShell
+          contentConstrained
           title="Autores"
           subtitle={
             canManageAuthors
@@ -100,25 +93,31 @@ export default function Authors() {
           actionLabel={canManageAuthors ? 'Novo autor' : undefined}
           actionIcon={canManageAuthors ? 'ni ni-fat-add' : undefined}
           onAction={canManageAuthors ? () => router.push('/authors/new') : undefined}
-          loading={loading}
+          loading={loading && authors.length === 0}
+          loadingVariant="table"
+          loadingLabel="Lista de autores"
         >
           <Row className="mb-4">
             <Col lg="6" md="8">
-              <Card className="shadow border-0 mb-4">
-                <CardBody>
-                  <ArgonSearchInput
-                    value={searchTerm}
-                    onChange={setSearchTerm}
-                    placeholder="Pesquisar por nome ou biografia…"
-                  />
-                </CardBody>
-              </Card>
+              <ArgonFormCard className="mb-0 luditeca-search-card">
+                <ArgonSearchInput
+                  value={searchTerm}
+                  onChange={setSearchTerm}
+                  placeholder="Pesquisar por nome ou biografia…"
+                />
+              </ArgonFormCard>
             </Col>
           </Row>
 
-          {error ? <Alert color="danger">{error}</Alert> : null}
+          {error ? <LuditecaAlert color="danger">{error}</LuditecaAlert> : null}
 
-          {authors.length === 0 ? (
+          {loading && authors.length > 0 ? (
+            <div className="luditeca-refresh-bar mb-3" role="status" aria-live="polite">
+              <div className="luditeca-refresh-bar-inner" />
+            </div>
+          ) : null}
+
+          {authors.length === 0 && !loading ? (
             canManageAuthors ? (
               <ArgonEmptyState
                 icon="ni ni-single-02"
@@ -180,24 +179,23 @@ export default function Authors() {
                         </td>
                         {canManageAuthors ? (
                           <td className="text-right">
-                            <Button
-                              color="primary"
+                            <LuditecaButton
+                              variant="outline"
                               size="sm"
-                              outline
                               className="mr-2"
                               onClick={() => router.push(`/authors/${author.id}/edit`)}
                             >
                               Editar
-                            </Button>
-                            <Button
-                              color="danger"
+                            </LuditecaButton>
+                            <LuditecaButton
+                              variant="danger"
                               size="sm"
-                              outline
                               disabled={deleteLoading === author.id}
+                              loading={deleteLoading === author.id}
                               onClick={() => handleDeleteAuthor(author.id)}
                             >
-                              {deleteLoading === author.id ? <Spinner size="sm" /> : 'Excluir'}
-                            </Button>
+                              Excluir
+                            </LuditecaButton>
                           </td>
                         ) : null}
                       </tr>

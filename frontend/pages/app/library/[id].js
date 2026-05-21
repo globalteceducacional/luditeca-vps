@@ -85,46 +85,44 @@ export default function AppBookDetailPage() {
     }
     if (legacyPages.length > 0) {
       return (
-        <p className="text-sm text-sky-600 bg-sky-50 border border-sky-100 rounded-lg p-4">
+        <p className="text-sm text-luditeca-muted bg-luditeca-primary-50 border border-luditeca-primary-100 rounded-lg p-4">
           Este livro usa um formato antigo. Peça ao editor para publicar no editor visual v2 ou no
           fluxo por tipo.
         </p>
       );
     }
-    return <p className="text-sm text-sky-600">Livro sem conteúdo para leitura.</p>;
+    return <p className="text-sm text-luditeca-muted">Livro sem conteúdo para leitura.</p>;
   };
 
   return (
     <AppShell title={book?.title || 'Livro'} backHref="/app/library">
-      {loading && <p className="text-sky-700">A carregar…</p>}
+      {loading && <p className="text-luditeca-body">A carregar…</p>}
       {error && (
         <p className="text-red-600 bg-red-50 border border-red-100 rounded-lg p-3">{error}</p>
       )}
       {book && (
-        <article className="bg-white rounded-2xl border border-sky-100 overflow-hidden">
+        <article className="app-card">
           {url && (
-            <div className="relative w-full aspect-[3/4] max-h-80 bg-sky-50">
+            <div className="relative w-full aspect-[3/4] max-h-80 bg-luditeca-primary-50">
               <Image src={url} alt="" fill className="object-contain" unoptimized />
             </div>
           )}
           <div className="p-6">
-            <h2 className="text-2xl font-bold text-sky-900">{book.title}</h2>
-            {typeLabel ? (
-              <p className="text-sm text-violet-700 font-medium mt-1">{typeLabel}</p>
-            ) : null}
+            <h2 className="text-2xl font-bold text-luditeca-ink">{book.title}</h2>
+            {typeLabel ? <p className="app-badge-type mt-1">{typeLabel}</p> : null}
             {book.description && (
-              <p className="text-sky-800 mt-3 whitespace-pre-wrap">{book.description}</p>
+              <p className="text-luditeca-body mt-3 whitespace-pre-wrap">{book.description}</p>
             )}
             {book.age_range ? (
-              <p className="text-sm text-sky-600 mt-2">Faixa etária: {book.age_range}</p>
+              <p className="text-sm text-luditeca-muted mt-2">Faixa etária: {book.age_range}</p>
             ) : null}
             {pageCount > 0 && !bookType ? (
-              <p className="text-sm text-sky-600 mt-4">
+              <p className="text-sm text-luditeca-muted mt-4">
                 {pageCount} página{pageCount === 1 ? '' : 's'}
               </p>
             ) : null}
           </div>
-          <div className="p-4 pt-0 border-t border-sky-100">{renderReader()}</div>
+          <div className="p-4 pt-0 border-t border-luditeca-primary-100">{renderReader()}</div>
         </article>
       )}
     </AppShell>

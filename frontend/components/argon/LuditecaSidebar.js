@@ -4,7 +4,37 @@ import { useCallback, useState } from 'react';
 
 const SHAPE_FALLBACK = 'default';
 
-export default function LuditecaSidebar({ routes = [], brandHref = '/books', brandLabel = 'Luditeca' }) {
+function NavRouteItem({ route, active, onNavigate }) {
+  const shape = route.shape || SHAPE_FALLBACK;
+  return (
+    <NavItem active={active} className="luditeca-sidenav-item">
+      <NavLink
+        href={route.path}
+        active={active}
+        className="d-flex align-items-center rounded luditeca-sidenav-link"
+        onClick={(e) => {
+          e.preventDefault();
+          onNavigate(route.path);
+        }}
+      >
+        <span className={`icon-shape icon-sm mr-3 icon-shape-${shape}`}>
+          <i className={route.icon} />
+        </span>
+        <span className="nav-link-text">{route.name}</span>
+      </NavLink>
+    </NavItem>
+  );
+}
+
+/**
+ * @param {{ routes?: object[], groups?: { id: string, label: string, items: object[] }[], brandHref?: string, brandLabel?: string }} props
+ */
+export default function LuditecaSidebar({
+  routes = [],
+  groups = null,
+  brandHref = '/books',
+  brandLabel = 'Luditeca',
+}) {
   const router = useRouter();
   const [collapseOpen, setCollapseOpen] = useState(true);
 
@@ -27,12 +57,21 @@ export default function LuditecaSidebar({ routes = [], brandHref = '/books', bra
     return router.pathname === path || router.pathname.startsWith(`${path}/`);
   };
 
+  const onNavigate = (path) => {
+    router.push(path);
+    closeOnMobile();
+  };
+
+  const navGroups =
+    groups && groups.length > 0
+      ? groups
+      : [{ id: 'default', label: null, items: routes }];
+
   return (
     <Navbar
-      className="navbar-vertical fixed-left navbar-expand-md navbar-light bg-white luditeca-sidenav animate__animated animate__fadeIn"
+      className="navbar-vertical fixed-left navbar-expand-md navbar-light bg-white luditeca-sidenav"
       expand="md"
       id="sidenav-main"
-      style={{ animationDuration: '0.45s' }}
     >
       <div className="container-fluid">
         <button
@@ -58,29 +97,21 @@ export default function LuditecaSidebar({ routes = [], brandHref = '/books', bra
         </div>
         <div className={`navbar-collapse collapse ${collapseOpen ? 'show' : ''}`.trim()}>
           <Nav navbar className="flex-column luditeca-sidenav-nav">
-            {routes.map((route) => {
-              const active = isActive(route.path);
-              const shape = route.shape || SHAPE_FALLBACK;
-              return (
-                <NavItem key={route.path} active={active} className="luditeca-sidenav-item">
-                  <NavLink
-                    href={route.path}
-                    active={active}
-                    className="d-flex align-items-center rounded luditeca-sidenav-link"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      router.push(route.path);
-                      closeOnMobile();
-                    }}
-                  >
-                    <span className={`icon-shape icon-sm mr-3 icon-shape-${shape}`}>
-                      <i className={route.icon} />
-                    </span>
-                    <span className="nav-link-text">{route.name}</span>
-                  </NavLink>
-                </NavItem>
-              );
-            })}
+            {navGroups.map((group) => (
+              <div key={group.id} className="luditeca-sidenav-group">
+                {group.label ? (
+                  <span className="luditeca-sidenav-section-label">{group.label}</span>
+                ) : null}
+                {group.items.map((route) => (
+                  <NavRouteItem
+                    key={route.path}
+                    route={route}
+                    active={isActive(route.path)}
+                    onNavigate={onNavigate}
+                  />
+                ))}
+              </div>
+            ))}
           </Nav>
         </div>
       </div>

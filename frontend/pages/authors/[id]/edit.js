@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
 import { toast } from 'react-hot-toast';
-import { Alert, Button, Form, FormGroup, Input, Spinner } from 'reactstrap';
+import { Form } from 'reactstrap';
 import { useAuth } from '../../../contexts/auth';
 import { getAuthor, updateAuthor } from '../../../lib/authors';
 import { getFileUrl } from '../../../lib/mediaUrl';
@@ -11,6 +11,7 @@ import { uploadFile } from '../../../lib/storageApi';
 import Layout from '../../../components/Layout';
 import ArgonCmsShell from '../../../components/argon/ArgonCmsShell';
 import ArgonFormCard from '../../../components/argon/ArgonFormCard';
+import { LuditecaAlert, LuditecaButton, LuditecaInput } from '../../../components/argon/luditeca';
 import { ADMIN_ONLY, isRole } from '../../../lib/roles';
 
 export default function EditAuthor() {
@@ -104,7 +105,7 @@ export default function EditAuthor() {
   if (isLoading || loading) {
     return (
       <Layout>
-        <ArgonCmsShell title="Editar autor" loading loadingLabel="A carregar…" />
+        <ArgonCmsShell contentConstrained title="Editar autor" loading loadingLabel="A carregar…" />
       </Layout>
     );
   }
@@ -115,50 +116,49 @@ export default function EditAuthor() {
         <title>Editar autor | Luditeca</title>
       </Head>
       <ArgonCmsShell
-        title="Editar autor"
+        contentConstrained
+        breadcrumbContext={{ authorName: name.trim() || undefined }}
+        title={name.trim() ? `Editar: ${name.trim()}` : 'Editar autor'}
         subtitle="Atualize os dados do autor."
         headerExtra={
-          <Button color="link" size="sm" tag={Link} href="/authors" className="p-0">
+          <LuditecaButton variant="link" size="sm" tag={Link} href="/authors" className="p-0">
             ← Voltar
-          </Button>
+          </LuditecaButton>
         }
       >
-        {error ? <Alert color="danger">{error}</Alert> : null}
+        {error ? <LuditecaAlert color="danger">{error}</LuditecaAlert> : null}
         <ArgonFormCard title="Dados do autor">
           <Form onSubmit={handleSubmit}>
-            <FormGroup>
-              <label className="form-control-label">Nome *</label>
-              <Input
-                className="luditeca-form-control"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-              />
-            </FormGroup>
-            <FormGroup>
-              <label className="form-control-label">Biografia</label>
-              <Input
-                className="luditeca-form-control"
-                type="textarea"
-                rows="4"
-                value={bio}
-                onChange={(e) => setBio(e.target.value)}
-              />
-            </FormGroup>
-            <FormGroup>
-              <label className="form-control-label">Foto</label>
-              <Input type="file" accept="image/*" onChange={handlePhotoUpload} disabled={uploading} />
-              {uploading ? <small className="text-muted">A enviar…</small> : null}
-              {photoUrl ? (
-                <div className="mt-3">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={photoUrl} alt="Prévia" className="img-fluid rounded" style={{ maxHeight: 192 }} />
-                </div>
-              ) : null}
-            </FormGroup>
-            <Button color="primary" type="submit" disabled={saving}>
-              {saving ? <Spinner size="sm" /> : 'Guardar alterações'}
-            </Button>
+            <LuditecaInput
+              label="Nome"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <LuditecaInput
+              label="Biografia"
+              type="textarea"
+              rows={4}
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+            />
+            <LuditecaInput
+              label="Foto"
+              type="file"
+              accept="image/*"
+              onChange={handlePhotoUpload}
+              disabled={uploading}
+              hint={uploading ? 'A enviar…' : undefined}
+            />
+            {photoUrl ? (
+              <div className="mb-4">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={photoUrl} alt="Prévia" className="img-fluid rounded" style={{ maxHeight: 192 }} />
+              </div>
+            ) : null}
+            <LuditecaButton variant="primary" type="submit" loading={saving} loadingLabel="A guardar…">
+              Guardar alterações
+            </LuditecaButton>
           </Form>
         </ArgonFormCard>
       </ArgonCmsShell>

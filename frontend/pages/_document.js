@@ -4,6 +4,8 @@ export default function Document() {
   return (
     <Html lang="pt-BR">
       <Head>
+        <link rel="stylesheet" href="/vendor/bootstrap.min.css" />
+        <link rel="stylesheet" href="/vendor/fontawesome-free/css/all.min.css" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link

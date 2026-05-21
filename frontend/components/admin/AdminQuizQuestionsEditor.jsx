@@ -1,5 +1,5 @@
 import { FiPlus, FiTrash2 } from 'react-icons/fi';
-import { Button, Input } from 'reactstrap';
+import { LuditecaButton, LuditecaInput } from '../argon/luditeca';
 
 const emptyQuestion = () => ({
   question: '',
@@ -7,8 +7,6 @@ const emptyQuestion = () => ({
   correct: 0,
   answer: '',
 });
-
-const fc = 'luditeca-form-control';
 
 /** Editor mínimo de perguntas para atividades tipo quiz / trueFalse / fillBlank. */
 export default function AdminQuizQuestionsEditor({ type, value, onChange }) {
@@ -33,14 +31,14 @@ export default function AdminQuizQuestionsEditor({ type, value, onChange }) {
     return (
       <div className="mb-3 p-3 border rounded bg-light">
         <p className="small text-muted font-weight-bold text-uppercase mb-2">Pergunta (lacuna)</p>
-        <Input
-          className={fc}
+        <LuditecaInput
+          formGroupClassName="mb-2"
           placeholder="Complete: O céu é ___"
           value={q.question || ''}
           onChange={(e) => updateAt(0, { question: e.target.value })}
         />
-        <Input
-          className={`${fc} mt-2`}
+        <LuditecaInput
+          formGroupClassName="mb-0"
           placeholder="Resposta correta"
           value={q.answer || ''}
           onChange={(e) => updateAt(0, { answer: e.target.value })}
@@ -54,8 +52,8 @@ export default function AdminQuizQuestionsEditor({ type, value, onChange }) {
     return (
       <div className="mb-3 p-3 border rounded bg-light">
         <p className="small text-muted font-weight-bold text-uppercase mb-2">Afirmação</p>
-        <Input
-          className={fc}
+        <LuditecaInput
+          formGroupClassName="mb-0"
           value={q.question || ''}
           onChange={(e) =>
             updateAt(0, {
@@ -65,9 +63,8 @@ export default function AdminQuizQuestionsEditor({ type, value, onChange }) {
             })
           }
         />
-        <label className="form-control-label mt-3 mb-1 d-block">Resposta correta</label>
-        <Input
-          className={fc}
+        <LuditecaInput
+          label="Resposta correta"
           type="select"
           value={Number(q.correct) === 1 ? 1 : 0}
           onChange={(e) =>
@@ -79,12 +76,11 @@ export default function AdminQuizQuestionsEditor({ type, value, onChange }) {
         >
           <option value={0}>Verdadeiro</option>
           <option value={1}>Falso</option>
-        </Input>
+        </LuditecaInput>
       </div>
     );
   }
 
-  // quiz / flashcard — múltiplas perguntas com opções
   return (
     <div className="mb-2">
       {questions.map((q, idx) => (
@@ -92,34 +88,34 @@ export default function AdminQuizQuestionsEditor({ type, value, onChange }) {
           <div className="d-flex justify-content-between align-items-center mb-2">
             <span className="small text-muted font-weight-bold text-uppercase">Pergunta {idx + 1}</span>
             {questions.length > 1 ? (
-              <Button
+              <LuditecaButton
                 type="button"
-                color="link"
+                variant="link"
                 className="p-0 text-danger"
                 onClick={() => removeAt(idx)}
                 aria-label="Remover pergunta"
               >
                 <FiTrash2 size={14} />
-              </Button>
+              </LuditecaButton>
             ) : null}
           </div>
-          <Input
-            className={fc}
+          <LuditecaInput
+            formGroupClassName="mb-2"
             placeholder="Enunciado"
             value={q.question || ''}
             onChange={(e) => updateAt(idx, { question: e.target.value })}
           />
           {(q.options || ['', '']).map((opt, oi) => (
             <div key={oi} className="d-flex align-items-center mt-2">
-              <Input
+              <input
                 type="radio"
                 name={`correct-${idx}`}
                 className="mr-2"
                 checked={Number(q.correct) === oi}
                 onChange={() => updateAt(idx, { correct: oi })}
               />
-              <Input
-                className={fc}
+              <LuditecaInput
+                formGroupClassName="mb-0 flex-grow-1 w-100"
                 placeholder={`Opção ${oi + 1}`}
                 value={opt}
                 onChange={(e) => {
@@ -130,20 +126,26 @@ export default function AdminQuizQuestionsEditor({ type, value, onChange }) {
               />
             </div>
           ))}
-          <Button
+          <LuditecaButton
             type="button"
-            color="link"
+            variant="link"
             size="sm"
             className="p-0 mt-2"
             onClick={() => updateAt(idx, { options: [...(q.options || []), ''] })}
           >
             + opção
-          </Button>
+          </LuditecaButton>
         </div>
       ))}
-      <Button type="button" color="link" size="sm" className="p-0 d-inline-flex align-items-center" onClick={addQuestion}>
+      <LuditecaButton
+        type="button"
+        variant="link"
+        size="sm"
+        className="p-0 d-inline-flex align-items-center"
+        onClick={addQuestion}
+      >
         <FiPlus size={14} className="mr-1" /> Adicionar pergunta
-      </Button>
+      </LuditecaButton>
     </div>
   );
 }

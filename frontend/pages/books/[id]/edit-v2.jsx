@@ -14,11 +14,13 @@ import {
   FiSquare,
   FiSliders,
   FiType,
-  FiUpload,
   FiFileText,
 } from 'react-icons/fi';
 import { toast } from 'react-hot-toast';
 
+import BookCatalogPickers from '../../../components/books/create/BookCatalogPickers';
+import BookCoverUploadField from '../../../components/books/create/BookCoverUploadField';
+import { LuditecaButton, LuditecaInput } from '../../../components/argon/luditeca';
 import EditorLayout from '../../../components/EditorLayout';
 import RulersOverlay from '../../../components/editor/RulersOverlay';
 import PanelSkeleton from '../../../components/editor/v2/panels/PanelSkeleton';
@@ -224,13 +226,9 @@ function EmptyState({ onAddImage }) {
         <FiImage className="mx-auto mb-3 text-slate-500" size={32} />
         <h3 className="mb-1 text-sm font-semibold text-slate-200">Pagina em branco</h3>
         <p className="mb-4 text-xs text-slate-400">Comece adicionando uma imagem.</p>
-        <button
-          type="button"
-          onClick={onAddImage}
-          className="w-full rounded-md bg-indigo-600 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
-        >
+        <LuditecaButton type="button" theme="editor-dark" editorVariant="primary" className="w-full" onClick={onAddImage}>
           Inserir imagem
-        </button>
+        </LuditecaButton>
       </div>
     </div>
   );
@@ -401,6 +399,38 @@ export default function EditBookV2() {
       cancelled = true;
     };
   }, []);
+
+  const sortCatalogByName = useCallback(
+    (list) =>
+      [...list].sort((a, b) =>
+        String(a.name || '').localeCompare(String(b.name || ''), 'pt', { sensitivity: 'base' }),
+      ),
+    [],
+  );
+
+  const onAuthorCreated = useCallback(
+    (author) => {
+      setAuthors((prev) => {
+        const without = prev.filter((a) => String(a.id) !== String(author.id));
+        return sortCatalogByName([...without, author]);
+      });
+      setAuthorId(String(author.id));
+      setIsModified(true);
+    },
+    [sortCatalogByName],
+  );
+
+  const onCategoryCreated = useCallback(
+    (category) => {
+      setCategories((prev) => {
+        const without = prev.filter((c) => String(c.id) !== String(category.id));
+        return sortCatalogByName([...without, category]);
+      });
+      setCategoryId(String(category.id));
+      setIsModified(true);
+    },
+    [sortCatalogByName],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -1010,9 +1040,10 @@ export default function EditBookV2() {
       pages_v2: ensurePagesV2(pagesV2),
     };
     if (payload.authors) delete payload.authors;
-    const { error } = await updateBook(id, payload);
+    const { data: savedRow, error } = await updateBook(id, payload);
     setSaving(false);
     if (!error) {
+      toast.success('Projeto guardado.');
       setIsModified(false);
       setLastSavedAt(Date.now());
       if (typeof window !== 'undefined') {
@@ -1036,11 +1067,14 @@ export default function EditBookV2() {
             }
           : prev,
       );
+      if (savedRow?.pages_v2 && typeof savedRow.pages_v2 === 'object') {
+        setPagesV2(ensurePagesV2(savedRow.pages_v2));
+      }
       reportEditorMetric('book.save.success', endEditorMetric(started), {
         pages: Array.isArray(pagesV2?.pages) ? pagesV2.pages.length : 0,
       });
     } else {
-      toast.error(String(error?.message || 'Não foi possível salvar o projeto.'));
+      toast.error(String(error?.message || 'Não foi possível guardar o projeto.'));
       reportEditorMetric('book.save.error', endEditorMetric(started), {
         pages: Array.isArray(pagesV2?.pages) ? pagesV2.pages.length : 0,
       });
@@ -1222,45 +1256,47 @@ export default function EditBookV2() {
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-900 font-sans text-slate-300">
         <header className="z-20 flex h-14 shrink-0 items-center justify-between border-b border-slate-700 bg-slate-800 px-4 shadow-sm">
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <button type="button" onClick={() => router.push('/books')} className="shrink-0 rounded-md bg-slate-700 p-2 text-slate-200 transition-colors hover:bg-slate-600" title="Voltar aos livros">
+            <LuditecaButton
+              type="button"
+              theme="editor-dark"
+              editorVariant="icon"
+              onClick={() => router.push('/books')}
+              title="Voltar aos livros"
+            >
               <FiChevronLeft size={18} />
-            </button>
+            </LuditecaButton>
             <div className="flex min-w-0 items-center gap-1 rounded-lg border border-slate-600 bg-slate-900/60 p-1">
-              <button
+              <LuditecaButton
                 type="button"
+                theme="editor-dark"
+                editorVariant={workspaceTab === 'edit' ? 'tab-active' : 'tab'}
                 onClick={() => setWorkspaceTab('edit')}
-                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors sm:text-sm ${
-                  workspaceTab === 'edit'
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                }`}
               >
                 Edição do livro
-              </button>
-              <button
+              </LuditecaButton>
+              <LuditecaButton
                 type="button"
+                theme="editor-dark"
+                editorVariant={workspaceTab === 'info' ? 'tab-active' : 'tab'}
                 onClick={() => setWorkspaceTab('info')}
-                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors sm:text-sm ${
-                  workspaceTab === 'info'
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                }`}
               >
                 Informações do livro
-              </button>
+              </LuditecaButton>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-3">
             {workspaceTab === 'edit' ? (
-              <button
+              <LuditecaButton
                 type="button"
+                theme="editor-dark"
+                editorVariant={showRulers ? 'tab-active' : 'secondary'}
+                className="flex items-center gap-2"
                 onClick={() => setShowRulers((v) => !v)}
-                className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors ${showRulers ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
                 title="Alternar guias e reguas"
               >
                 <FiGrid size={16} />
                 <span className="hidden sm:inline">Guias</span>
-              </button>
+              </LuditecaButton>
             ) : null}
             {/* Issue 04 — indicador de estado do save. Prioridade: a guardar > por guardar > guardado. */}
             <div
@@ -1283,15 +1319,18 @@ export default function EditBookV2() {
                 </span>
               ) : null}
             </div>
-            <button
+            <LuditecaButton
               type="button"
+              theme="editor-dark"
+              editorVariant="success"
               onClick={saveBook}
               disabled={saving || !isModified}
-              className="flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+              loading={saving}
+              loadingLabel="Salvando..."
             >
               <FiSave size={16} />
-              {saving ? 'Salvando...' : 'Salvar projeto'}
-            </button>
+              Salvar projeto
+            </LuditecaButton>
           </div>
         </header>
 
@@ -1302,180 +1341,136 @@ export default function EditBookV2() {
                 <h2 className="text-lg font-semibold text-slate-100">Informações do livro</h2>
                 <p className="mt-1 text-sm text-slate-500">Título, capa, descrição e classificação. Use &quot;Salvar projeto&quot; para gravar.</p>
               </div>
-              <label className="block">
-                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Título</span>
-                <input
-                  className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none"
-                  value={title}
-                  placeholder="Título do livro"
-                  onChange={(e) => {
-                    setTitle(e.target.value);
-                    setIsModified(true);
-                  }}
-                />
-              </label>
-              <label className="block">
-                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Descrição</span>
-                <textarea
-                  className="min-h-[120px] w-full resize-y rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none"
-                  value={description}
-                  placeholder="Resumo ou sinopse..."
-                  onChange={(e) => {
-                    setDescription(e.target.value);
-                    setIsModified(true);
-                  }}
-                />
-              </label>
+              <LuditecaInput
+                theme="editor-dark"
+                label="Título"
+                value={title}
+                placeholder="Título do livro"
+                onChange={(e) => {
+                  setTitle(e.target.value);
+                  setIsModified(true);
+                }}
+              />
+              <LuditecaInput
+                theme="editor-dark"
+                label="Descrição"
+                type="textarea"
+                rows={4}
+                value={description}
+                placeholder="Resumo ou sinopse..."
+                onChange={(e) => {
+                  setDescription(e.target.value);
+                  setIsModified(true);
+                }}
+              />
               <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-4">
                 <h3 className="text-sm font-semibold text-slate-200">Catálogo e busca</h3>
                 <p className="mt-1 text-xs text-slate-500">
                   Estes campos alimentam o índice de pesquisa do portal (título e descrição já entram automaticamente).
                 </p>
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                  <label className="block sm:col-span-2">
-                    <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">
-                      Coleção
-                    </span>
-                    <input
-                      className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none"
-                      value={catalogCollection}
-                      placeholder="Ex.: Série Azul"
-                      onChange={(e) => {
-                        setCatalogCollection(e.target.value);
-                        setIsModified(true);
-                      }}
-                    />
-                  </label>
-                  <label className="block sm:col-span-2">
-                    <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">
-                      Nível
-                    </span>
-                    <input
-                      className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none"
-                      value={catalogLevel}
-                      placeholder="Ex.: 6º ano, iniciante…"
-                      onChange={(e) => {
-                        setCatalogLevel(e.target.value);
-                        setIsModified(true);
-                      }}
-                    />
-                  </label>
-                  <label className="block sm:col-span-2">
-                    <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">
-                      Palavras-chave
-                    </span>
-                    <input
-                      className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none"
-                      value={catalogKeywordsStr}
-                      placeholder="Separadas por vírgula"
-                      onChange={(e) => {
-                        setCatalogKeywordsStr(e.target.value);
-                        setIsModified(true);
-                      }}
-                    />
-                  </label>
-                  <label className="block sm:col-span-2">
-                    <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">
-                      Personagens
-                    </span>
-                    <input
-                      className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none"
-                      value={catalogCharactersStr}
-                      placeholder="Separados por vírgula"
-                      onChange={(e) => {
-                        setCatalogCharactersStr(e.target.value);
-                        setIsModified(true);
-                      }}
-                    />
-                  </label>
+                  <LuditecaInput
+                    theme="editor-dark"
+                    formGroupClassName="sm:col-span-2"
+                    label="Coleção"
+                    value={catalogCollection}
+                    placeholder="Ex.: Série Azul"
+                    onChange={(e) => {
+                      setCatalogCollection(e.target.value);
+                      setIsModified(true);
+                    }}
+                  />
+                  <LuditecaInput
+                    theme="editor-dark"
+                    formGroupClassName="sm:col-span-2"
+                    label="Nível"
+                    value={catalogLevel}
+                    placeholder="Ex.: 6º ano, iniciante…"
+                    onChange={(e) => {
+                      setCatalogLevel(e.target.value);
+                      setIsModified(true);
+                    }}
+                  />
+                  <LuditecaInput
+                    theme="editor-dark"
+                    formGroupClassName="sm:col-span-2"
+                    label="Palavras-chave"
+                    value={catalogKeywordsStr}
+                    placeholder="Separadas por vírgula"
+                    onChange={(e) => {
+                      setCatalogKeywordsStr(e.target.value);
+                      setIsModified(true);
+                    }}
+                  />
+                  <LuditecaInput
+                    theme="editor-dark"
+                    formGroupClassName="sm:col-span-2"
+                    label="Personagens"
+                    value={catalogCharactersStr}
+                    placeholder="Separados por vírgula"
+                    onChange={(e) => {
+                      setCatalogCharactersStr(e.target.value);
+                      setIsModified(true);
+                    }}
+                  />
                 </div>
               </div>
               <div className="grid gap-6 sm:grid-cols-2">
-                <label className="block">
-                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Autor</span>
-                  <select
-                    className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none"
-                    value={authorId}
-                    disabled={loadingAuthors}
-                    onChange={(e) => {
-                      setAuthorId(e.target.value);
-                      setIsModified(true);
-                    }}
-                  >
-                    <option value="">- Selecionar -</option>
-                    {authors.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block">
-                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Categoria</span>
-                  <select
-                    className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none"
-                    value={categoryId}
-                    disabled={loadingCategories}
-                    onChange={(e) => {
-                      setCategoryId(e.target.value);
-                      setIsModified(true);
-                    }}
-                  >
-                    <option value="">- Selecionar -</option>
-                    {categories.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <div>
-                <span className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-400">Capa</span>
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-                  {coverImage ? (
-                    <div className="overflow-hidden rounded-lg border border-slate-700 bg-slate-900">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={coverImage} alt="" className="h-40 w-auto max-w-full object-contain" />
-                    </div>
-                  ) : (
-                    <div className="flex h-40 w-28 items-center justify-center rounded-lg border border-dashed border-slate-600 bg-slate-900/50 text-xs text-slate-500">
-                      Sem capa
-                    </div>
-                  )}
-                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-600 bg-slate-800 px-4 py-2 text-sm text-slate-200 transition-colors hover:bg-slate-700">
-                    <FiUpload size={16} />
-                    {uploadingCover ? 'A enviar...' : 'Carregar imagem'}
-                    <input type="file" accept="image/*" className="hidden" onChange={handleInfoCoverUpload} disabled={uploadingCover} />
-                  </label>
-                </div>
-              </div>
-              <label className="block">
-                <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Estado editorial</span>
-                <select
-                  className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none"
-                  value={workflowStatus}
-                  onChange={(e) => {
-                    setWorkflowStatus(e.target.value);
+                <BookCatalogPickers
+                  variant="dark"
+                  authorId={authorId}
+                  categoryId={categoryId}
+                  authors={authors}
+                  categories={categories}
+                  loadingAuthors={loadingAuthors}
+                  loadingCategories={loadingCategories}
+                  disabled={uploadingCover}
+                  onAuthorIdChange={(v) => {
+                    setAuthorId(v);
                     setIsModified(true);
                   }}
-                >
-                  {WORKFLOW_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-1 text-xs text-slate-500">Rascunho → revisão → publicado → arquivo.</p>
-              </label>
+                  onCategoryIdChange={(v) => {
+                    setCategoryId(v);
+                    setIsModified(true);
+                  }}
+                  onAuthorCreated={onAuthorCreated}
+                  onCategoryCreated={onCategoryCreated}
+                />
+              </div>
+              <BookCoverUploadField
+                variant="editor-dark"
+                coverUrl={coverImage}
+                onUpload={handleInfoCoverUpload}
+                uploading={uploadingCover}
+                disabled={uploadingCover}
+              />
+              <LuditecaInput
+                theme="editor-dark"
+                label="Estado editorial"
+                type="select"
+                value={workflowStatus}
+                hint="Rascunho → revisão → publicado → arquivo."
+                onChange={(e) => {
+                  setWorkflowStatus(e.target.value);
+                  setIsModified(true);
+                }}
+              >
+                {WORKFLOW_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </LuditecaInput>
               <div>
                 <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400">Documentos de apoio</span>
                 <p className="mb-2 text-xs text-slate-500">
                   Anexe PDF ou outros ficheiros como guia (ficam listados aqui; não são inseridos automaticamente nas páginas).
                 </p>
-                <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-600 bg-slate-800 px-4 py-2 text-sm text-slate-200 transition-colors hover:bg-slate-700">
-                  <FiFileText size={16} />
-                  {uploadingAttachment ? 'A enviar…' : 'Anexar ficheiro'}
+                <label className="inline-block cursor-pointer">
+                  <LuditecaButton type="button" theme="editor-dark" editorVariant="ghost" tag="span">
+                    <FiFileText size={16} />
+                    {uploadingAttachment ? 'A enviar…' : 'Anexar ficheiro'}
+                  </LuditecaButton>
                   <input
                     type="file"
                     className="hidden"
@@ -1502,13 +1497,14 @@ export default function EditBookV2() {
                             Abrir
                           </a>
                         ) : null}
-                        <button
+                        <LuditecaButton
                           type="button"
-                          className="text-xs text-red-400 hover:underline"
+                          theme="editor-dark"
+                          editorVariant="danger"
                           onClick={() => removeAttachment(a.id)}
                         >
                           Remover
-                        </button>
+                        </LuditecaButton>
                       </div>
                     </li>
                   ))}

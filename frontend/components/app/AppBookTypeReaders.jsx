@@ -1,11 +1,75 @@
 import { useMemo, useState } from 'react';
 import { FiChevronLeft, FiChevronRight } from 'react-icons/fi';
-import { getFileUrl } from '../../lib/mediaUrl';
+import { resolveBookAssetUrl, BOOK_MEDIA_BUCKETS } from '../../lib/bookMediaSrc';
+import {
+  buildAnimatedReaderSlots,
+  buildInteractiveReaderSlots,
+  timelineHasInlineQuiz,
+} from '../../lib/bookContentTimeline';
+import { getSceneDisplayLabel } from '../../lib/interactiveScenes';
 
-function mediaSrc(url, bucket = 'pages') {
-  if (!url) return null;
-  if (String(url).startsWith('http')) return url;
-  return getFileUrl(bucket, url);
+function mediaSrc(url, bucket = BOOK_MEDIA_BUCKETS.pages) {
+  return resolveBookAssetUrl(url, bucket);
+}
+
+function SlotNav({ safe, total, slotKind, onPrev, onNext }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <button type="button" disabled={safe <= 0} onClick={onPrev} className="app-btn-nav">
+        <FiChevronLeft />
+        Anterior
+      </button>
+      <span className="text-sm text-luditeca-body font-medium">
+        {safe + 1} / {total}
+        {slotKind === 'quiz' ? ' · Quiz' : ''}
+      </span>
+      <button type="button" disabled={safe >= total - 1} onClick={onNext} className="app-btn-nav">
+        Seguinte
+        <FiChevronRight />
+      </button>
+    </div>
+  );
+}
+
+function AppBookQuizSingle({ question }) {
+  const [selected, setSelected] = useState(null);
+  const [done, setDone] = useState(false);
+
+  if (!question?.question) return null;
+  const options = Array.isArray(question.options) ? question.options : [];
+
+  const pick = (optionIndex) => {
+    if (selected !== null || done) return;
+    setSelected(optionIndex);
+    setTimeout(() => setDone(true), 600);
+  };
+
+  return (
+    <div className="app-panel-padded">
+      <h3 className="text-lg font-bold text-luditeca-ink mb-3">Quiz</h3>
+      {done ? (
+        <p className="text-luditeca-accent-800 font-semibold">
+          {selected === Number(question.correct) ? 'Resposta correta!' : 'Resposta incorreta.'}
+        </p>
+      ) : (
+        <>
+          <p className="text-lg font-medium text-luditeca-ink mb-3">{question.question}</p>
+          <ul className="space-y-2">
+            {options.map((opt, i) => {
+              const label = typeof opt === 'string' ? opt : opt?.label || String(opt);
+              return (
+                <li key={i}>
+                  <button type="button" className="app-choice-default" onClick={() => pick(i)}>
+                    {label}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
+    </div>
+  );
 }
 
 function AppBookQuiz({ quiz }) {
@@ -41,23 +105,22 @@ function AppBookQuiz({ quiz }) {
   };
 
   return (
-    <section className="mt-6 pt-6 border-t border-sky-100">
-      <h3 className="text-lg font-bold text-sky-900 mb-3">Quiz</h3>
+    <section className="mt-6 pt-6 border-t border-luditeca-primary-100">
+      <h3 className="text-lg font-bold text-luditeca-ink mb-3">Quiz</h3>
       {done ? (
-        <p className="text-violet-800 font-semibold">
+        <p className="text-luditeca-accent-800 font-semibold">
           Concluído! Acertos: {score} / {questions.length}
         </p>
       ) : (
         <>
-          <p className="text-sm text-sky-600 mb-2">
+          <p className="text-sm text-luditeca-muted mb-2">
             Pergunta {index + 1} de {questions.length}
           </p>
-          <p className="text-lg font-medium text-sky-900 mb-3">{current.question}</p>
+          <p className="text-lg font-medium text-luditeca-ink mb-3">{current.question}</p>
           <ul className="space-y-2">
             {options.map((opt, i) => {
               const label = typeof opt === 'string' ? opt : opt?.label || String(opt);
-              let cls =
-                'w-full text-left px-4 py-3 rounded-xl border border-sky-200 text-sky-900 hover:bg-sky-50';
+              let cls = 'app-choice-default';
               if (selected !== null) {
                 if (i === Number(current.correct)) cls += ' bg-green-50 border-green-300';
                 else if (i === selected) cls += ' bg-red-50 border-red-200';
@@ -77,21 +140,17 @@ function AppBookQuiz({ quiz }) {
   );
 }
 
-/** Livro animado: páginas com imagem/GIF + texto. */
+/** Livro animado: sequência páginas + quiz na ordem editorial. */
 export function AppAnimatedBookReader({ pages = [], soundtrackUrl, quiz }) {
-  const sorted = useMemo(() => {
-    const list = Array.isArray(pages) ? [...pages] : [];
-    return list.sort((a, b) => (a.page_number ?? 0) - (b.page_number ?? 0));
-  }, [pages]);
-
+  const slots = useMemo(() => buildAnimatedReaderSlots(pages, quiz), [pages, quiz]);
   const [index, setIndex] = useState(0);
-  if (!sorted.length) {
-    return <p className="text-sm text-sky-600">Este livro ainda não tem páginas.</p>;
+
+  if (!slots.length) {
+    return <p className="text-sm text-luditeca-muted">Este livro ainda não tem conteúdo.</p>;
   }
 
-  const safe = Math.min(index, sorted.length - 1);
-  const page = sorted[safe];
-  const img = mediaSrc(page.image_url);
+  const safe = Math.min(index, slots.length - 1);
+  const slot = slots[safe];
 
   return (
     <div className="space-y-4">
@@ -100,118 +159,219 @@ export function AppAnimatedBookReader({ pages = [], soundtrackUrl, quiz }) {
           <track kind="captions" />
         </audio>
       ) : null}
-      <div className="bg-sky-50 rounded-xl overflow-hidden border border-sky-100">
-        {img ? (
-          page.is_gif ? (
-            <img src={img} alt="" className="w-full max-h-[70vh] object-contain mx-auto" />
+
+      {slot.kind === 'page' ? (
+        <div className="app-panel">
+          {mediaSrc(slot.data?.image_url) ? (
+            <img
+              src={mediaSrc(slot.data.image_url)}
+              alt=""
+              className="w-full max-h-[70vh] object-contain mx-auto"
+            />
           ) : (
-            <img src={img} alt="" className="w-full max-h-[70vh] object-contain mx-auto" />
-          )
-        ) : (
-          <p className="p-6 text-sky-600 text-sm">Sem imagem nesta página.</p>
-        )}
-        {page.text ? (
-          <p className="p-4 text-sky-900 whitespace-pre-wrap border-t border-sky-100">{page.text}</p>
-        ) : null}
-      </div>
-      <div className="flex items-center justify-between gap-2">
-        <button
-          type="button"
-          disabled={safe <= 0}
-          onClick={() => setIndex((i) => Math.max(0, i - 1))}
-          className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-sky-200 text-sky-800 disabled:opacity-40 hover:bg-sky-50"
-        >
-          <FiChevronLeft />
-          Anterior
-        </button>
-        <span className="text-sm text-sky-700 font-medium">
-          {safe + 1} / {sorted.length}
-        </span>
-        <button
-          type="button"
-          disabled={safe >= sorted.length - 1}
-          onClick={() => setIndex((i) => Math.min(sorted.length - 1, i + 1))}
-          className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-sky-200 text-sky-800 disabled:opacity-40 hover:bg-sky-50"
-        >
-          Seguinte
-          <FiChevronRight />
-        </button>
-      </div>
-      <AppBookQuiz quiz={quiz} />
+            <p className="p-6 text-luditeca-muted text-sm">Sem imagem nesta página.</p>
+          )}
+          {slot.data?.text ? (
+            <p className="p-4 text-luditeca-ink whitespace-pre-wrap border-t border-luditeca-primary-100">
+              {slot.data.text}
+            </p>
+          ) : null}
+        </div>
+      ) : (
+        <AppBookQuizSingle question={slot.data} />
+      )}
+
+      <SlotNav
+        safe={safe}
+        total={slots.length}
+        slotKind={slot.kind}
+        onPrev={() => setIndex((i) => Math.max(0, i - 1))}
+        onNext={() => setIndex((i) => Math.min(slots.length - 1, i + 1))}
+      />
     </div>
   );
 }
 
-/** Livro interativo: cenas com escolhas. */
+/** Modo sequência: cenas e quiz na ordem definida no CMS. */
+function AppInteractiveSequenceReader({ pages = [], quiz }) {
+  const slots = useMemo(() => buildInteractiveReaderSlots(pages, quiz), [pages, quiz]);
+  const [index, setIndex] = useState(0);
+
+  if (!slots.length) {
+    return <p className="text-sm text-luditeca-muted">Este livro ainda não tem conteúdo.</p>;
+  }
+
+  const safe = Math.min(index, slots.length - 1);
+  const slot = slots[safe];
+
+  if (slot.kind === 'quiz') {
+    return (
+      <div className="space-y-4">
+        <AppBookQuizSingle question={slot.data} />
+        <SlotNav
+          safe={safe}
+          total={slots.length}
+          slotKind="quiz"
+          onPrev={() => setIndex((i) => Math.max(0, i - 1))}
+          onNext={() => setIndex((i) => Math.min(slots.length - 1, i + 1))}
+        />
+      </div>
+    );
+  }
+
+  const scene = slot.data;
+  const img = mediaSrc(scene?.image_url);
+  const choices = Array.isArray(scene?.choices) ? scene.choices : [];
+
+  return (
+    <div className="space-y-4">
+      <div className="app-panel-padded">
+        <p className="text-xs text-luditeca-muted mb-2 uppercase tracking-wide">Ordem do livro</p>
+        {img ? (
+          <img src={img} alt="" className="w-full max-h-64 object-contain rounded-lg mb-3" />
+        ) : null}
+        {scene?.text ? (
+          <p className="text-luditeca-ink whitespace-pre-wrap text-lg">{scene.text}</p>
+        ) : null}
+        {scene?.is_ending ? (
+          <p className="text-luditeca-accent-700 font-semibold mt-3">Fim desta cena.</p>
+        ) : null}
+      </div>
+      {choices.length > 0 && !scene?.is_ending ? (
+        <ul className="space-y-2">
+          {choices.map((ch, i) => (
+            <li key={i}>
+              <span className="app-choice-branch block text-left opacity-80 cursor-default">
+                {ch.label || 'Escolha'} → outra cena (use modo história)
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <SlotNav
+        safe={safe}
+        total={slots.length}
+        slotKind="scene"
+        onPrev={() => setIndex((i) => Math.max(0, i - 1))}
+        onNext={() => setIndex((i) => Math.min(slots.length - 1, i + 1))}
+      />
+    </div>
+  );
+}
+
+/** Livro interativo: ramificações por escolhas; sequência quando há quiz intercalado. */
 export function AppInteractiveBookReader({ scenes = [], quiz }) {
+  const hasSequence = useMemo(() => timelineHasInlineQuiz(scenes), [scenes]);
+  const [mode, setMode] = useState(hasSequence ? 'sequence' : 'branch');
+
+  const sceneList = useMemo(() => {
+    return (Array.isArray(scenes) ? scenes : []).filter(
+      (s) => String(s?.page_type || '').toLowerCase() !== 'quiz',
+    );
+  }, [scenes]);
+
   const byId = useMemo(() => {
     const map = new Map();
-    (Array.isArray(scenes) ? scenes : []).forEach((s) => {
+    sceneList.forEach((s) => {
       if (s?.scene_id) map.set(String(s.scene_id), s);
     });
     return map;
-  }, [scenes]);
+  }, [sceneList]);
 
   const startId = useMemo(() => {
-    const list = Array.isArray(scenes) ? scenes : [];
-    const start = list.find((s) => s.is_start && s.scene_id);
-    return start?.scene_id || list[0]?.scene_id || null;
-  }, [scenes]);
+    const start = sceneList.find((s) => s.is_start && s.scene_id);
+    return start?.scene_id || sceneList[0]?.scene_id || null;
+  }, [sceneList]);
 
   const [sceneId, setSceneId] = useState(null);
   const activeId = sceneId || startId;
   const scene = activeId ? byId.get(String(activeId)) : null;
 
-  if (!scene) {
-    return <p className="text-sm text-sky-600">Este livro ainda não tem cenas.</p>;
+  if (!sceneList.length && !hasSequence) {
+    return <p className="text-sm text-luditeca-muted">Este livro ainda não tem cenas.</p>;
   }
-
-  const img = mediaSrc(scene.image_url);
-  const choices = Array.isArray(scene.choices) ? scene.choices : [];
 
   return (
     <div className="space-y-4">
-      <div className="bg-sky-50 rounded-xl overflow-hidden border border-sky-100 p-4">
-        {img ? (
-          <img src={img} alt="" className="w-full max-h-64 object-contain rounded-lg mb-3" />
-        ) : null}
-        {scene.text ? (
-          <p className="text-sky-900 whitespace-pre-wrap text-lg">{scene.text}</p>
-        ) : null}
-        {scene.is_ending ? (
-          <p className="text-violet-700 font-semibold mt-3">Fim da história.</p>
-        ) : null}
-      </div>
-      {choices.length > 0 && !scene.is_ending ? (
-        <ul className="space-y-2">
-          {choices.map((ch, i) => {
-            const target = ch.target_scene_id;
-            const disabled = !target || !byId.has(String(target));
-            return (
-              <li key={i}>
-                <button
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => target && setSceneId(String(target))}
-                  className="w-full text-left px-4 py-3 rounded-xl border border-violet-200 text-violet-900 hover:bg-violet-50 disabled:opacity-40"
-                >
-                  {ch.label || 'Continuar'}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+      {hasSequence ? (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium border ${
+              mode === 'branch'
+                ? 'bg-luditeca-primary-600 text-white border-luditeca-primary-600'
+                : 'bg-luditeca-surface text-luditeca-body border-luditeca-primary-200'
+            }`}
+            onClick={() => setMode('branch')}
+          >
+            História (escolhas)
+          </button>
+          <button
+            type="button"
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium border ${
+              mode === 'sequence'
+                ? 'bg-luditeca-primary-600 text-white border-luditeca-primary-600'
+                : 'bg-luditeca-surface text-luditeca-body border-luditeca-primary-200'
+            }`}
+            onClick={() => setMode('sequence')}
+          >
+            Ordem do livro
+          </button>
+        </div>
       ) : null}
-      {startId && activeId !== startId ? (
-        <button
-          type="button"
-          className="text-sm text-sky-600 underline"
-          onClick={() => setSceneId(startId)}
-        >
-          Recomeçar história
-        </button>
-      ) : null}
-      <AppBookQuiz quiz={quiz} />
+
+      {mode === 'sequence' && hasSequence ? (
+        <AppInteractiveSequenceReader pages={scenes} quiz={quiz} />
+      ) : !scene ? (
+        <p className="text-sm text-luditeca-muted">Este livro ainda não tem cenas.</p>
+      ) : (
+        <>
+          <div className="app-panel-padded">
+            <p className="text-xs text-luditeca-muted mb-2">
+              {getSceneDisplayLabel(scene, sceneList.findIndex((s) => s.scene_id === scene.scene_id))}
+            </p>
+            {mediaSrc(scene.image_url) ? (
+              <img
+                src={mediaSrc(scene.image_url)}
+                alt=""
+                className="w-full max-h-64 object-contain rounded-lg mb-3"
+              />
+            ) : null}
+            {scene.text ? (
+              <p className="text-luditeca-ink whitespace-pre-wrap text-lg">{scene.text}</p>
+            ) : null}
+            {scene.is_ending ? (
+              <p className="text-luditeca-accent-700 font-semibold mt-3">Fim da história.</p>
+            ) : null}
+          </div>
+          {Array.isArray(scene.choices) && scene.choices.length > 0 && !scene.is_ending ? (
+            <ul className="space-y-2">
+              {scene.choices.map((ch, i) => {
+                const target = ch.target_scene_id;
+                const disabled = !target || !byId.has(String(target));
+                return (
+                  <li key={i}>
+                    <button
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => target && setSceneId(String(target))}
+                      className="app-choice-branch"
+                    >
+                      {ch.label || 'Continuar'}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
+          {startId && activeId !== startId ? (
+            <button type="button" className="app-link-reset" onClick={() => setSceneId(startId)}>
+              Recomeçar história
+            </button>
+          ) : null}
+          {!hasSequence ? <AppBookQuiz quiz={quiz} /> : null}
+        </>
+      )}
     </div>
   );
 }
@@ -222,7 +382,7 @@ export function AppDigitalBookReader({ pdfUrl, epubUrl }) {
   const epub = mediaSrc(epubUrl);
 
   if (!pdf && !epub) {
-    return <p className="text-sm text-sky-600">Nenhum ficheiro PDF ou EPUB disponível.</p>;
+    return <p className="text-sm text-luditeca-muted">Nenhum ficheiro PDF ou EPUB disponível.</p>;
   }
 
   return (
@@ -231,17 +391,17 @@ export function AppDigitalBookReader({ pdfUrl, epubUrl }) {
         <iframe
           title="PDF"
           src={pdf}
-          className="w-full rounded-xl border border-sky-100 bg-white"
+          className="w-full rounded-xl border border-luditeca-primary-100 bg-luditeca-surface"
           style={{ minHeight: '70vh' }}
         />
       ) : null}
       {epub ? (
-        <p className="text-sky-800">
+        <p className="text-luditeca-body">
           <a
             href={epub}
             target="_blank"
             rel="noopener noreferrer"
-            className="font-semibold text-violet-700 underline"
+            className="font-semibold text-luditeca-accent-700 underline hover:text-luditeca-accent-800"
           >
             Abrir EPUB
           </a>{' '}

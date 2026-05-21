@@ -3,13 +3,14 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
 import { toast } from 'react-hot-toast';
-import { Alert, Button, Form, FormGroup, Input, Spinner } from 'reactstrap';
+import { Form } from 'reactstrap';
 import { useAuth } from '../../contexts/auth';
 import { createCategory } from '../../lib/categories';
 import { uploadFile } from '../../lib/storageApi';
 import Layout from '../../components/Layout';
 import ArgonCmsShell from '../../components/argon/ArgonCmsShell';
 import ArgonFormCard from '../../components/argon/ArgonFormCard';
+import { LuditecaAlert, LuditecaButton, LuditecaInput } from '../../components/argon/luditeca';
 import { ADMIN_ONLY, isRole } from '../../lib/roles';
 
 export default function NewCategory() {
@@ -72,7 +73,7 @@ export default function NewCategory() {
   if (isLoading) {
     return (
       <Layout>
-        <ArgonCmsShell title="Nova categoria" loading loadingLabel="A carregar…" />
+        <ArgonCmsShell contentConstrained title="Nova categoria" loading loadingLabel="A carregar…" />
       </Layout>
     );
   }
@@ -83,40 +84,41 @@ export default function NewCategory() {
         <title>Nova categoria | Luditeca</title>
       </Head>
       <ArgonCmsShell
+        contentConstrained
         title="Criar categoria"
         subtitle="Adicione uma categoria à biblioteca."
         headerExtra={
-          <Button color="link" size="sm" tag={Link} href="/categories" className="p-0">
+          <LuditecaButton variant="link" size="sm" tag={Link} href="/categories" className="p-0">
             ← Voltar
-          </Button>
+          </LuditecaButton>
         }
       >
-        {error ? <Alert color="danger">{error}</Alert> : null}
+        {error ? <LuditecaAlert color="danger">{error}</LuditecaAlert> : null}
         <ArgonFormCard title="Dados da categoria">
           <Form onSubmit={handleSubmit}>
-            <FormGroup>
-              <label className="form-control-label">Nome *</label>
-              <Input
-                className="luditeca-form-control"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-              />
-            </FormGroup>
-            <FormGroup>
-              <label className="form-control-label">Imagem</label>
-              <Input type="file" accept="image/*" onChange={handleImageUpload} disabled={uploading} />
-              {uploading ? <small className="text-muted">A enviar…</small> : null}
-              {imageUrl ? (
-                <div className="mt-3">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={imageUrl} alt="Prévia" className="img-fluid rounded" style={{ maxHeight: 192 }} />
-                </div>
-              ) : null}
-            </FormGroup>
-            <Button color="primary" type="submit" disabled={loading}>
-              {loading ? <Spinner size="sm" /> : 'Criar categoria'}
-            </Button>
+            <LuditecaInput
+              label="Nome"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <LuditecaInput
+              label="Imagem"
+              type="file"
+              accept="image/*"
+              onChange={handleImageUpload}
+              disabled={uploading}
+              hint={uploading ? 'A enviar…' : undefined}
+            />
+            {imageUrl ? (
+              <div className="mb-4">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={imageUrl} alt="Prévia" className="img-fluid rounded" style={{ maxHeight: 192 }} />
+              </div>
+            ) : null}
+            <LuditecaButton variant="primary" type="submit" loading={loading} loadingLabel="A criar…">
+              Criar categoria
+            </LuditecaButton>
           </Form>
         </ArgonFormCard>
       </ArgonCmsShell>

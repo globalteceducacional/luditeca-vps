@@ -1,5 +1,6 @@
 import classNames from 'classnames';
-import { Button, Col, Row } from 'reactstrap';
+import { Col, Row } from 'reactstrap';
+import LuditecaButton from './LuditecaButton';
 
 /** Cabeçalho de página CMS — alinhado ao padrão Argon Dashboard React (título + traço gradiente + CTA). */
 export default function ArgonPageHeader({
@@ -25,16 +26,15 @@ export default function ArgonPageHeader({
         {(actionLabel && onAction) || children ? (
           <Col xs="auto" className="text-right pt-2 pt-md-0">
             {actionLabel && onAction ? (
-              <Button
-                color="primary"
+              <LuditecaButton
+                variant="primary"
                 size="sm"
-                className="luditeca-btn-gradient"
+                icon={actionIcon}
                 onClick={onAction}
                 disabled={actionDisabled}
               >
-                {actionIcon ? <i className={`${actionIcon} mr-1`} /> : null}
                 {actionLabel}
-              </Button>
+              </LuditecaButton>
             ) : null}
             {children}
           </Col>

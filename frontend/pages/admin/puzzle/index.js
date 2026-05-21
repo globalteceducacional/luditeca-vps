@@ -3,21 +3,12 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { toast } from 'react-hot-toast';
-import {
-  Alert,
-  Badge,
-  Button,
-  Form,
-  FormGroup,
-  Input,
-  Media,
-  Spinner,
-  Table,
-} from 'reactstrap';
+import { Badge, Form, Media, Spinner, Table } from 'reactstrap';
 import AdminImageUploadField from '../../../components/admin/AdminImageUploadField';
 import Layout from '../../../components/Layout';
 import ArgonEmptyState from '../../../components/argon/ArgonEmptyState';
 import ArgonCmsShell, { ArgonTableCard } from '../../../components/argon/ArgonCmsShell';
+import { LuditecaAlert, LuditecaButton, LuditecaInput } from '../../../components/argon/luditeca';
 import ArgonFormCard from '../../../components/argon/ArgonFormCard';
 import { useAuth } from '../../../contexts/auth';
 import {
@@ -144,6 +135,7 @@ export default function AdminPuzzlePage() {
         <title>Quebra-cabeça | Admin</title>
       </Head>
       <ArgonCmsShell
+        contentConstrained
         title="Quebra-cabeça"
         subtitle="Gestão de puzzles para a app infantil."
         actionLabel="Novo"
@@ -151,25 +143,24 @@ export default function AdminPuzzlePage() {
         onAction={openCreate}
         actionDisabled={formOpen}
         headerExtra={
-          <Button color="link" size="sm" tag={Link} href="/admin" className="p-0">
+          <LuditecaButton variant="link" size="sm" tag={Link} href="/admin" className="p-0">
             ← Hub admin
-          </Button>
+          </LuditecaButton>
         }
         loading={loading && rows.length === 0}
+        loadingVariant="table"
+        loadingLabel="Quebra-cabeça"
       >
-        {error ? <Alert color="danger">{error}</Alert> : null}
+        {error ? <LuditecaAlert color="danger">{error}</LuditecaAlert> : null}
         {formOpen ? (
           <ArgonFormCard className="mb-4" title={editingId ? 'Editar puzzle' : 'Novo puzzle'}>
             <Form onSubmit={handleSubmit}>
-              <FormGroup>
-                <label className="form-control-label">Título *</label>
-                <Input
-                  className="luditeca-form-control"
-                  value={form.title}
-                  onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-                  required
-                />
-              </FormGroup>
+              <LuditecaInput
+                label="Título"
+                required
+                value={form.title}
+                onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+              />
               <AdminImageUploadField
                 label="Imagem do puzzle"
                 uploadKind="puzzle"
@@ -177,45 +168,36 @@ export default function AdminPuzzlePage() {
                 value={form.image_url}
                 onChange={(url) => setForm((f) => ({ ...f, image_url: url }))}
               />
-              <FormGroup>
-                <label className="form-control-label">Descrição</label>
-                <Input
-                  className="luditeca-form-control"
-                  type="textarea"
-                  rows="2"
-                  value={form.description}
-                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                />
-              </FormGroup>
-              <FormGroup>
-                <label className="form-control-label">Legenda</label>
-                <Input
-                  className="luditeca-form-control"
-                  value={form.caption}
-                  onChange={(e) => setForm((f) => ({ ...f, caption: e.target.value }))}
-                />
-              </FormGroup>
-              <FormGroup>
-                <label className="form-control-label">Peças</label>
-                <Input
-                  className="luditeca-form-control"
-                  type="select"
-                  value={form.piece_count}
-                  onChange={(e) => setForm((f) => ({ ...f, piece_count: Number(e.target.value) }))}
-                >
-                  {PIECE_OPTIONS.map((n) => (
-                    <option key={n} value={n}>
-                      {n} peças
-                    </option>
-                  ))}
-                </Input>
-              </FormGroup>
-              <Button color="primary" type="submit" disabled={saving} className="mr-2">
-                {saving ? <Spinner size="sm" /> : editingId ? 'Guardar' : 'Criar'}
-              </Button>
-              <Button color="secondary" type="button" onClick={closeForm}>
+              <LuditecaInput
+                label="Descrição"
+                type="textarea"
+                rows={2}
+                value={form.description}
+                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+              />
+              <LuditecaInput
+                label="Legenda"
+                value={form.caption}
+                onChange={(e) => setForm((f) => ({ ...f, caption: e.target.value }))}
+              />
+              <LuditecaInput
+                label="Peças"
+                type="select"
+                value={form.piece_count}
+                onChange={(e) => setForm((f) => ({ ...f, piece_count: Number(e.target.value) }))}
+              >
+                {PIECE_OPTIONS.map((n) => (
+                  <option key={n} value={n}>
+                    {n} peças
+                  </option>
+                ))}
+              </LuditecaInput>
+              <LuditecaButton variant="primary" type="submit" disabled={saving} loading={saving} className="mr-2">
+                {editingId ? 'Guardar' : 'Criar'}
+              </LuditecaButton>
+              <LuditecaButton variant="outline" type="button" onClick={closeForm}>
                 Cancelar
-              </Button>
+              </LuditecaButton>
             </Form>
           </ArgonFormCard>
         ) : null}
@@ -272,15 +254,15 @@ export default function AdminPuzzlePage() {
                         </Badge>
                       </td>
                       <td className="text-right">
-                        <Button color="info" size="sm" onClick={() => openEdit(row)} className="mr-1">
+                        <LuditecaButton variant="info" size="sm" onClick={() => openEdit(row)} className="mr-1">
                           Editar
-                        </Button>
-                        <Button color="default" size="sm" onClick={() => togglePublish(row)} className="mr-1">
+                        </LuditecaButton>
+                        <LuditecaButton variant="outline" size="sm" onClick={() => togglePublish(row)} className="mr-1">
                           {row.is_published ? 'Despublicar' : 'Publicar'}
-                        </Button>
-                        <Button color="danger" size="sm" onClick={() => handleDelete(row.id)}>
+                        </LuditecaButton>
+                        <LuditecaButton variant="danger" size="sm" onClick={() => handleDelete(row.id)}>
                           Excluir
-                        </Button>
+                        </LuditecaButton>
                       </td>
                     </tr>
                   ))

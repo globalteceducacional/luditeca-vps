@@ -1,3 +1,5 @@
+import { ROLES } from './roles';
+
 /**
  * Rotas da sidebar CMS (Argon Dashboard React — Creative Tim).
  * `shape` → classe Argon `icon-shape-*` (círculos coloridos como na demo /admin).
@@ -5,6 +7,36 @@
 export const CMS_NAV = [
   { path: '/books', name: 'Livros', icon: 'ni ni-book-bookmark', shape: 'primary' },
   { path: '/admin', name: 'Área Admin', icon: 'ni ni-app', shape: 'info' },
+];
+
+/** Grupos hierárquicos da sidebar (Design System v1). */
+export const CMS_SIDEBAR_GROUPS = [
+  {
+    id: 'content',
+    label: 'Conteúdo',
+    items: CMS_NAV,
+  },
+  {
+    id: 'catalog',
+    label: 'Catálogo',
+    items: 'CMS_METADATA_NAV',
+  },
+  {
+    id: 'system',
+    label: 'Sistema',
+    items: 'ADMIN_NAV',
+    adminOnly: true,
+  },
+  {
+    id: 'account',
+    label: 'Conta',
+    items: 'CMS_ACCOUNT_NAV',
+  },
+  {
+    id: 'preview',
+    label: 'Experiência',
+    items: 'APP_PREVIEW_NAV',
+  },
 ];
 
 /**
@@ -34,3 +66,30 @@ export const CMS_ACCOUNT_NAV = [
 export const APP_PREVIEW_NAV = [
   { path: '/app', name: 'App (preview)', icon: 'ni ni-button-play', shape: 'success' },
 ];
+
+const NAV_MAP = {
+  CMS_METADATA_NAV,
+  ADMIN_NAV,
+  CMS_ACCOUNT_NAV,
+  APP_PREVIEW_NAV,
+};
+
+/**
+ * Sidebar agrupada conforme papel do utilizador.
+ * @param {{ role?: string } | null} user
+ * @returns {{ id: string, label: string, items: typeof CMS_NAV }[]}
+ */
+export function buildCmsSidebarGroups(user) {
+  const isAdmin = user?.role === ROLES.admin;
+
+  return CMS_SIDEBAR_GROUPS.filter((group) => !group.adminOnly || isAdmin).map((group) => ({
+    id: group.id,
+    label: group.label,
+    items: typeof group.items === 'string' ? NAV_MAP[group.items] || [] : group.items,
+  }));
+}
+
+/** Lista plana (retrocompatível). */
+export function buildCmsSidebarRoutes(user) {
+  return buildCmsSidebarGroups(user).flatMap((g) => g.items);
+}

@@ -4,13 +4,10 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import {
   Badge,
-  Button,
   Card,
   CardBody,
   CardHeader,
   Col,
-  Container,
-  CustomInput,
   Nav,
   NavItem,
   NavLink,
@@ -22,8 +19,9 @@ import {
 } from 'reactstrap';
 import { toast } from 'react-hot-toast';
 import Layout from '../../components/Layout';
+import ArgonCmsShell from '../../components/argon/ArgonCmsShell';
+import { LuditecaAlert, LuditecaButton } from '../../components/argon/luditeca';
 import ArgonEmptyState from '../../components/argon/ArgonEmptyState';
-import ArgonPageHeader from '../../components/argon/ArgonPageHeader';
 import WorkflowStatusSelect, {
   WORKFLOW_LABEL,
   workflowBadgeColor,
@@ -38,11 +36,11 @@ import { CMS_ROLES, isRole } from '../../lib/roles';
 import { bookTypeBadgeColor, getBookEditHref, getBookTypeLabel } from '../../lib/bookTypes';
 
 const TABS = [
-  { id: 'books', label: 'LIVROS', icon: 'ni ni-book-bookmark' },
-  { id: 'libras', label: 'LIBRAS', icon: 'ni ni-app' },
-  { id: 'activities', label: 'ATIVIDADES', icon: 'ni ni-bullet-list-67' },
-  { id: 'puzzle', label: 'QUEBRA-CABEÇA', icon: 'ni ni-app' },
-  { id: 'coloring', label: 'PINTURAS', icon: 'ni ni-image' },
+  { id: 'books', label: 'Livros', icon: 'ni ni-book-bookmark' },
+  { id: 'libras', label: 'Libras', icon: 'ni ni-app' },
+  { id: 'activities', label: 'Atividades', icon: 'ni ni-bullet-list-67' },
+  { id: 'puzzle', label: 'Quebra-cabeça', icon: 'ni ni-app' },
+  { id: 'coloring', label: 'Pinturas', icon: 'ni ni-image' },
 ];
 
 function authorName(book) {
@@ -51,14 +49,19 @@ function authorName(book) {
 
 function PublishToggle({ id, checked, disabled, onChange, labelOn = 'Na app', labelOff = 'Rascunho' }) {
   return (
-    <CustomInput
-      type="switch"
-      id={id}
-      checked={!!checked}
-      disabled={disabled}
-      onChange={onChange}
-      label={checked ? labelOn : labelOff}
-    />
+    <div className="custom-control custom-switch">
+      <input
+        type="checkbox"
+        className="custom-control-input"
+        id={id}
+        checked={!!checked}
+        disabled={disabled}
+        onChange={onChange}
+      />
+      <label className="custom-control-label" htmlFor={id}>
+        {checked ? labelOn : labelOff}
+      </label>
+    </div>
   );
 }
 
@@ -167,29 +170,29 @@ export default function AdminHub() {
       <Head>
         <title>Área Admin | Luditeca</title>
       </Head>
-      <Container fluid className="luditeca-cms-shell">
-        <ArgonPageHeader
-          title="Área do Administrador"
-          subtitle="Gestão de conteúdo educativo: livros, atividades, libras, puzzle e pinturas."
-        >
-          {user.role === 'admin' ? (
+      <ArgonCmsShell
+        contentConstrained
+        title="Área do Administrador"
+        subtitle="Gestão de conteúdo educativo: livros, atividades, libras, puzzle e pinturas."
+        headerExtra={
+          user.role === 'admin' ? (
             <>
-              <Button color="default" size="sm" outline tag={Link} href="/admin/users" className="mr-2 mb-2">
+              <LuditecaButton variant="outline" size="sm" tag={Link} href="/admin/users" className="mr-2 mb-2">
                 Utilizadores
-              </Button>
-              <Button color="default" size="sm" outline tag={Link} href="/admin/audit" className="mr-2 mb-2">
+              </LuditecaButton>
+              <LuditecaButton variant="outline" size="sm" tag={Link} href="/admin/audit" className="mr-2 mb-2">
                 Trilha
-              </Button>
-              <Button color="default" size="sm" outline tag={Link} href="/admin/telemetry" className="mb-2">
+              </LuditecaButton>
+              <LuditecaButton variant="outline" size="sm" tag={Link} href="/admin/telemetry" className="mb-2">
                 Telemetria
-              </Button>
+              </LuditecaButton>
             </>
-          ) : null}
-        </ArgonPageHeader>
-
+          ) : null
+        }
+      >
         <Row>
           <Col>
-            <Card className="shadow border-0">
+            <Card className="shadow border-0 luditeca-admin-hub-panel">
               <CardHeader className="border-0 pb-0">
                 <div className="admin-hub-tabs-scroll">
                   <Nav pills className="flex-row flex-nowrap">
@@ -213,9 +216,7 @@ export default function AdminHub() {
               </CardHeader>
               <CardBody className="pt-3">
                 {error ? (
-                  <div className="alert alert-danger" role="alert">
-                    {error}
-                  </div>
+                  <LuditecaAlert color="danger">{error}</LuditecaAlert>
                 ) : null}
                 {loading ? (
                   <div className="text-center py-5">
@@ -226,10 +227,10 @@ export default function AdminHub() {
                   <TabContent activeTab={tab}>
                     <TabPane tabId="books">
                       <div className="d-flex justify-content-end mb-3">
-                        <Button color="primary" size="sm" tag={Link} href="/books/new">
+                        <LuditecaButton variant="primary" size="sm" tag={Link} href="/books/new">
                           <i className="ni ni-fat-add mr-1" />
                           Novo livro
-                        </Button>
+                        </LuditecaButton>
                       </div>
                       <div className="table-responsive">
                         <Table className="align-items-center table-flush" hover>
@@ -287,15 +288,14 @@ export default function AdminHub() {
                                     </Badge>
                                   </td>
                                   <td className="text-right">
-                                    <Button
-                                      color="primary"
+                                    <LuditecaButton
+                                      variant="outline"
                                       size="sm"
-                                      outline
                                       tag={Link}
                                       href={getBookEditHref(b)}
                                     >
                                       Editar
-                                    </Button>
+                                    </LuditecaButton>
                                   </td>
                                 </tr>
                               ))
@@ -310,12 +310,12 @@ export default function AdminHub() {
 
                     <TabPane tabId="libras">
                       <div className="mb-3">
-                        <Button color="primary" size="sm" tag={Link} href="/admin/libras/new/edit" className="mr-2">
+                        <LuditecaButton variant="primary" size="sm" tag={Link} href="/admin/libras/new/edit" className="mr-2">
                           Nova lição
-                        </Button>
-                        <Button color="secondary" size="sm" outline tag={Link} href="/admin/libras">
+                        </LuditecaButton>
+                        <LuditecaButton variant="outline" size="sm" tag={Link} href="/admin/libras">
                           Gestão completa
-                        </Button>
+                        </LuditecaButton>
                       </div>
                       <Table className="align-items-center table-flush" responsive hover>
                         <thead className="thead-light">
@@ -333,7 +333,7 @@ export default function AdminHub() {
                                   variant="inline"
                                   icon="ni ni-app"
                                   iconShape="info"
-                                  title="Nenhuma lição LIBRAS"
+                                  title="Nenhuma lição Libras"
                                   description="Adicione lições para aparecerem na app."
                                   primaryLabel="Nova lição"
                                   primaryHref="/admin/libras/new/edit"
@@ -348,15 +348,14 @@ export default function AdminHub() {
                                 <th scope="row">{row.word}</th>
                                 <td>{row.sort_order}</td>
                                 <td className="text-right">
-                                  <Button
+                                  <LuditecaButton
                                     size="sm"
-                                    color="primary"
-                                    outline
+                                    variant="outline"
                                     tag={Link}
                                     href={`/admin/libras/${row.id}/edit`}
                                   >
                                     Editar
-                                  </Button>
+                                  </LuditecaButton>
                                 </td>
                               </tr>
                             ))
@@ -367,18 +366,18 @@ export default function AdminHub() {
 
                     <TabPane tabId="activities">
                       <div className="mb-3">
-                        <Button
-                          color="primary"
+                        <LuditecaButton
+                          variant="primary"
                           size="sm"
                           tag={Link}
                           href="/admin/activities/new/edit"
                           className="mr-2"
                         >
                           Nova atividade
-                        </Button>
-                        <Button color="secondary" size="sm" outline tag={Link} href="/admin/activities">
+                        </LuditecaButton>
+                        <LuditecaButton variant="outline" size="sm" tag={Link} href="/admin/activities">
                           Gestão completa
-                        </Button>
+                        </LuditecaButton>
                       </div>
                       <Table className="align-items-center table-flush" responsive hover>
                         <thead className="thead-light">
@@ -422,15 +421,14 @@ export default function AdminHub() {
                                   />
                                 </td>
                                 <td className="text-right">
-                                  <Button
+                                  <LuditecaButton
                                     size="sm"
-                                    color="primary"
-                                    outline
+                                    variant="outline"
                                     tag={Link}
                                     href={`/admin/activities/${row.id}/edit`}
                                   >
                                     Editar
-                                  </Button>
+                                  </LuditecaButton>
                                 </td>
                               </tr>
                             ))
@@ -441,9 +439,9 @@ export default function AdminHub() {
 
                     <TabPane tabId="puzzle">
                       <div className="mb-3">
-                        <Button color="secondary" size="sm" outline tag={Link} href="/admin/puzzle">
+                        <LuditecaButton variant="outline" size="sm" tag={Link} href="/admin/puzzle">
                           Gestão completa
-                        </Button>
+                        </LuditecaButton>
                       </div>
                       <Table className="align-items-center table-flush" responsive hover>
                         <thead className="thead-light">
@@ -490,9 +488,9 @@ export default function AdminHub() {
 
                     <TabPane tabId="coloring">
                       <div className="mb-3">
-                        <Button color="secondary" size="sm" outline tag={Link} href="/admin/coloring">
+                        <LuditecaButton variant="outline" size="sm" tag={Link} href="/admin/coloring">
                           Gestão completa
-                        </Button>
+                        </LuditecaButton>
                       </div>
                       <Table className="align-items-center table-flush" responsive hover>
                         <thead className="thead-light">
@@ -542,7 +540,7 @@ export default function AdminHub() {
             </Card>
           </Col>
         </Row>
-      </Container>
+      </ArgonCmsShell>
     </Layout>
   );
 }

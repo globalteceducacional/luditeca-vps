@@ -71,29 +71,29 @@ export default function AppActivityPlayerPage() {
 
   return (
     <AppShell title={activity?.title || 'Atividade'} backHref="/app/activities">
-      {loading && <p className="text-sky-700">A carregar…</p>}
+      {loading && <p className="text-luditeca-body">A carregar…</p>}
       {error && (
         <p className="text-red-600 bg-red-50 border border-red-100 rounded-lg p-3">{error}</p>
       )}
       {activity && !loading && !error && (
-        <div className="bg-white rounded-2xl border border-violet-100 p-6">
+        <div className="app-card p-6">
           {activity.description && (
-            <p className="text-sky-800 mb-4">{activity.description}</p>
+            <p className="text-luditeca-body mb-4">{activity.description}</p>
           )}
           {questions.length === 0 && (
-            <p className="text-sky-600">Esta atividade ainda não tem perguntas.</p>
+            <p className="text-luditeca-muted">Esta atividade ainda não tem perguntas.</p>
           )}
           {done && (
-            <p className="text-lg font-semibold text-violet-800">
+            <p className="text-lg font-semibold text-luditeca-accent-800">
               Concluído! Acertos: {score} / {questions.length}
             </p>
           )}
           {!done && current && isQuiz && (
             <>
-              <p className="text-sm text-violet-600 mb-2">
+              <p className="text-sm text-luditeca-accent-700 mb-2">
                 Pergunta {index + 1} de {questions.length}
               </p>
-              <h2 className="text-xl font-bold text-sky-900 mb-4">
+              <h2 className="text-xl font-bold text-luditeca-ink mb-4">
                 {current.question || current.prompt || current.text}
               </h2>
               <ul className="space-y-2">
@@ -114,7 +114,7 @@ export default function AppActivityPlayerPage() {
                             ? 'border-green-400 bg-green-50'
                             : isWrong
                               ? 'border-red-300 bg-red-50'
-                              : 'border-sky-100 hover:border-violet-300 hover:bg-violet-50'
+                              : 'border-luditeca-primary-100 hover:border-luditeca-accent-300 hover:bg-luditeca-accent-soft'
                         }`}
                       >
                         {label}
@@ -126,7 +126,7 @@ export default function AppActivityPlayerPage() {
             </>
           )}
           {!done && current && !isQuiz && (
-            <p className="text-sky-600">
+            <p className="text-luditeca-muted">
               Tipo &quot;{activity.type}&quot;: player completo em breve (
               {questions.length} cartão{questions.length === 1 ? '' : 's'}).
             </p>

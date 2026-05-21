@@ -3,8 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "vendor:css": "node scripts/copy-vendor-css.js",
+    "postinstall": "node scripts/copy-vendor-css.js",
+    "dev": "node scripts/copy-vendor-css.js && next dev -p 3000",
+    "build": "node scripts/copy-vendor-css.js && next build",
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run"

@@ -3,20 +3,11 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { toast } from 'react-hot-toast';
-import {
-  Alert,
-  Button,
-  CustomInput,
-  Form,
-  FormGroup,
-  Input,
-  Row,
-  Col,
-  Spinner,
-} from 'reactstrap';
+import { Form, Row, Col } from 'reactstrap';
 import AdminQuizQuestionsEditor from '../../../../components/admin/AdminQuizQuestionsEditor';
 import Layout from '../../../../components/Layout';
 import ArgonCmsShell from '../../../../components/argon/ArgonCmsShell';
+import { LuditecaAlert, LuditecaButton, LuditecaInput } from '../../../../components/argon/luditeca';
 import ArgonFormCard from '../../../../components/argon/ArgonFormCard';
 import { useAuth } from '../../../../contexts/auth';
 import { createActivity, getActivity, updateActivity } from '../../../../lib/activities';
@@ -118,64 +109,53 @@ export default function AdminActivityEditPage() {
         <title>{isNew ? 'Nova atividade' : 'Editar atividade'} | Admin</title>
       </Head>
       <ArgonCmsShell
+        contentConstrained
         title={isNew ? 'Nova atividade' : 'Editar atividade'}
         subtitle="Configure tipo, perguntas e publicação."
         loading={loading}
         headerExtra={
-          <Button color="link" size="sm" tag={Link} href="/admin/activities" className="p-0">
+          <LuditecaButton variant="link" size="sm" tag={Link} href="/admin/activities" className="p-0">
             ← Voltar
-          </Button>
+          </LuditecaButton>
         }
       >
         <ArgonFormCard title="Dados da atividade">
           <Form onSubmit={handleSubmit}>
-            {error ? <Alert color="danger">{error}</Alert> : null}
-            <FormGroup>
-              <label className="form-control-label">Título *</label>
-              <Input
-                className="luditeca-form-control"
-                value={form.title}
-                onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-                required
-              />
-            </FormGroup>
-            <FormGroup>
-              <label className="form-control-label">Descrição</label>
-              <Input
-                className="luditeca-form-control"
-                type="textarea"
-                rows="3"
-                value={form.description}
-                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-              />
-            </FormGroup>
+            {error ? <LuditecaAlert color="danger">{error}</LuditecaAlert> : null}
+            <LuditecaInput
+              label="Título"
+              required
+              value={form.title}
+              onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+            />
+            <LuditecaInput
+              label="Descrição"
+              type="textarea"
+              rows={3}
+              value={form.description}
+              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+            />
             <Row>
               <Col md="3">
-                <FormGroup>
-                  <label className="form-control-label">Ícone</label>
-                  <Input
-                    className="luditeca-form-control"
-                    value={form.icon}
-                    onChange={(e) => setForm((f) => ({ ...f, icon: e.target.value }))}
-                  />
-                </FormGroup>
+                <LuditecaInput
+                  label="Ícone"
+                  value={form.icon}
+                  onChange={(e) => setForm((f) => ({ ...f, icon: e.target.value }))}
+                />
               </Col>
               <Col md="9">
-                <FormGroup>
-                  <label className="form-control-label">Tipo</label>
-                  <Input
-                    className="luditeca-form-control"
-                    type="select"
-                    value={form.type}
-                    onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
-                  >
-                    {ACTIVITY_TYPES.map((t) => (
-                      <option key={t.value} value={t.value}>
-                        {t.label}
-                      </option>
-                    ))}
-                  </Input>
-                </FormGroup>
+                <LuditecaInput
+                  label="Tipo"
+                  type="select"
+                  value={form.type}
+                  onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
+                >
+                  {ACTIVITY_TYPES.map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
+                    </option>
+                  ))}
+                </LuditecaInput>
               </Col>
             </Row>
             <AdminQuizQuestionsEditor
@@ -183,25 +163,22 @@ export default function AdminActivityEditPage() {
               value={form.questions}
               onChange={(questions) => setForm((f) => ({ ...f, questions }))}
             />
-            <FormGroup>
-              <label className="form-control-label">Badge reward</label>
-              <Input
-                className="luditeca-form-control"
-                placeholder="Opcional"
-                value={form.badge_reward}
-                onChange={(e) => setForm((f) => ({ ...f, badge_reward: e.target.value }))}
-              />
-            </FormGroup>
-            <CustomInput
+            <LuditecaInput
+              label="Badge reward"
+              placeholder="Opcional"
+              value={form.badge_reward}
+              onChange={(e) => setForm((f) => ({ ...f, badge_reward: e.target.value }))}
+            />
+            <LuditecaInput
               type="checkbox"
               id="activity-published"
               label="Publicado"
               checked={form.is_published}
               onChange={(e) => setForm((f) => ({ ...f, is_published: e.target.checked }))}
             />
-            <Button color="primary" type="submit" disabled={saving} block className="mt-4">
-              {saving ? <Spinner size="sm" /> : isNew ? 'Criar atividade' : 'Guardar'}
-            </Button>
+            <LuditecaButton variant="primary" type="submit" disabled={saving} loading={saving} block className="mt-4">
+              {isNew ? 'Criar atividade' : 'Guardar'}
+            </LuditecaButton>
           </Form>
         </ArgonFormCard>
       </ArgonCmsShell>

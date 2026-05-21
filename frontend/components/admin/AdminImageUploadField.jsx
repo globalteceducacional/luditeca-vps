@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { FiImage, FiUpload } from 'react-icons/fi';
 import { toast } from 'react-hot-toast';
-import { Input } from 'reactstrap';
+import { LuditecaButton, LuditecaInput } from '../argon/luditeca';
 import { uploadAdminContentImage } from '../../lib/adminContentUpload';
 
 /**
@@ -53,9 +53,9 @@ export default function AdminImageUploadField({
             className="rounded border bg-light mr-3"
             style={{ width: 80, height: 80, objectFit: 'cover' }}
           />
-          <button type="button" onClick={() => onChange('')} className="btn btn-link btn-sm p-0 text-danger">
+          <LuditecaButton type="button" variant="link" size="sm" className="p-0 text-danger" onClick={() => onChange('')}>
             Remover imagem
-          </button>
+          </LuditecaButton>
         </div>
       ) : null}
 
@@ -74,9 +74,9 @@ export default function AdminImageUploadField({
         <span>ou cole uma URL abaixo</span>
       </div>
 
-      <Input
+      <LuditecaInput
+        formGroupClassName="mb-0"
         type="url"
-        className="luditeca-form-control"
         placeholder="https://…"
         value={value}
         onChange={(e) => onChange(e.target.value)}

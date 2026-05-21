@@ -2,27 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import {
-  Alert,
-  Button,
-  Card,
-  CardBody,
-  CardHeader,
-  Col,
-  Form,
-  FormGroup,
-  Input,
-  Modal,
-  ModalBody,
-  ModalFooter,
-  ModalHeader,
-  Row,
-  Spinner,
-  Table,
-} from 'reactstrap';
+import { Col, Form, Row, Spinner, Table } from 'reactstrap';
 import Layout from '../../../components/Layout';
 import ArgonEmptyState from '../../../components/argon/ArgonEmptyState';
+import ArgonFormCard from '../../../components/argon/ArgonFormCard';
 import ArgonCmsShell, { ArgonTableCard } from '../../../components/argon/ArgonCmsShell';
+import { LuditecaAlert, LuditecaButton, LuditecaInput, LuditecaModal } from '../../../components/argon/luditeca';
 import { useAuth } from '../../../contexts/auth';
 import { ROLES } from '../../../lib/roles';
 import { createUser, deleteUser, listUsers, updateUser } from '../../../lib/users';
@@ -153,83 +138,79 @@ export default function AdminUsers() {
         <title>Usuários | Admin</title>
       </Head>
       <ArgonCmsShell
+        contentConstrained
         title="Usuários"
         subtitle="Gestão de contas e perfis (apenas administrador)."
+        loading={loading && sorted.length === 0}
+        loadingVariant="table"
+        loadingLabel="Utilizadores"
         headerExtra={
-          <Button color="link" size="sm" tag={Link} href="/admin" className="p-0">
+          <LuditecaButton variant="link" size="sm" tag={Link} href="/admin" className="p-0">
             ← Hub admin
-          </Button>
+          </LuditecaButton>
         }
       >
-        {error ? <Alert color="danger">{error}</Alert> : null}
-        <Card className="shadow border-0 mb-4">
-          <CardHeader>
-            <h3 className="mb-0">Criar novo usuário</h3>
-          </CardHeader>
-          <CardBody>
+        {error ? <LuditecaAlert color="danger">{error}</LuditecaAlert> : null}
+        <ArgonFormCard title="Criar novo usuário" className="mb-4">
             <Form onSubmit={handleCreate}>
               <Row>
                 <Col md="3">
-                  <FormGroup>
-                    <Input
-                      placeholder="Email"
-                      value={form.email}
-                      onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                      required
-                    />
-                  </FormGroup>
+                  <LuditecaInput
+                    formGroupClassName="mb-3"
+                    placeholder="Email"
+                    type="email"
+                    value={form.email}
+                    onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                    required
+                  />
                 </Col>
                 <Col md="3">
-                  <FormGroup>
-                    <Input
-                      placeholder="Nome (opcional)"
-                      value={form.name}
-                      onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                    />
-                  </FormGroup>
+                  <LuditecaInput
+                    formGroupClassName="mb-3"
+                    placeholder="Nome (opcional)"
+                    value={form.name}
+                    onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                  />
                 </Col>
                 <Col md="2">
-                  <FormGroup>
-                    <Input
-                      type="select"
-                      value={form.role}
-                      onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
-                    >
-                      {ROLE_OPTIONS.map((o) => (
-                        <option key={o.value} value={o.value}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </Input>
-                  </FormGroup>
+                  <LuditecaInput
+                    formGroupClassName="mb-3"
+                    type="select"
+                    value={form.role}
+                    onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
+                  >
+                    {ROLE_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </LuditecaInput>
                 </Col>
                 <Col md="2">
-                  <FormGroup>
-                    <Input
-                      type="password"
-                      placeholder="Senha"
-                      value={form.password}
-                      onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-                      minLength={6}
-                      required
-                    />
-                  </FormGroup>
+                  <LuditecaInput
+                    formGroupClassName="mb-3"
+                    type="password"
+                    placeholder="Senha"
+                    value={form.password}
+                    onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                    minLength={6}
+                    required
+                  />
                 </Col>
                 <Col md="2" className="d-flex align-items-start">
-                  <Button color="primary" type="submit" disabled={saving} block>
-                    {saving ? <Spinner size="sm" /> : 'Criar'}
-                  </Button>
+                  <LuditecaButton variant="primary" type="submit" disabled={saving} loading={saving} block>
+                    Criar
+                  </LuditecaButton>
                 </Col>
               </Row>
             </Form>
-          </CardBody>
-        </Card>
+        </ArgonFormCard>
         <ArgonTableCard
           title="Lista"
           toolbar={
-            <Button color="default" size="sm" onClick={fetchUsers}>
+            <LuditecaButton variant="outline" size="sm" onClick={fetchUsers}>
               Recarregar
-            </Button>
+            </LuditecaButton>
           }
         >
           {loading ? (
@@ -266,8 +247,9 @@ export default function AdminUsers() {
                       <td>{u.email}</td>
                       <td>{u.name || '—'}</td>
                       <td>
-                        <Input
+                        <LuditecaInput
                           type="select"
+                          formGroupClassName="mb-0"
                           bsSize="sm"
                           value={u.role}
                           onChange={(e) => handleQuickRoleChange(u.id, e.target.value)}
@@ -277,23 +259,23 @@ export default function AdminUsers() {
                               {o.label}
                             </option>
                           ))}
-                        </Input>
+                        </LuditecaInput>
                       </td>
                       <td className="text-muted">
                         {u.createdAt ? new Date(u.createdAt).toLocaleString() : '—'}
                       </td>
                       <td className="text-right">
-                        <Button color="info" size="sm" onClick={() => openEdit(u)} className="mr-1">
+                        <LuditecaButton variant="info" size="sm" onClick={() => openEdit(u)} className="mr-1">
                           Editar
-                        </Button>
-                        <Button
-                          color="danger"
+                        </LuditecaButton>
+                        <LuditecaButton
+                          variant="danger"
                           size="sm"
                           onClick={() => handleDelete(u)}
                           disabled={u.id === user?.id}
                         >
                           Excluir
-                        </Button>
+                        </LuditecaButton>
                       </td>
                     </tr>
                   ))
@@ -302,52 +284,49 @@ export default function AdminUsers() {
             </Table>
           )}
         </ArgonTableCard>
-        <Modal isOpen={Boolean(editingId)} toggle={closeEdit}>
-          <ModalHeader toggle={closeEdit}>Editar usuário</ModalHeader>
-          <Form onSubmit={handleSaveEdit}>
-            <ModalBody>
-              <FormGroup>
-                <label className="form-control-label">Nome</label>
-                <Input
-                  value={editForm.name}
-                  onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
-                />
-              </FormGroup>
-              <FormGroup>
-                <label className="form-control-label">Role</label>
-                <Input
-                  type="select"
-                  value={editForm.role}
-                  onChange={(e) => setEditForm((f) => ({ ...f, role: e.target.value }))}
-                >
-                  {ROLE_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </Input>
-              </FormGroup>
-              <FormGroup>
-                <label className="form-control-label">Nova senha (opcional)</label>
-                <Input
-                  type="password"
-                  minLength={6}
-                  placeholder="Deixe em branco para não alterar"
-                  value={editForm.password}
-                  onChange={(e) => setEditForm((f) => ({ ...f, password: e.target.value }))}
-                />
-              </FormGroup>
-            </ModalBody>
-            <ModalFooter>
-              <Button color="secondary" type="button" onClick={closeEdit}>
+        <LuditecaModal
+          isOpen={Boolean(editingId)}
+          toggle={closeEdit}
+          title="Editar usuário"
+          footer={
+            <>
+              <LuditecaButton variant="outline" type="button" onClick={closeEdit}>
                 Cancelar
-              </Button>
-              <Button color="primary" type="submit" disabled={editSaving}>
-                {editSaving ? <Spinner size="sm" /> : 'Salvar'}
-              </Button>
-            </ModalFooter>
+              </LuditecaButton>
+              <LuditecaButton variant="primary" type="submit" form="admin-user-edit-form" disabled={editSaving} loading={editSaving}>
+                Salvar
+              </LuditecaButton>
+            </>
+          }
+        >
+          <Form id="admin-user-edit-form" onSubmit={handleSaveEdit}>
+            <LuditecaInput
+              label="Nome"
+              value={editForm.name}
+              onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
+            />
+            <LuditecaInput
+              label="Role"
+              type="select"
+              value={editForm.role}
+              onChange={(e) => setEditForm((f) => ({ ...f, role: e.target.value }))}
+            >
+              {ROLE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </LuditecaInput>
+            <LuditecaInput
+              label="Nova senha (opcional)"
+              type="password"
+              minLength={6}
+              placeholder="Deixe em branco para não alterar"
+              value={editForm.password}
+              onChange={(e) => setEditForm((f) => ({ ...f, password: e.target.value }))}
+            />
           </Form>
-        </Modal>
+        </LuditecaModal>
       </ArgonCmsShell>
     </Layout>
   );

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import { toast } from 'react-hot-toast';
 import { createBook, getBook, updateBook } from '../lib/books';
@@ -7,7 +7,14 @@ import { getCategories } from '../lib/categories';
 import { uploadFile } from '../lib/storageApi';
 import { useAuth } from '../contexts/auth';
 import { CMS_ROLES, isRole } from '../lib/roles';
-import { emptyQuizQuestion, normalizeQuizForApi } from '../lib/bookTypes';
+import { canonicalBookAssetUrl } from '../lib/bookMediaSrc';
+import { normalizeQuizForApi } from '../lib/bookTypes';
+import {
+  isQuizTimelineItem,
+  splitTimelineForApi,
+  timelineFromBook,
+} from '../lib/bookContentTimeline';
+import { validateInteractiveScenesClient } from '../lib/interactiveScenes';
 
 export function emptyAnimatedPage(pageNumber = 1) {
   return {
@@ -19,19 +26,22 @@ export function emptyAnimatedPage(pageNumber = 1) {
   };
 }
 
-export function emptyInteractiveScene(sceneId = 'scene_1') {
+export function emptyInteractiveScene(sceneId = null, { isFirst = false } = {}) {
+  const id = sceneId || 'scene_1';
   return {
-    scene_id: sceneId,
+    scene_id: id,
+    scene_title: '',
     text: '',
     image_url: '',
     choices: [],
-    is_start: false,
+    is_start: isFirst,
     is_ending: false,
   };
 }
 
 function mapBookToForm(data, bookType) {
-  const pages = Array.isArray(data?.pages) ? data.pages : [];
+  const timeline = timelineFromBook(data, bookType);
+
   return {
     title: data?.title || '',
     description: data?.description || '',
@@ -39,23 +49,8 @@ function mapBookToForm(data, bookType) {
     author_id: data?.author_id || '',
     category_id: data?.category_id || '',
     cover_image: data?.cover_image || '',
-    pages: pages.length
-      ? pages
-      : bookType === 'interactive'
-        ? [emptyInteractiveScene()]
-        : bookType === 'animated'
-          ? []
-          : [],
-    quiz:
-      Array.isArray(data?.quiz) && data.quiz.length
-        ? data.quiz.map((q) => ({
-            question: q.question || '',
-            options: Array.isArray(q.options) && q.options.length === 4
-              ? q.options
-              : ['', '', '', ''],
-            correct: Number(q.correct) || 0,
-          }))
-        : [emptyQuizQuestion()],
+    pages: timeline,
+    quiz: [],
     soundtrack_url: data?.soundtrack_url || '',
     pdf_url: data?.pdf_url || '',
     epub_url: data?.epub_url || '',
@@ -63,14 +58,22 @@ function mapBookToForm(data, bookType) {
   };
 }
 
+function isPublishedStatus(status) {
+  return String(status || '').trim().toLowerCase() === 'published';
+}
+
 /**
  * Estado partilhado do fluxo por tipo (criar em /books/new/[type], editar em /books/[id]/edit-flow).
  */
 export function useBookTypeFlow({ bookType, bookId = null }) {
-  const isEdit = Boolean(bookId);
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
 
+  const [activeBookId, setActiveBookId] = useState(bookId ? String(bookId) : null);
+  const isEdit = Boolean(activeBookId);
+  const [step, setStep] = useState(0);
+  const [lastSavedAt, setLastSavedAt] = useState(null);
+  const autosaveSkipRef = useRef(true);
   const [form, setForm] = useState(() => ({
     title: '',
     description: '',
@@ -78,8 +81,8 @@ export function useBookTypeFlow({ bookType, bookId = null }) {
     author_id: '',
     category_id: '',
     cover_image: '',
-    pages: bookType === 'interactive' ? [emptyInteractiveScene()] : [],
-    quiz: [emptyQuizQuestion()],
+    pages: bookType === 'interactive' ? [emptyInteractiveScene(null, { isFirst: true })] : [],
+    quiz: [],
     soundtrack_url: '',
     pdf_url: '',
     epub_url: '',
@@ -88,10 +91,12 @@ export function useBookTypeFlow({ bookType, bookId = null }) {
   const [authors, setAuthors] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loadingMeta, setLoadingMeta] = useState(true);
-  const [loadingBook, setLoadingBook] = useState(isEdit);
+  const [loadingBook, setLoadingBook] = useState(Boolean(bookId));
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(null);
   const [error, setError] = useState(null);
+  const [publishModalOpen, setPublishModalOpen] = useState(false);
 
   const patchForm = useCallback((patch) => {
     setForm((prev) => ({ ...prev, ...patch }));
@@ -125,6 +130,17 @@ export function useBookTypeFlow({ bookType, bookId = null }) {
   );
 
   useEffect(() => {
+    if (bookId) setActiveBookId(String(bookId));
+  }, [bookId]);
+
+  useEffect(() => {
+    const raw = router.query?.step;
+    if (raw === undefined || raw === '') return;
+    const n = parseInt(String(raw), 10);
+    if (Number.isFinite(n) && n >= 0 && n <= 2) setStep(n);
+  }, [router.query?.step]);
+
+  useEffect(() => {
     if (!authLoading && !user) router.replace('/login');
     if (!authLoading && user && !isRole(user, CMS_ROLES)) router.replace('/app');
   }, [authLoading, user, router]);
@@ -145,11 +161,11 @@ export function useBookTypeFlow({ bookType, bookId = null }) {
   }, []);
 
   useEffect(() => {
-    if (!isEdit || !bookId) return;
+    if (!activeBookId) return;
     let cancelled = false;
     (async () => {
       setLoadingBook(true);
-      const { data, error: err } = await getBook(bookId, { view: 'legacy' });
+      const { data, error: err } = await getBook(activeBookId, { view: 'legacy' });
       if (cancelled) return;
       if (err) {
         setError(err.message);
@@ -167,22 +183,39 @@ export function useBookTypeFlow({ bookType, bookId = null }) {
     return () => {
       cancelled = true;
     };
-  }, [isEdit, bookId, bookType]);
+  }, [activeBookId, bookType]);
 
-  const uploadMedia = async (file, bucket, pathPrefix = '') => {
+  const uploadMedia = async (file, bucket, pathPrefix = '', progressOpts = null) => {
     if (!file) throw new Error('Ficheiro inválido.');
     setUploading(true);
+    if (progressOpts) {
+      setUploadProgress({
+        current: progressOpts.current ?? 0,
+        total: progressOpts.total ?? 1,
+        label: progressOpts.label || 'A enviar ficheiros…',
+      });
+    }
     try {
       const path = pathPrefix ? `${pathPrefix}/${file.name}` : file.name;
-      const { url } = await uploadFile(bucket, path, file);
-      if (!url) throw new Error('Upload sem URL.');
-      return url;
+      const uploaded = await uploadFile(bucket, path, file);
+      const canonical = canonicalBookAssetUrl(uploaded, bucket);
+      if (!canonical) throw new Error('Upload sem URL.');
+      return canonical;
     } finally {
-      setUploading(false);
+      if (!progressOpts || progressOpts.current >= progressOpts.total) {
+        setUploading(false);
+        setUploadProgress(null);
+      }
     }
   };
 
-  const buildPayload = () => {
+  const buildPayload = (workflowStatusOverride) => {
+    const wf = workflowStatusOverride ?? (form.workflow_status || 'draft');
+    const { pages, quiz } =
+      bookType === 'digital'
+        ? { pages: [], quiz: [] }
+        : splitTimelineForApi(form.pages, bookType);
+
     const base = {
       title: form.title.trim(),
       description: form.description?.trim() || null,
@@ -190,7 +223,7 @@ export function useBookTypeFlow({ bookType, bookId = null }) {
       author_id: form.author_id || null,
       category_id: form.category_id || null,
       cover_image: form.cover_image || null,
-      workflow_status: form.workflow_status || 'draft',
+      workflow_status: wf,
       book_type: bookType,
     };
 
@@ -204,11 +237,10 @@ export function useBookTypeFlow({ bookType, bookId = null }) {
       };
     }
 
-    const quiz = normalizeQuizForApi(form.quiz);
     if (bookType === 'animated') {
       return {
         ...base,
-        pages: form.pages,
+        pages,
         quiz,
         soundtrack_url: form.soundtrack_url || null,
       };
@@ -216,54 +248,201 @@ export function useBookTypeFlow({ bookType, bookId = null }) {
 
     return {
       ...base,
-      pages: form.pages,
+      pages,
       quiz,
     };
   };
 
-  const handleSubmit = async (e) => {
-    e?.preventDefault?.();
-    setError(null);
+  const validateForSave = ({ publishing = false } = {}) => {
     if (!form.title.trim()) {
-      setError('O título é obrigatório.');
-      return;
-    }
-    if (bookType === 'digital' && !form.pdf_url && !form.epub_url) {
-      setError('Envie pelo menos um ficheiro PDF ou EPUB.');
-      return;
-    }
-    if (bookType === 'animated' && (!Array.isArray(form.pages) || form.pages.length === 0)) {
-      setError('Adicione pelo menos uma página.');
-      return;
-    }
-    if (bookType === 'interactive') {
-      const scenes = form.pages || [];
-      if (!scenes.length) {
-        setError('Adicione pelo menos uma cena.');
-        return;
-      }
-      const ids = new Set(scenes.map((s) => s.scene_id));
-      if (ids.size !== scenes.length) {
-        setError('Cada cena precisa de um scene_id único.');
-        return;
-      }
+      return 'O título é obrigatório.';
     }
 
+    const strict = publishing || isPublishedStatus(form.workflow_status);
+
+    if (bookType === 'digital') {
+      if (strict && !form.pdf_url && !form.epub_url) {
+        return 'Envie pelo menos um ficheiro PDF ou EPUB para publicar.';
+      }
+      return null;
+    }
+
+    if (bookType === 'interactive') {
+      const check = validateInteractiveScenesClient(form.pages, { requireContent: strict });
+      if (!check.ok) return check.error;
+      if (strict) {
+        const list = Array.isArray(form.pages) ? form.pages : [];
+        for (let i = 0; i < list.length; i += 1) {
+          if (!isQuizTimelineItem(list[i])) continue;
+          const q = normalizeQuizForApi([list[i]]);
+          if (!q.length) return `A pergunta na posição ${i + 1} está incompleta.`;
+        }
+      }
+      return null;
+    }
+
+    if (bookType === 'animated') {
+      const list = Array.isArray(form.pages) ? form.pages : [];
+      if (strict) {
+        const hasReading = list.some((p) => !isQuizTimelineItem(p));
+        if (!hasReading) return 'Adicione pelo menos uma página de leitura para publicar.';
+        for (let i = 0; i < list.length; i += 1) {
+          const item = list[i];
+          if (isQuizTimelineItem(item)) {
+            const q = normalizeQuizForApi([item]);
+            if (!q.length) return `A pergunta na posição ${i + 1} está incompleta.`;
+            continue;
+          }
+          if (!String(item?.image_url || '').trim()) {
+            return `A página na posição ${i + 1} precisa de imagem.`;
+          }
+        }
+      }
+      return null;
+    }
+
+    return null;
+  };
+
+  const validateStep = (stepIndex, opts) => {
+    if (stepIndex === 0 && !form.title.trim()) {
+      return 'Indique o título do livro antes de continuar.';
+    }
+    if (stepIndex === 1) {
+      return validateForSave(opts);
+    }
+    return validateForSave(opts);
+  };
+
+  const persist = async ({ publishing = false, workflowStatus, silent = false } = {}) => {
+    setError(null);
+    const validationError = validateForSave({ publishing });
+    if (validationError) {
+      setError(validationError);
+      return { ok: false };
+    }
+
+    const wf = workflowStatus ?? (publishing ? 'published' : form.workflow_status || 'draft');
     setSaving(true);
-    const payload = buildPayload();
-    const result = isEdit
-      ? await updateBook(bookId, payload)
-      : await createBook(payload);
+    const payload = buildPayload(wf);
+    const targetId = activeBookId;
+    const result = targetId ? await updateBook(targetId, payload) : await createBook(payload);
     setSaving(false);
 
     if (result.error) {
       setError(result.error.message);
-      return;
+      return { ok: false };
     }
 
-    toast.success(isEdit ? 'Livro atualizado.' : 'Livro criado.');
-    if (!isEdit && result.data?.id) {
-      router.push(`/books/${result.data.id}/edit-flow`);
+    if (!silent) {
+      if (publishing) {
+        patchForm({ workflow_status: 'published' });
+        toast.success('Livro publicado na app.');
+      } else {
+        toast.success(targetId ? 'Alterações guardadas.' : 'Rascunho criado.');
+      }
+    } else if (publishing) {
+      patchForm({ workflow_status: 'published' });
+    }
+
+    const newId = result.data?.id ? String(result.data.id) : null;
+    if (newId && !targetId) {
+      setActiveBookId(newId);
+      setLastSavedAt(new Date());
+    } else if (targetId) {
+      setLastSavedAt(new Date());
+    }
+
+    if (result.data) {
+      setForm(mapBookToForm(result.data, bookType));
+    }
+
+    return { ok: true, data: result.data, bookId: newId || targetId };
+  };
+
+  const persistRef = useRef(null);
+  persistRef.current = persist;
+
+  useEffect(() => {
+    if (!activeBookId || !form.title.trim()) return undefined;
+    if (autosaveSkipRef.current) {
+      autosaveSkipRef.current = false;
+      return undefined;
+    }
+    const timer = setTimeout(() => {
+      if (uploading || saving || !persistRef.current) return;
+      persistRef.current({ publishing: false, silent: true }).then((res) => {
+        if (res?.ok) setLastSavedAt(new Date());
+      });
+    }, 12000);
+    return () => clearTimeout(timer);
+  }, [form, activeBookId, uploading, saving]);
+
+  const handleSaveDraft = async (e) => {
+    e?.preventDefault?.();
+    const err = validateForSave({ publishing: false });
+    if (err) {
+      setError(err);
+      return;
+    }
+    const res = await persist({ publishing: false });
+    if (res?.ok && res.bookId && !bookId) {
+      router.replace(`/books/${res.bookId}/edit-flow?step=${step}`);
+    }
+  };
+
+  const handleSubmit = handleSaveDraft;
+
+  const handlePublishConfirm = async () => {
+    const err = validateForSave({ publishing: true });
+    if (err) {
+      setError(err);
+      setPublishModalOpen(false);
+      return;
+    }
+    const res = await persist({ publishing: true, workflowStatus: 'published' });
+    if (res.ok) setPublishModalOpen(false);
+  };
+
+  const goNextStep = async () => {
+    const err = validateStep(step, { publishing: false });
+    if (err) {
+      setError(err);
+      return;
+    }
+    setError(null);
+    const next = Math.min(step + 1, 2);
+
+    if (form.title.trim()) {
+      const res = await persist({ publishing: false, silent: true });
+      if (!res.ok) return;
+      const id = res.bookId || activeBookId;
+      if (id && !activeBookId) {
+        router.replace(`/books/${id}/edit-flow?step=${next}`);
+        return;
+      }
+    }
+
+    setStep(next);
+    if (activeBookId) {
+      router.replace(
+        { pathname: `/books/${activeBookId}/edit-flow`, query: { step: String(next) } },
+        undefined,
+        { shallow: true },
+      );
+    }
+  };
+
+  const goPrevStep = () => {
+    setError(null);
+    const prev = Math.max(step - 1, 0);
+    setStep(prev);
+    if (activeBookId) {
+      router.replace(
+        { pathname: `/books/${activeBookId}/edit-flow`, query: { step: String(prev) } },
+        undefined,
+        { shallow: true },
+      );
     }
   };
 
@@ -279,14 +458,28 @@ export function useBookTypeFlow({ bookType, bookId = null }) {
     loadingBook,
     saving,
     uploading,
+    uploadProgress,
     uploadMedia,
     error,
     setError,
     handleSubmit,
+    handleSaveDraft,
+    handlePublishConfirm,
     isEdit,
     onAuthorCreated,
     onCategoryCreated,
     loadingAuthors: loadingMeta,
     loadingCategories: loadingMeta,
+    step,
+    setStep,
+    goNextStep,
+    goPrevStep,
+    validateStep,
+    publishModalOpen,
+    setPublishModalOpen,
+    isPublished: isPublishedStatus(form.workflow_status),
+    nextSceneId: () => nextSceneId(form.pages),
+    activeBookId,
+    lastSavedAt,
   };
 }

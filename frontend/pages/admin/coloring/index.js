@@ -3,21 +3,12 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { toast } from 'react-hot-toast';
-import {
-  Alert,
-  Badge,
-  Button,
-  Form,
-  FormGroup,
-  Input,
-  Media,
-  Spinner,
-  Table,
-} from 'reactstrap';
+import { Badge, Form, Media, Spinner, Table } from 'reactstrap';
 import AdminImageUploadField from '../../../components/admin/AdminImageUploadField';
 import Layout from '../../../components/Layout';
 import ArgonEmptyState from '../../../components/argon/ArgonEmptyState';
 import ArgonCmsShell, { ArgonTableCard } from '../../../components/argon/ArgonCmsShell';
+import { LuditecaAlert, LuditecaButton, LuditecaInput } from '../../../components/argon/luditeca';
 import ArgonFormCard from '../../../components/argon/ArgonFormCard';
 import { useAuth } from '../../../contexts/auth';
 import {
@@ -133,6 +124,7 @@ export default function AdminColoringPage() {
         <title>Pinturas | Admin</title>
       </Head>
       <ArgonCmsShell
+        contentConstrained
         title="Pinturas"
         subtitle="Gestão de páginas para colorir na app infantil."
         actionLabel="Nova"
@@ -140,55 +132,48 @@ export default function AdminColoringPage() {
         onAction={openCreate}
         actionDisabled={formOpen}
         headerExtra={
-          <Button color="link" size="sm" tag={Link} href="/admin" className="p-0">
+          <LuditecaButton variant="link" size="sm" tag={Link} href="/admin" className="p-0">
             ← Hub admin
-          </Button>
+          </LuditecaButton>
         }
         loading={loading && rows.length === 0}
+        loadingVariant="table"
+        loadingLabel="Pinturas"
       >
-        {error ? <Alert color="danger">{error}</Alert> : null}
+        {error ? <LuditecaAlert color="danger">{error}</LuditecaAlert> : null}
         {formOpen ? (
           <ArgonFormCard className="mb-4" title={editingId ? 'Editar pintura' : 'Nova pintura'}>
             <Form onSubmit={handleSubmit}>
-              <FormGroup>
-                <label className="form-control-label">Título *</label>
-                <Input
-                  className="luditeca-form-control"
-                  value={form.title}
-                  onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-                  required
-                />
-              </FormGroup>
+              <LuditecaInput
+                label="Título"
+                required
+                value={form.title}
+                onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+              />
               <AdminImageUploadField
                 label="Imagem"
                 uploadKind="coloring"
                 value={form.image_url}
                 onChange={(url) => setForm((f) => ({ ...f, image_url: url }))}
               />
-              <FormGroup>
-                <label className="form-control-label">default_id</label>
-                <Input
-                  className="luditeca-form-control"
-                  placeholder="Override SVG padrão"
-                  value={form.default_id}
-                  onChange={(e) => setForm((f) => ({ ...f, default_id: e.target.value }))}
-                />
-              </FormGroup>
-              <FormGroup>
-                <label className="form-control-label">svg_type</label>
-                <Input
-                  className="luditeca-form-control"
-                  placeholder="Opcional"
-                  value={form.svg_type}
-                  onChange={(e) => setForm((f) => ({ ...f, svg_type: e.target.value }))}
-                />
-              </FormGroup>
-              <Button color="primary" type="submit" disabled={saving} className="mr-2">
-                {saving ? <Spinner size="sm" /> : editingId ? 'Guardar' : 'Criar'}
-              </Button>
-              <Button color="secondary" type="button" onClick={closeForm}>
+              <LuditecaInput
+                label="default_id"
+                placeholder="Override SVG padrão"
+                value={form.default_id}
+                onChange={(e) => setForm((f) => ({ ...f, default_id: e.target.value }))}
+              />
+              <LuditecaInput
+                label="svg_type"
+                placeholder="Opcional"
+                value={form.svg_type}
+                onChange={(e) => setForm((f) => ({ ...f, svg_type: e.target.value }))}
+              />
+              <LuditecaButton variant="primary" type="submit" disabled={saving} loading={saving} className="mr-2">
+                {editingId ? 'Guardar' : 'Criar'}
+              </LuditecaButton>
+              <LuditecaButton variant="outline" type="button" onClick={closeForm}>
                 Cancelar
-              </Button>
+              </LuditecaButton>
             </Form>
           </ArgonFormCard>
         ) : null}
@@ -243,15 +228,15 @@ export default function AdminColoringPage() {
                         </Badge>
                       </td>
                       <td className="text-right">
-                        <Button color="info" size="sm" onClick={() => openEdit(row)} className="mr-1">
+                        <LuditecaButton variant="info" size="sm" onClick={() => openEdit(row)} className="mr-1">
                           Editar
-                        </Button>
-                        <Button color="default" size="sm" onClick={() => togglePublish(row)} className="mr-1">
+                        </LuditecaButton>
+                        <LuditecaButton variant="outline" size="sm" onClick={() => togglePublish(row)} className="mr-1">
                           {row.is_published ? 'Despublicar' : 'Publicar'}
-                        </Button>
-                        <Button color="danger" size="sm" onClick={() => handleDelete(row.id)}>
+                        </LuditecaButton>
+                        <LuditecaButton variant="danger" size="sm" onClick={() => handleDelete(row.id)}>
                           Excluir
-                        </Button>
+                        </LuditecaButton>
                       </td>
                     </tr>
                   ))

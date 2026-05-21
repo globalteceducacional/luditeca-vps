@@ -2,9 +2,7 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { FiUpload } from 'react-icons/fi';
 import {
-  Alert,
   Badge,
-  Button,
   Card,
   CardBody,
   Col,
@@ -18,7 +16,10 @@ import ArgonCmsShell from '../../components/argon/ArgonCmsShell';
 import ArgonFormCard from '../../components/argon/ArgonFormCard';
 import LoadingProgressOverlay from '../../components/LoadingProgressOverlay';
 import BookCreateMetadata from '../../components/books/create/BookCreateMetadata';
+import LuditecaAlert from '../../components/argon/LuditecaAlert';
+import { LuditecaButton } from '../../components/argon/luditeca';
 import { useNewBookWizard } from '../../hooks/useNewBookWizard';
+import { BOOK_CREATION_PATHS } from '../../lib/bookTypes';
 
 const STEP_LABELS = ['Início', 'Metadados', 'Capítulos', 'Conteúdo'];
 
@@ -61,11 +62,16 @@ export default function NewBookWizardPage() {
 
       <ArgonCmsShell
         title="Assistente — novo livro"
-        subtitle="Assistente em passos (Argon). Metadados, capítulos e importação PPTX opcional; depois abre o editor v2."
+        subtitle="Livro com editor visual (canvas) e importação PPTX. Não usa os tipos animado/interativo/digital da app."
         headerExtra={
-          <Button color="link" size="sm" tag={Link} href="/books" className="p-0">
-            ← Catálogo
-          </Button>
+          <div className="d-flex flex-wrap align-items-center">
+            <LuditecaButton color="link" size="sm" tag={Link} href="/books/new" className="p-0 mr-3">
+              ← Fluxo app infantil
+            </LuditecaButton>
+            <LuditecaButton color="link" size="sm" tag={Link} href="/books" className="p-0">
+              Catálogo
+            </LuditecaButton>
+          </div>
         }
       >
         <Row className="justify-content-center">
@@ -84,17 +90,23 @@ export default function NewBookWizardPage() {
               ))}
             </div>
 
-            {w.error ? <Alert color="danger">{w.error}</Alert> : null}
+            {w.error ? <LuditecaAlert color="danger">{w.error}</LuditecaAlert> : null}
+
+            <LuditecaAlert color="light" className="border mb-4">
+              <strong>PowerPoint ou canvas?</strong> Este assistente abre o{' '}
+              <strong>editor visual v2</strong>. Para livros na app infantil (animado, interativo, PDF), use{' '}
+              <Link href="/books/new">{BOOK_CREATION_PATHS.appTypes.title.toLowerCase()}</Link>.
+            </LuditecaAlert>
 
             {w.step === 0 ? (
               <ArgonFormCard title="Bem-vindo">
                 <p className="text-muted mb-4">
                   Define a ficha do livro e os <strong>capítulos</strong>. Opcionalmente importa um PowerPoint. No fim,
-                  abrimos o <strong>editor visual</strong> para continuar as páginas.
+                  abrimos o <strong>editor visual</strong> para continuar as páginas no canvas.
                 </p>
-                <Button color="primary" className="luditeca-btn-gradient" type="button" onClick={() => w.setStep(1)}>
+                <LuditecaButton color="primary" className="luditeca-btn-gradient" type="button" onClick={() => w.setStep(1)}>
                   Começar
-                </Button>
+                </LuditecaButton>
               </ArgonFormCard>
             ) : null}
 
@@ -151,7 +163,7 @@ export default function NewBookWizardPage() {
                               placeholder={`Capítulo ${i + 1}`}
                             />
                             {w.chapterTitles.length > 1 ? (
-                              <Button
+                              <LuditecaButton
                                 color="danger"
                                 outline
                                 size="sm"
@@ -160,11 +172,11 @@ export default function NewBookWizardPage() {
                                 onClick={() => w.setChapterTitles(w.chapterTitles.filter((_, j) => j !== i))}
                               >
                                 Remover
-                              </Button>
+                              </LuditecaButton>
                             ) : null}
                           </FormGroup>
                         ))}
-                        <Button
+                        <LuditecaButton
                           color="secondary"
                           outline
                           size="sm"
@@ -172,7 +184,7 @@ export default function NewBookWizardPage() {
                           onClick={() => w.setChapterTitles([...w.chapterTitles, `Capítulo ${w.chapterTitles.length + 1}`])}
                         >
                           + Adicionar capítulo
-                        </Button>
+                        </LuditecaButton>
                       </>
                     ) : null}
 
@@ -204,17 +216,17 @@ export default function NewBookWizardPage() {
                     ) : null}
 
                     <div className="d-flex flex-wrap justify-content-between align-items-center border-top pt-4 mt-4">
-                      <Button color="secondary" outline type="button" onClick={w.goBackStep}>
+                      <LuditecaButton color="secondary" outline type="button" onClick={w.goBackStep}>
                         {w.step === 1 ? '← Início' : '← Anterior'}
-                      </Button>
+                      </LuditecaButton>
                       {w.step < 3 ? (
-                        <Button color="primary" type="submit" className="luditeca-btn-gradient">
+                        <LuditecaButton color="primary" type="submit" className="luditeca-btn-gradient">
                           Seguinte
-                        </Button>
+                        </LuditecaButton>
                       ) : (
-                        <Button color="success" type="submit" disabled={w.loading}>
+                        <LuditecaButton color="success" type="submit" disabled={w.loading}>
                           {w.loading ? 'A criar…' : 'Criar livro e abrir editor'}
-                        </Button>
+                        </LuditecaButton>
                       )}
                     </div>
                   </Form>
@@ -223,6 +235,11 @@ export default function NewBookWizardPage() {
             ) : null}
           </Col>
         </Row>
+
+        <p className="small text-muted mt-3 mb-0 text-center">
+          Precisa de livro animado, interativo ou e-book na app?{' '}
+          <Link href="/books/new">Escolher fluxo na app infantil</Link>
+        </p>
       </ArgonCmsShell>
     </Layout>
   );

@@ -20,11 +20,20 @@ describe('parseBookType', () => {
 });
 
 describe('validateBookTypePages', () => {
-  it('exige image_url em páginas animadas', () => {
-    const r = validateBookTypePages(BookType.animated, [
-      { image_url: 'https://cdn/a.png', page_number: 1 },
-      { text: 'sem img' },
-    ]);
+  it('permite rascunho animado sem páginas', () => {
+    const r = validateBookTypePages(BookType.animated, [], { workflowStatus: 'draft' });
+    expect(r.ok).toBe(true);
+  });
+
+  it('exige imagem em páginas animadas quando publicado', () => {
+    const r = validateBookTypePages(
+      BookType.animated,
+      [
+        { image_url: 'https://cdn/a.png', page_number: 1 },
+        { text: 'sem img' },
+      ],
+      { workflowStatus: 'published' },
+    );
     expect(r.ok).toBe(false);
   });
 
@@ -61,9 +70,15 @@ describe('validateBookTypePages', () => {
 });
 
 describe('validateDigitalBookAssets', () => {
-  it('exige pdf ou epub', () => {
-    expect(validateDigitalBookAssets({}).ok).toBe(false);
-    expect(validateDigitalBookAssets({ pdf_url: 'https://x/a.pdf' }).ok).toBe(true);
+  it('permite rascunho digital sem ficheiros', () => {
+    expect(validateDigitalBookAssets({}, { workflowStatus: 'draft' }).ok).toBe(true);
+  });
+
+  it('exige pdf ou epub quando publicado', () => {
+    expect(validateDigitalBookAssets({}, { workflowStatus: 'published' }).ok).toBe(false);
+    expect(
+      validateDigitalBookAssets({ pdf_url: 'https://x/a.pdf' }, { workflowStatus: 'published' }).ok,
+    ).toBe(true);
   });
 });
 

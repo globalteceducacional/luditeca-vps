@@ -2,22 +2,11 @@ import { useEffect, useState, useCallback } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import {
-  Alert,
-  Button,
-  Card,
-  CardBody,
-  Col,
-  Form,
-  FormGroup,
-  Input,
-  Row,
-  Spinner,
-  Table,
-} from 'reactstrap';
+import { Card, CardBody, Col, Form, Row, Spinner, Table } from 'reactstrap';
 import Layout from '../../../components/Layout';
 import ArgonEmptyState from '../../../components/argon/ArgonEmptyState';
 import ArgonCmsShell, { ArgonTableCard } from '../../../components/argon/ArgonCmsShell';
+import { LuditecaAlert, LuditecaButton, LuditecaInput } from '../../../components/argon/luditeca';
 import { useAuth } from '../../../contexts/auth';
 import { ROLES } from '../../../lib/roles';
 import { downloadAuditLogsCsv, fetchAuditLogs } from '../../../lib/auditLogs';
@@ -87,18 +76,26 @@ export default function AdminAuditPage() {
     setReloadNonce((n) => n + 1);
   };
 
+  const clearFilters = () => {
+    setBookIdFilter('');
+    setActionFilter('');
+    setOffset(0);
+    setReloadNonce((n) => n + 1);
+  };
+
   return (
     <Layout>
       <Head>
         <title>Trilha de ações | Luditeca</title>
       </Head>
       <ArgonCmsShell
+        contentConstrained
         title="Trilha de ações"
         subtitle="Eventos EVT:* com utilizador e alvo BOOK:/USER:."
         headerExtra={
-          <Button color="link" size="sm" tag={Link} href="/admin" className="p-0">
+          <LuditecaButton variant="link" size="sm" tag={Link} href="/admin" className="p-0">
             ← Hub admin
-          </Button>
+          </LuditecaButton>
         }
       >
         <Card className="shadow border-0 mb-4">
@@ -106,57 +103,44 @@ export default function AdminAuditPage() {
             <Form onSubmit={applyFilters}>
               <Row>
                 <Col md="3">
-                  <FormGroup>
-                    <label className="form-control-label">Livro (id)</label>
-                    <Input
-                      value={bookIdFilter}
-                      onChange={(e) => setBookIdFilter(e.target.value)}
-                      placeholder="ex: 12"
-                    />
-                  </FormGroup>
+                  <LuditecaInput
+                    label="Livro (id)"
+                    value={bookIdFilter}
+                    onChange={(e) => setBookIdFilter(e.target.value)}
+                    placeholder="ex: 12"
+                  />
                 </Col>
                 <Col md="4">
-                  <FormGroup>
-                    <label className="form-control-label">Código / texto</label>
-                    <Input
-                      value={actionFilter}
-                      onChange={(e) => setActionFilter(e.target.value)}
-                      placeholder="EVT:BOOK"
-                    />
-                  </FormGroup>
+                  <LuditecaInput
+                    label="Código / texto"
+                    value={actionFilter}
+                    onChange={(e) => setActionFilter(e.target.value)}
+                    placeholder="EVT:BOOK"
+                  />
                 </Col>
-                <Col md="5" className="d-flex align-items-end flex-wrap">
-                  <Button color="primary" type="submit" className="mr-2 mb-2">
+                <Col md="5" className="d-flex align-items-end flex-wrap pb-3">
+                  <LuditecaButton variant="primary" type="submit" className="mr-2 mb-2">
                     Aplicar
-                  </Button>
-                  <Button
-                    color="secondary"
-                    type="button"
-                    className="mr-2 mb-2"
-                    onClick={() => {
-                      setBookIdFilter('');
-                      setActionFilter('');
-                      setOffset(0);
-                      setReloadNonce((n) => n + 1);
-                    }}
-                  >
+                  </LuditecaButton>
+                  <LuditecaButton variant="outline" type="button" className="mr-2 mb-2" onClick={clearFilters}>
                     Limpar
-                  </Button>
-                  <Button
-                    color="info"
+                  </LuditecaButton>
+                  <LuditecaButton
+                    variant="info"
                     type="button"
                     className="mb-2"
                     disabled={exporting}
+                    loading={exporting}
                     onClick={handleExportCsv}
                   >
-                    {exporting ? 'A exportar…' : 'Exportar CSV'}
-                  </Button>
+                    Exportar CSV
+                  </LuditecaButton>
                 </Col>
               </Row>
             </Form>
           </CardBody>
         </Card>
-        {error ? <Alert color="danger">{error}</Alert> : null}
+        {error ? <LuditecaAlert color="danger">{error}</LuditecaAlert> : null}
         <ArgonTableCard title="Registos">
           {loading ? (
             <div className="text-center py-4">
@@ -188,12 +172,7 @@ export default function AdminAuditPage() {
                             title="Sem registos"
                             description="Não há entradas de auditoria para os filtros atuais."
                             secondaryLabel="Limpar filtros"
-                            onSecondary={() => {
-                              setBookIdFilter('');
-                              setActionFilter('');
-                              setOffset(0);
-                              setReloadNonce((n) => n + 1);
-                            }}
+                            onSecondary={clearFilters}
                           />
                         </td>
                       </tr>
@@ -224,23 +203,23 @@ export default function AdminAuditPage() {
                   Total: {total} · Mostrando {offset + 1}–{Math.min(offset + rows.length, offset + limit)}
                 </span>
                 <div>
-                  <Button
-                    color="default"
+                  <LuditecaButton
+                    variant="outline"
                     size="sm"
                     disabled={offset === 0}
                     className="mr-2"
                     onClick={() => setOffset((o) => Math.max(0, o - limit))}
                   >
                     Anterior
-                  </Button>
-                  <Button
-                    color="default"
+                  </LuditecaButton>
+                  <LuditecaButton
+                    variant="outline"
                     size="sm"
                     disabled={offset + rows.length >= total}
                     onClick={() => setOffset((o) => o + limit)}
                   >
                     Seguinte
-                  </Button>
+                  </LuditecaButton>
                 </div>
               </div>
             </>

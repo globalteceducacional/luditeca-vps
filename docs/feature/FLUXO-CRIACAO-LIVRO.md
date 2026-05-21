@@ -14,7 +14,7 @@ Documento para alinhar o **BookEditor** do app Vite/Base44 com o CMS **Next.js +
 | **Código espelhado (BookEditor por tipo)** | Só se o produto exigir paridade 1:1 com Base44 (`animated` / `interactive` / `digital` + `pages[]` legado). Implica migration Prisma, UI nova e possível convivência com `pages_v2`. |
 | **API REST (já existe)** | Integrações e app infantil — estender schema só onde faltar (`book_type`, `quiz[]`, etc.). |
 
-**Estado (2026-05-18):** fluxo por tipo implementado em `/books/new` + `/books/new/[bookType]` + `/books/[id]/edit-flow`. Assistente v2 e legado mantidos em paralelo (ver [`DECISOES.md`](./DECISOES.md)).
+**Estado (2026-05-21):** fluxo por tipo com hub, 3 passos, autosave, pré-visualizações, grafo interativo, **checklist de publicação** (bloqueia publicar se incompleto), assistente PPTX com aviso de fluxo e link para `/books/new`. Rotas: `/books/new` → `/books/new/[bookType]` → `/books/[id]/edit-flow?step=0|1|2`. Assistente: `/books/new-wizard` → `edit-v2`.
 
 ---
 
@@ -96,7 +96,7 @@ Três valores **mutuamente exclusivos**, **imutáveis** após escolha no mesmo f
 - Por página: `image_url`, `is_gif` (MIME gif), `text`, `page_type` default `reading`, `page_number` incremental.
 - Reorder / remover páginas.
 - Aba `soundtrack_url`.
-- Aba quiz: `{ question, options[4], correct: índice }` no **livro**.
+- Quiz: `{ question, options, correct }` na **ordem editorial** (blocos `page_type: quiz` entre páginas/cenas, ou `book_quiz[]` legado no fim).
 
 #### `interactive`
 

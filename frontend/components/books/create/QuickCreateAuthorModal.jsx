@@ -1,22 +1,9 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'react-hot-toast';
-import {
-  Alert,
-  Button,
-  Form,
-  FormGroup,
-  Input,
-  Label,
-  Modal,
-  ModalBody,
-  ModalFooter,
-  ModalHeader,
-  Spinner,
-} from 'reactstrap';
+import { Form } from 'reactstrap';
 import { createAuthor } from '../../../lib/authors';
 import { uploadFile } from '../../../lib/storageApi';
-
-const fc = 'luditeca-form-control';
+import { LuditecaAlert, LuditecaButton, LuditecaInput, LuditecaModal } from '../../argon/luditeca';
 
 export default function QuickCreateAuthorModal({ isOpen, toggle, onCreated }) {
   const [name, setName] = useState('');
@@ -84,69 +71,58 @@ export default function QuickCreateAuthorModal({ isOpen, toggle, onCreated }) {
   const busy = saving || uploading;
 
   return (
-    <Modal isOpen={isOpen} toggle={toggle} centered>
-      <ModalHeader toggle={toggle}>Novo autor</ModalHeader>
-      <Form onSubmit={handleSubmit}>
-        <ModalBody>
-          {error ? <Alert color="danger">{error}</Alert> : null}
-          <p className="small text-muted">
-            O autor fica disponível de imediato neste formulário, sem sair do cadastro do livro.
-          </p>
-          <FormGroup>
-            <Label className="form-control-label">Nome *</Label>
-            <Input
-              className={fc}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              autoFocus
-              required
-            />
-          </FormGroup>
-          <FormGroup>
-            <Label className="form-control-label">Foto (opcional)</Label>
-            <Input
-              className={fc}
-              type="file"
-              accept="image/*"
-              onChange={handlePhotoUpload}
-              disabled={busy}
-            />
-            {uploading ? <small className="text-muted d-block mt-1">A enviar imagem…</small> : null}
-            {photoUrl ? (
-              <img
-                src={photoUrl}
-                alt=""
-                className="mt-2 rounded border"
-                style={{ maxHeight: 120, objectFit: 'contain' }}
-              />
-            ) : null}
-          </FormGroup>
-          <FormGroup className="mb-0">
-            <Label className="form-control-label">Biografia</Label>
-            <Input
-              className={fc}
-              type="textarea"
-              rows={2}
-              value={bio}
-              onChange={(e) => setBio(e.target.value)}
-            />
-          </FormGroup>
-        </ModalBody>
-        <ModalFooter>
-          <Button type="button" color="secondary" outline onClick={toggle} disabled={busy}>
+    <LuditecaModal
+      isOpen={isOpen}
+      toggle={toggle}
+      title="Novo autor"
+      footer={
+        <>
+          <LuditecaButton variant="outline" type="button" onClick={toggle} disabled={busy}>
             Cancelar
-          </Button>
-          <Button color="primary" type="submit" disabled={busy}>
-            {saving ? (
-              <>
-                <Spinner size="sm" className="mr-2" /> A criar…
-              </>
-            ) : (
-              'Criar e selecionar'
-            )}
-          </Button>
-        </ModalFooter>
+          </LuditecaButton>
+          <LuditecaButton variant="primary" type="submit" form="quick-create-author-form" disabled={busy} loading={saving} loadingLabel="A criar…">
+            Criar e selecionar
+          </LuditecaButton>
+        </>
+      }
+    >
+      <Form id="quick-create-author-form" onSubmit={handleSubmit}>
+        {error ? <LuditecaAlert color="danger">{error}</LuditecaAlert> : null}
+        <p className="small text-muted">
+          O autor fica disponível de imediato neste formulário, sem sair do cadastro do livro.
+        </p>
+        <LuditecaInput
+          label="Nome"
+          required
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          autoFocus
+        />
+        <LuditecaInput
+          label="Foto (opcional)"
+          type="file"
+          accept="image/*"
+          onChange={handlePhotoUpload}
+          disabled={busy}
+          hint={uploading ? 'A enviar imagem…' : undefined}
+        />
+        {photoUrl ? (
+          <img
+            src={photoUrl}
+            alt=""
+            className="mb-3 rounded border"
+            style={{ maxHeight: 120, objectFit: 'contain' }}
+          />
+        ) : null}
+        <LuditecaInput
+          label="Biografia"
+          type="textarea"
+          rows={2}
+          value={bio}
+          onChange={(e) => setBio(e.target.value)}
+          formGroupClassName="mb-0"
+        />
       </Form>
-    </Modal>
+    </LuditecaModal>
   );
 }

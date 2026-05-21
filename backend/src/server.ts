@@ -182,12 +182,16 @@ async function main() {
     '/media/*',
     { compress: false },
     async (request, reply) => {
-    const wildcard = String(request.params['*'] || '').replace(/^\/+/, '');
+    let wildcard = String(request.params['*'] || '').replace(/^\/+/, '');
     if (!wildcard || wildcard.includes('..')) {
       return reply.code(400).send({ error: 'Caminho inválido.' });
     }
 
-    const [bucket, ...rest] = wildcard.split('/');
+    // URLs antigas/erradas: `/media/media/pages/...` (prefixo `media/` duplicado).
+    let segments = wildcard.split('/').filter(Boolean);
+    while (segments[0] === 'media' && segments.length > 2) segments.shift();
+
+    const [bucket, ...rest] = segments;
     if (!bucket || rest.length === 0) {
       return reply.code(400).send({ error: 'Caminho inválido.' });
     }

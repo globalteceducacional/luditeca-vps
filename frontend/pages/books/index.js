@@ -2,9 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import {
-  Alert,
   Badge,
-  Button,
   Card,
   CardBody,
   CardHeader,
@@ -19,11 +17,16 @@ import {
   Row,
   Spinner,
 } from 'reactstrap';
+import { BookCatalogGridSkeleton } from '../../components/argon/LuditecaSkeleton';
+import { LuditecaAlert, LuditecaButton, LuditecaInput } from '../../components/argon/luditeca';
 import { useAuth } from '../../contexts/auth';
 import { getBooks, deleteBook, updateBook, searchBooks } from '../../lib/books';
 import { getFileUrl } from '../../lib/mediaUrl';
 import Layout from '../../components/Layout';
+import ArgonBreadcrumbs from '../../components/argon/ArgonBreadcrumbs';
+import ArgonFormCard from '../../components/argon/ArgonFormCard';
 import ArgonPageHeader from '../../components/argon/ArgonPageHeader';
+import { buildCmsBreadcrumbs } from '../../lib/cmsBreadcrumbs';
 import ArgonEmptyState from '../../components/argon/ArgonEmptyState';
 import WorkflowStatusSelect, {
   WORKFLOW_LABEL,
@@ -185,7 +188,8 @@ export default function Books() {
         <title>Gerenciar Livros | Luditeca CMS</title>
       </Head>
       <Layout>
-        <Container fluid className="luditeca-cms-shell">
+        <Container fluid className="luditeca-cms-shell luditeca-content-constrained">
+          <ArgonBreadcrumbs items={buildCmsBreadcrumbs('/books')} />
           <ArgonPageHeader
             title="Gerenciar Livros"
             subtitle="Novo livro: escolha o tipo (animado, interativo ou digital). Assistente v2 disponível nos links alternativos."
@@ -197,11 +201,7 @@ export default function Books() {
 
           <Row className="mb-4">
             <Col lg="12">
-              <Card className="shadow border-0 mb-4">
-                <CardHeader className="border-0">
-                  <h3 className="mb-0">Pesquisar catálogo</h3>
-                </CardHeader>
-                <CardBody>
+              <ArgonFormCard title="Pesquisar catálogo" className="mb-4">
                   <Form
                     onSubmit={(e) => {
                       e.preventDefault();
@@ -223,83 +223,65 @@ export default function Books() {
                         />
                       </InputGroup>
                     </FormGroup>
-                    <Button
-                      color="link"
+                    <LuditecaButton
+                      variant="link"
                       className="px-0 mb-3"
                       disabled={isListRefreshing}
                       onClick={() => setShowSearchFilters((v) => !v)}
                     >
                       {showSearchFilters ? 'Ocultar filtros' : 'Filtros avançados'}
-                    </Button>
+                    </LuditecaButton>
                     {showSearchFilters ? (
                       <Row>
                         <Col md="6" lg="3">
-                          <FormGroup>
-                            <label className="form-control-label">Personagem</label>
-                            <Input
-                              className="luditeca-form-control"
-                              value={advCharacter}
-                              disabled={isListRefreshing}
-                              onChange={(e) => setAdvCharacter(e.target.value)}
-                            />
-                          </FormGroup>
+                          <LuditecaInput
+                            label="Personagem"
+                            value={advCharacter}
+                            disabled={isListRefreshing}
+                            onChange={(e) => setAdvCharacter(e.target.value)}
+                          />
                         </Col>
                         <Col md="6" lg="3">
-                          <FormGroup>
-                            <label className="form-control-label">Coleção</label>
-                            <Input
-                              className="luditeca-form-control"
-                              value={advCollection}
-                              disabled={isListRefreshing}
-                              onChange={(e) => setAdvCollection(e.target.value)}
-                            />
-                          </FormGroup>
+                          <LuditecaInput
+                            label="Coleção"
+                            value={advCollection}
+                            disabled={isListRefreshing}
+                            onChange={(e) => setAdvCollection(e.target.value)}
+                          />
                         </Col>
                         <Col md="6" lg="3">
-                          <FormGroup>
-                            <label className="form-control-label">Palavra-chave</label>
-                            <Input
-                              className="luditeca-form-control"
-                              value={advKeyword}
-                              disabled={isListRefreshing}
-                              onChange={(e) => setAdvKeyword(e.target.value)}
-                            />
-                          </FormGroup>
+                          <LuditecaInput
+                            label="Palavra-chave"
+                            value={advKeyword}
+                            disabled={isListRefreshing}
+                            onChange={(e) => setAdvKeyword(e.target.value)}
+                          />
                         </Col>
                         <Col md="6" lg="3">
-                          <FormGroup>
-                            <label className="form-control-label">Nível</label>
-                            <Input
-                              className="luditeca-form-control"
-                              value={advLevel}
-                              disabled={isListRefreshing}
-                              onChange={(e) => setAdvLevel(e.target.value)}
-                            />
-                          </FormGroup>
+                          <LuditecaInput
+                            label="Nível"
+                            value={advLevel}
+                            disabled={isListRefreshing}
+                            onChange={(e) => setAdvLevel(e.target.value)}
+                          />
                         </Col>
                       </Row>
                     ) : null}
                   </Form>
-                </CardBody>
-              </Card>
+              </ArgonFormCard>
             </Col>
           </Row>
 
           {error ? (
-            <Alert color="danger" className="shadow">
+            <LuditecaAlert color="danger" className="shadow">
               {error}{' '}
-              <Button color="danger" size="sm" className="ml-2" onClick={() => void loadBooksList()}>
+              <LuditecaButton variant="danger" size="sm" className="ml-2" onClick={() => void loadBooksList()}>
                 Tentar novamente
-              </Button>
-            </Alert>
+              </LuditecaButton>
+            </LuditecaAlert>
           ) : null}
 
-          {loading && books.length === 0 ? (
-            <div className="text-center py-5">
-              <Spinner color="primary" />
-              <p className="text-muted mt-3 mb-0">A carregar livros…</p>
-            </div>
-          ) : null}
+          {loading && books.length === 0 ? <BookCatalogGridSkeleton count={8} /> : null}
 
           {!loading && books.length === 0 ? (
             <ArgonEmptyState
@@ -321,11 +303,12 @@ export default function Books() {
           {books.length > 0 ? (
             <>
               {loading ? (
-                <Alert color="info" className="shadow-sm">
-                  <Spinner size="sm" className="mr-2" /> A atualizar resultados…
-                </Alert>
+                <div className="luditeca-refresh-bar" role="status" aria-live="polite">
+                  <div className="luditeca-refresh-bar-inner" />
+                  <span className="sr-only">A atualizar resultados…</span>
+                </div>
               ) : null}
-              <Row>
+              <Row className={loading ? 'luditeca-content-refreshing' : undefined}>
                 {books.map((book) => (
                   <Col key={book.id} xl="3" lg="4" md="6" className="mb-4">
                     <Card className={CMS_BOOK_CARD_CLASS}>
@@ -380,32 +363,27 @@ export default function Books() {
                           ) : null}
                         </FormGroup>
                         <div className="d-flex justify-content-between">
-                          <Button
-                            color="primary"
+                          <LuditecaButton
+                            variant="outline"
+                            outlineColor="primary"
                             size="sm"
-                            outline
+                            icon="ni ni-ruler-pencil"
                             disabled={isListRefreshing}
                             onClick={() => router.push(getBookEditHref(book))}
                           >
-                            <i className="ni ni-ruler-pencil mr-1" />
                             Editar
-                          </Button>
-                          <Button
-                            color="danger"
+                          </LuditecaButton>
+                          <LuditecaButton
+                            variant="outline"
+                            outlineColor="danger"
                             size="sm"
-                            outline
+                            icon="ni ni-fat-remove"
                             disabled={isListRefreshing || deleteLoading === book.id}
+                            loading={deleteLoading === book.id}
                             onClick={() => handleDeleteBook(book.id)}
                           >
-                            {deleteLoading === book.id ? (
-                              <Spinner size="sm" />
-                            ) : (
-                              <>
-                                <i className="ni ni-fat-remove mr-1" />
-                                Excluir
-                              </>
-                            )}
-                          </Button>
+                            Excluir
+                          </LuditecaButton>
                         </div>
                       </CardBody>
                     </Card>
@@ -421,25 +399,25 @@ export default function Books() {
                       {Math.min(total, (page - 1) * PAGE_SIZE + books.length)} de {total}
                     </span>
                     <div>
-                      <Button
-                        color="secondary"
+                      <LuditecaButton
+                        variant="outline"
                         size="sm"
                         disabled={page <= 1 || isListRefreshing}
                         onClick={() => setPage((p) => Math.max(1, p - 1))}
                       >
                         Anterior
-                      </Button>
+                      </LuditecaButton>
                       <span className="mx-3 text-sm">
                         Página {page} / {Math.max(1, Math.ceil(total / PAGE_SIZE))}
                       </span>
-                      <Button
-                        color="secondary"
+                      <LuditecaButton
+                        variant="outline"
                         size="sm"
                         disabled={page * PAGE_SIZE >= total || isListRefreshing}
                         onClick={() => setPage((p) => (p * PAGE_SIZE < total ? p + 1 : p))}
                       >
                         Seguinte
-                      </Button>
+                      </LuditecaButton>
                     </div>
                   </CardBody>
                 </Card>

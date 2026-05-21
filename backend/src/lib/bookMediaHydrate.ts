@@ -33,17 +33,52 @@ async function resolveStorageUrl(
   }
 }
 
+const KNOWN_MEDIA_BUCKETS = new Set([
+  'covers',
+  'pages',
+  'presentations',
+  'audios',
+  'videos',
+  'categories',
+  'autores',
+  'avatars',
+]);
+
+function peelStoragePathSegments(segments: string[]): { bucket: string; filePath: string } | null {
+  const parts = [...segments];
+  while (parts.length > 0 && parts[0] === 'media') parts.shift();
+  if (parts.length >= 2 && KNOWN_MEDIA_BUCKETS.has(parts[0])) {
+    const bucket = parts[0];
+    return { bucket, filePath: parts.slice(1).join('/') };
+  }
+  return null;
+}
+
 function parseStorageFromUrl(rawUrl: unknown): { bucket: string; filePath: string } | null {
   if (!isNonEmptyString(rawUrl)) return null;
+  const raw = String(rawUrl).trim();
+
   try {
-    const parsed = new URL(String(rawUrl));
-    const path = parsed.pathname.replace(/^\/+/, '');
-    const [bucket, ...rest] = path.split('/');
-    if (!bucket || rest.length === 0) return null;
-    return { bucket, filePath: rest.join('/') };
+    if (/^https?:\/\//i.test(raw)) {
+      const marker = '/media/';
+      let pathname = new URL(raw).pathname;
+      const idx = pathname.indexOf(marker);
+      if (idx >= 0) pathname = pathname.slice(idx + marker.length);
+      else pathname = pathname.replace(/^\/+/, '');
+      const peeled = peelStoragePathSegments(pathname.split('/').filter(Boolean));
+      if (peeled) return peeled;
+    }
   } catch {
-    return null;
+    /* ignore */
   }
+
+  const clean = raw.replace(/^\/+/, '');
+  if (!clean.includes('://')) {
+    const peeled = peelStoragePathSegments(clean.split('/').filter(Boolean));
+    if (peeled) return peeled;
+  }
+
+  return null;
 }
 
 export async function hydrateLegacyPagesMediaUrls(pages: unknown, cache: Map<string, string>) {

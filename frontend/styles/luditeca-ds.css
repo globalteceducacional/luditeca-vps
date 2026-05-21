@@ -1,0 +1,698 @@
+/**
+ * Luditeca DS v1 — overrides sobre Argon/Bootstrap (CMS + app).
+ * Depende de tokens.css.
+ */
+
+/* ---------- Base ---------- */
+body {
+  font-family: var(--luditeca-font-sans);
+  color: var(--luditeca-text);
+  background-color: var(--luditeca-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- Navbar superior (CMS) — SaaS claro, sem gradiente ---------- */
+.main-content .navbar-top.luditeca-navbar-top {
+  background: var(--luditeca-surface) !important;
+  border-bottom: 1px solid var(--luditeca-border) !important;
+  box-shadow: var(--luditeca-shadow-xs) !important;
+  padding-top: var(--luditeca-space-3) !important;
+  padding-bottom: var(--luditeca-space-3) !important;
+}
+
+.main-content .navbar-top.luditeca-navbar-top .text-white,
+.main-content .navbar-top.luditeca-navbar-top .text-white span {
+  color: var(--luditeca-text-secondary) !important;
+}
+
+.main-content .navbar-top.luditeca-navbar-top .h4 {
+  font-size: var(--luditeca-text-sm) !important;
+  font-weight: 600 !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  color: var(--luditeca-text-muted) !important;
+}
+
+.main-content .navbar-top .avatar {
+  background: var(--luditeca-primary-50) !important;
+  color: var(--luditeca-primary-700) !important;
+}
+
+.navbar-vertical.fixed-left + .main-content {
+  padding-top: var(--luditeca-navbar-offset);
+}
+
+/* ---------- Sidebar ---------- */
+.luditeca-sidenav.navbar-light .navbar-nav .nav-link {
+  color: var(--luditeca-text-secondary) !important;
+  font-weight: 500;
+  font-size: var(--luditeca-text-sm);
+  border-radius: var(--luditeca-radius-md);
+  padding: var(--luditeca-space-3) var(--luditeca-space-4);
+}
+
+.luditeca-sidenav.navbar-light .navbar-nav .nav-link:hover {
+  background-color: var(--luditeca-primary-50);
+  color: var(--luditeca-primary-700) !important;
+}
+
+.luditeca-sidenav.navbar-light .navbar-nav .nav-link.active {
+  background-color: var(--luditeca-primary-50);
+  color: var(--luditeca-primary-700) !important;
+  font-weight: 600;
+}
+
+.luditeca-sidenav.navbar-light .navbar-nav .nav-link.active::before {
+  border-left-color: var(--luditeca-primary-600);
+}
+
+.luditeca-sidenav-brand .text-primary {
+  color: var(--luditeca-primary-600) !important;
+}
+
+.luditeca-sidenav-section-label {
+  display: block;
+  font-size: var(--luditeca-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--luditeca-text-muted);
+  padding: var(--luditeca-space-4) var(--luditeca-space-4) var(--luditeca-space-2);
+  margin-top: var(--luditeca-space-2);
+}
+
+.luditeca-sidenav-nav .luditeca-sidenav-item {
+  animation: none;
+}
+
+/* ---------- Transição de página (mais subtil) ---------- */
+.argon-page-transition {
+  animation: luditeca-page-in var(--luditeca-duration) var(--luditeca-ease);
+  padding-top: var(--luditeca-space-4);
+}
+
+@keyframes luditeca-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .argon-page-transition,
+  .luditeca-cms-shell.animate__animated,
+  .luditeca-sidenav.animate__animated {
+    animation: none !important;
+  }
+
+  .luditeca-skeleton,
+  .luditeca-refresh-bar-inner {
+    animation: none !important;
+  }
+}
+
+/* ---------- Cabeçalho de página ---------- */
+.luditeca-page-header .luditeca-page-header-title {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--luditeca-text);
+  font-size: var(--luditeca-text-2xl);
+}
+
+.luditeca-page-header .luditeca-page-header-accent {
+  background: var(--luditeca-primary-600);
+  height: 3px;
+  border-radius: var(--luditeca-radius-full);
+}
+
+/* ---------- Botão primário (sólido, SaaS) ---------- */
+.luditeca-btn-gradient.btn-primary {
+  background: var(--luditeca-primary-600) !important;
+  border: none !important;
+  box-shadow: var(--luditeca-shadow-sm) !important;
+  font-weight: 600;
+  border-radius: var(--luditeca-radius-md) !important;
+  transition:
+    background-color var(--luditeca-duration-fast) var(--luditeca-ease),
+    box-shadow var(--luditeca-duration-fast) var(--luditeca-ease),
+    transform var(--luditeca-duration-fast) var(--luditeca-ease);
+}
+
+.luditeca-btn-gradient.btn-primary:hover:not(:disabled),
+.luditeca-btn-gradient.btn-success:hover:not(:disabled) {
+  background: var(--luditeca-primary-700) !important;
+  transform: translateY(-1px);
+  box-shadow: var(--luditeca-shadow-md) !important;
+}
+
+/* ---------- Cartões ---------- */
+.argon-page-transition .card.shadow {
+  border: 1px solid var(--luditeca-border) !important;
+  border-radius: var(--luditeca-radius-lg) !important;
+  box-shadow: var(--luditeca-shadow-sm) !important;
+}
+
+.argon-page-transition .card.shadow.card-profile:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--luditeca-shadow-md) !important;
+}
+
+.argon-page-transition .card.shadow > .card-header.border-0 {
+  background: var(--luditeca-surface);
+  border-bottom: 1px solid var(--luditeca-border);
+}
+
+/* ---------- Tabelas CMS ---------- */
+.argon-page-transition .table.align-items-center th,
+.argon-page-transition .table.align-items-center td {
+  padding: var(--luditeca-space-3) var(--luditeca-space-4);
+  vertical-align: middle;
+  font-size: var(--luditeca-text-sm);
+}
+
+.argon-page-transition .table .thead-light th {
+  font-size: var(--luditeca-text-xs);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--luditeca-text-muted);
+  background-color: var(--luditeca-bg-subtle);
+  border-bottom: 1px solid var(--luditeca-border);
+}
+
+.argon-page-transition .luditeca-form-card .card-body {
+  max-width: var(--luditeca-form-max);
+}
+
+/* ---------- Formulários ---------- */
+.argon-page-transition .form-control-label {
+  font-size: var(--luditeca-text-sm);
+  font-weight: 500;
+  color: var(--luditeca-text-secondary);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.luditeca-form-control.form-control,
+.luditeca-form-control.custom-select {
+  border-color: var(--luditeca-border);
+  border-radius: var(--luditeca-radius-md);
+  font-size: var(--luditeca-text-sm);
+}
+
+.luditeca-form-control.form-control:focus,
+.luditeca-form-control.custom-select:focus {
+  border-color: var(--luditeca-primary-500);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+}
+
+/* ---------- Tabs admin hub ---------- */
+.admin-hub-tabs-scroll .nav-pills .nav-link.active {
+  background: var(--luditeca-primary-600) !important;
+  box-shadow: var(--luditeca-shadow-sm) !important;
+}
+
+/* ---------- Breadcrumbs ---------- */
+.luditeca-breadcrumbs {
+  font-size: var(--luditeca-text-sm);
+  margin-bottom: var(--luditeca-space-3);
+}
+
+.luditeca-breadcrumbs a,
+.luditeca-breadcrumbs .luditeca-breadcrumb-link {
+  color: var(--luditeca-primary-600);
+  font-weight: 500;
+}
+
+.luditeca-breadcrumbs a:hover,
+.luditeca-breadcrumbs .luditeca-breadcrumb-link:hover {
+  color: var(--luditeca-primary-700);
+  text-decoration: none;
+}
+
+.luditeca-breadcrumbs .separator {
+  color: var(--luditeca-text-muted);
+  margin: 0 var(--luditeca-space-2);
+}
+
+.luditeca-breadcrumbs .current {
+  color: var(--luditeca-text-muted);
+}
+
+/* ---------- Content width ---------- */
+.luditeca-content-constrained {
+  max-width: var(--luditeca-content-max);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.luditeca-form-constrained {
+  max-width: var(--luditeca-form-max);
+}
+
+/* ---------- Footer ---------- */
+.luditeca-footer-minimal {
+  font-size: var(--luditeca-text-xs);
+  color: var(--luditeca-text-muted);
+}
+
+/* ---------- App infantil (unificar tokens) ---------- */
+.luditeca-app-shell {
+  background: linear-gradient(180deg, var(--luditeca-app-accent-soft) 0%, var(--luditeca-bg) 45%, var(--luditeca-bg-subtle) 100%);
+  font-family: var(--luditeca-font-sans);
+}
+
+.luditeca-app-header {
+  background: rgba(255, 255, 255, 0.92);
+  border-bottom: 1px solid var(--luditeca-border);
+  box-shadow: var(--luditeca-shadow-xs);
+  backdrop-filter: blur(8px);
+}
+
+.luditeca-app-back {
+  color: var(--luditeca-app-accent);
+}
+
+.luditeca-app-back:hover {
+  background-color: var(--luditeca-app-accent-soft);
+  color: var(--luditeca-primary-700);
+}
+
+.luditeca-app-title {
+  color: var(--luditeca-text);
+  font-size: var(--luditeca-text-lg);
+}
+
+.luditeca-app-main {
+  max-width: var(--luditeca-app-max);
+}
+
+.luditeca-app-intro {
+  color: var(--luditeca-text-secondary);
+}
+
+.luditeca-app-hub-card {
+  border: 1px solid var(--luditeca-border);
+  border-radius: var(--luditeca-radius-lg);
+  box-shadow: var(--luditeca-shadow-sm);
+}
+
+.luditeca-app-hub-card:hover {
+  box-shadow: var(--luditeca-shadow-md);
+  transform: translateY(-2px);
+}
+
+.luditeca-app-accent-primary .luditeca-app-hub-card-bar,
+.luditeca-app-accent-success .luditeca-app-hub-card-bar,
+.luditeca-app-accent-info .luditeca-app-hub-card-bar,
+.luditeca-app-accent-warning .luditeca-app-hub-card-bar,
+.luditeca-app-accent-danger .luditeca-app-hub-card-bar {
+  background: var(--luditeca-primary-600);
+}
+
+.luditeca-app-hub-title {
+  color: var(--luditeca-text);
+}
+
+.luditeca-app-hub-desc {
+  color: var(--luditeca-text-muted);
+}
+
+/* ---------- Skeleton loaders (Fase 4) ---------- */
+@keyframes luditeca-skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.luditeca-skeleton {
+  display: block;
+  background: linear-gradient(
+    90deg,
+    var(--luditeca-bg-subtle) 0%,
+    var(--luditeca-primary-50) 45%,
+    var(--luditeca-bg-subtle) 90%
+  );
+  background-size: 200% 100%;
+  animation: luditeca-skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+.luditeca-skeleton-rounded {
+  border-radius: var(--luditeca-radius-sm);
+}
+
+.luditeca-skeleton-book-cover {
+  height: 160px;
+  width: 100%;
+  border-radius: var(--luditeca-radius-lg) var(--luditeca-radius-lg) 0 0;
+}
+
+.luditeca-skeleton-card {
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.luditeca-skeleton-list-item {
+  display: flex;
+  align-items: flex-start;
+  pointer-events: none;
+  border-color: var(--luditeca-border) !important;
+}
+
+.luditeca-skeleton-list-thumb {
+  width: 80px;
+  height: 112px;
+  flex-shrink: 0;
+  border-radius: var(--luditeca-radius-md);
+}
+
+/* Atualização em segundo plano — grelha existente */
+.luditeca-content-refreshing {
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity var(--luditeca-duration) var(--luditeca-ease);
+}
+
+.luditeca-refresh-bar {
+  height: 3px;
+  background: var(--luditeca-primary-100);
+  border-radius: var(--luditeca-radius-full);
+  overflow: hidden;
+  margin-bottom: var(--luditeca-space-4);
+}
+
+.luditeca-refresh-bar-inner {
+  height: 100%;
+  width: 35%;
+  background: var(--luditeca-primary-600);
+  border-radius: inherit;
+  animation: luditeca-refresh-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes luditeca-refresh-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .luditeca-skeleton {
+    animation: none;
+    background: var(--luditeca-bg-subtle);
+  }
+
+  .luditeca-refresh-bar-inner {
+    animation: none;
+    width: 100%;
+  }
+
+  .luditeca-hover-lift:hover {
+    transform: none;
+  }
+}
+
+.luditeca-hover-lift {
+  transition:
+    transform var(--luditeca-duration) var(--luditeca-ease),
+    box-shadow var(--luditeca-duration) var(--luditeca-ease);
+}
+
+.luditeca-hover-lift:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--luditeca-shadow-md) !important;
+}
+
+/* ---------- Tema escuro CMS (Fase 4) — `html[data-luditeca-theme]` no painel ---------- */
+html[data-luditeca-theme='dark'] body {
+  background-color: var(--luditeca-bg);
+  color: var(--luditeca-text);
+}
+
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .main-content,
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .argon-page-transition,
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .luditeca-cms-shell {
+  background-color: var(--luditeca-bg);
+  color: var(--luditeca-text);
+}
+
+[data-luditeca-theme='dark'] .luditeca-sidenav.navbar-light.bg-white {
+  background-color: var(--luditeca-surface) !important;
+  border-color: var(--luditeca-border) !important;
+}
+
+[data-luditeca-theme='dark'] .luditeca-sidenav .border-bottom {
+  border-color: var(--luditeca-border) !important;
+}
+
+[data-luditeca-theme='dark'] .luditeca-sidenav-brand .text-muted {
+  color: var(--luditeca-text-muted) !important;
+}
+
+[data-luditeca-theme='dark'] .main-content .navbar-top.luditeca-navbar-top .text-white,
+[data-luditeca-theme='dark'] .main-content .navbar-top.luditeca-navbar-top .h4,
+[data-luditeca-theme='dark'] .luditeca-theme-toggle-btn,
+[data-luditeca-theme='dark'] .luditeca-theme-toggle-icon {
+  color: var(--luditeca-text-secondary) !important;
+}
+
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .luditeca-page-header .luditeca-page-header-title,
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .text-dark,
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .luditeca-card-title,
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .card-header h3,
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .card-header h4,
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .card-header .mb-0 {
+  color: var(--luditeca-text) !important;
+}
+
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .luditeca-breadcrumbs a,
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .luditeca-breadcrumbs .luditeca-breadcrumb-link {
+  color: var(--luditeca-primary-500);
+}
+
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .argon-page-transition .card,
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .argon-page-transition .card.shadow,
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .argon-page-transition .card.shadow.card-profile,
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .luditeca-form-card {
+  background-color: var(--luditeca-surface) !important;
+  color: var(--luditeca-text);
+  border-color: var(--luditeca-border) !important;
+}
+
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .argon-page-transition .card.shadow > .card-header,
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .argon-page-transition .card.shadow > .card-header.border-0,
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .card > .card-header,
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .luditeca-form-card-header {
+  background: var(--luditeca-surface) !important;
+  border-bottom: 1px solid var(--luditeca-border);
+}
+
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .card-body {
+  background-color: var(--luditeca-surface);
+  color: var(--luditeca-text);
+}
+
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .argon-page-transition .card .table,
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .argon-page-transition .table {
+  color: var(--luditeca-text);
+}
+
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .argon-page-transition .card .table thead th,
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .argon-page-transition .table .thead-light th {
+  background-color: var(--luditeca-bg-subtle) !important;
+  color: var(--luditeca-text-muted) !important;
+  border-color: var(--luditeca-border);
+}
+
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .argon-page-transition .table td,
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .argon-page-transition .table th {
+  border-color: var(--luditeca-border);
+}
+
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .argon-page-transition .card .table-flush tbody tr:hover {
+  background-color: rgba(99, 102, 241, 0.1);
+}
+
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .luditeca-form-control.form-control,
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .luditeca-form-control.custom-select,
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .form-control,
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .custom-select {
+  background-color: var(--luditeca-bg-subtle);
+  border-color: var(--luditeca-border);
+  color: var(--luditeca-text);
+}
+
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .luditeca-form-control.form-control:focus,
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .form-control:focus {
+  background-color: var(--luditeca-bg-subtle);
+  color: var(--luditeca-text);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.35);
+}
+
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .luditeca-search-field .input-group-text,
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .input-group-alternative .input-group-text {
+  background: var(--luditeca-bg-subtle) !important;
+  border-color: var(--luditeca-border) !important;
+  color: var(--luditeca-primary-500) !important;
+}
+
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .input-group-alternative .form-control {
+  background-color: var(--luditeca-bg-subtle);
+  border-color: var(--luditeca-border);
+  color: var(--luditeca-text);
+}
+
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .btn-outline-secondary {
+  color: var(--luditeca-text-secondary);
+  border-color: var(--luditeca-border-strong);
+}
+
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .btn-outline-secondary:hover {
+  background-color: var(--luditeca-bg-subtle);
+  color: var(--luditeca-text);
+}
+
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .dropdown-menu {
+  background-color: var(--luditeca-surface);
+  border-color: var(--luditeca-border);
+}
+
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .dropdown-item {
+  color: var(--luditeca-text-secondary);
+}
+
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .dropdown-item:hover,
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .dropdown-item:focus,
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .dropdown-item.active {
+  background-color: var(--luditeca-primary-50);
+  color: var(--luditeca-text);
+}
+
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .modal-content {
+  background-color: var(--luditeca-surface);
+  color: var(--luditeca-text);
+  border-color: var(--luditeca-border);
+}
+
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .modal-header,
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .modal-footer {
+  border-color: var(--luditeca-border);
+}
+
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .bg-light {
+  background-color: var(--luditeca-bg-subtle) !important;
+  color: var(--luditeca-text);
+}
+
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .border.rounded.bg-light {
+  background-color: var(--luditeca-bg-subtle) !important;
+  border-color: var(--luditeca-border) !important;
+}
+
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .custom-control-label {
+  color: var(--luditeca-text-secondary);
+}
+
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .luditeca-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--luditeca-bg-subtle) 0%,
+    #334155 50%,
+    var(--luditeca-bg-subtle) 100%
+  );
+}
+
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .text-muted {
+  color: var(--luditeca-text-muted) !important;
+}
+
+[data-luditeca-theme='dark'] .luditeca-cms-chrome .luditeca-empty-state-inline {
+  background: linear-gradient(180deg, rgba(99, 102, 241, 0.08) 0%, transparent 100%);
+}
+
+[data-luditeca-theme='dark'] .luditeca-admin-hub-panel .card-header {
+  background: var(--luditeca-surface) !important;
+}
+
+/* Argon define `.nav-pills .nav-link { background-color: #fff }` — repor no escuro */
+html[data-luditeca-theme='dark'] .admin-hub-tabs-scroll .nav-pills .nav-link:not(.active) {
+  background-color: var(--luditeca-bg-subtle) !important;
+  color: var(--luditeca-text-secondary) !important;
+  box-shadow: none !important;
+  border: 1px solid var(--luditeca-border);
+}
+
+html[data-luditeca-theme='dark'] .admin-hub-tabs-scroll .nav-pills .nav-link:not(.active):hover {
+  background-color: var(--luditeca-primary-50) !important;
+  color: var(--luditeca-text) !important;
+  border-color: var(--luditeca-border-strong);
+}
+
+html[data-luditeca-theme='dark'] .admin-hub-tabs-scroll .nav-pills .nav-link.active {
+  background: var(--luditeca-primary-600) !important;
+  color: #fff !important;
+  border-color: transparent !important;
+  box-shadow: var(--luditeca-shadow-sm) !important;
+}
+
+html[data-luditeca-theme='dark'] .main-content .footer,
+html[data-luditeca-theme='dark'] .main-content .footer.luditeca-footer-minimal {
+  background: var(--luditeca-bg) !important;
+  color: var(--luditeca-text-muted);
+}
+
+html[data-luditeca-theme='dark'] .main-content .footer .text-center {
+  color: var(--luditeca-text-muted) !important;
+}
+
+html[data-luditeca-theme='dark'] .custom-control-input:checked ~ .custom-control-label::before {
+  background-color: var(--luditeca-primary-600);
+  border-color: var(--luditeca-primary-600);
+}
+
+html[data-luditeca-theme='dark'] .custom-switch .custom-control-label::before {
+  background-color: var(--luditeca-border-strong);
+  border-color: var(--luditeca-border);
+}
+
+[data-luditeca-theme='dark'] .luditeca-search-card .card-body {
+  padding: var(--luditeca-space-4);
+}
+
+html[data-luditeca-theme='dark'] .luditeca-search-field .input-group-text,
+html[data-luditeca-theme='dark'] .luditeca-search-field .input-group-alternative .form-control {
+  background-color: var(--luditeca-bg-subtle);
+  border-color: var(--luditeca-border);
+  color: var(--luditeca-text);
+}
+
+html[data-luditeca-theme='dark'] .luditeca-search-field .input-group-text {
+  color: var(--luditeca-primary-500);
+}
+
+[data-luditeca-theme='dark'] .avatar.bg-secondary {
+  background-color: var(--luditeca-border-strong) !important;
+}
+
+/* Sticky actions mobile */
+@media (max-width: 767.98px) {
+  .luditeca-form-actions-sticky {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    background: var(--luditeca-surface);
+    border-top: 1px solid var(--luditeca-border);
+    padding: var(--luditeca-space-4);
+    margin: var(--luditeca-space-4) calc(-1 * var(--luditeca-space-4)) 0;
+    box-shadow: 0 -4px 12px rgba(15, 23, 42, 0.06);
+  }
+}

@@ -2,16 +2,11 @@ import { useCallback, useEffect, useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import {
-  Alert,
-  Badge,
-  Button,
-  Spinner,
-  Table,
-} from 'reactstrap';
+import { Badge, Spinner, Table } from 'reactstrap';
 import Layout from '../../../components/Layout';
 import ArgonEmptyState from '../../../components/argon/ArgonEmptyState';
 import ArgonCmsShell, { ArgonTableCard } from '../../../components/argon/ArgonCmsShell';
+import { LuditecaAlert, LuditecaButton } from '../../../components/argon/luditeca';
 import { useAuth } from '../../../contexts/auth';
 import { deleteActivity, listActivities, updateActivity } from '../../../lib/activities';
 import { CMS_ROLES, isRole } from '../../../lib/roles';
@@ -62,19 +57,22 @@ export default function AdminActivitiesPage() {
         <title>Atividades | Admin</title>
       </Head>
       <ArgonCmsShell
+        contentConstrained
         title="Atividades"
         subtitle="Gestão de atividades interativas na app infantil."
         actionLabel="Nova"
         actionIcon="ni ni-fat-add"
         onAction={() => router.push('/admin/activities/new/edit')}
         headerExtra={
-          <Button color="link" size="sm" tag={Link} href="/admin" className="p-0">
+          <LuditecaButton variant="link" size="sm" tag={Link} href="/admin" className="p-0">
             ← Hub admin
-          </Button>
+          </LuditecaButton>
         }
         loading={loading && rows.length === 0}
+        loadingVariant="table"
+        loadingLabel="Atividades"
       >
-        {error ? <Alert color="danger">{error}</Alert> : null}
+        {error ? <LuditecaAlert color="danger">{error}</LuditecaAlert> : null}
         <ArgonTableCard title="Registos">
           {loading ? (
             <div className="text-center py-4">
@@ -121,21 +119,21 @@ export default function AdminActivitiesPage() {
                         </Badge>
                       </td>
                       <td className="text-right">
-                        <Button
-                          color="info"
+                        <LuditecaButton
+                          variant="info"
                           size="sm"
                           tag={Link}
                           href={`/admin/activities/${row.id}/edit`}
                           className="mr-1"
                         >
                           Editar
-                        </Button>
-                        <Button color="default" size="sm" onClick={() => togglePublish(row)} className="mr-1">
+                        </LuditecaButton>
+                        <LuditecaButton variant="outline" size="sm" onClick={() => togglePublish(row)} className="mr-1">
                           {row.is_published ? 'Despublicar' : 'Publicar'}
-                        </Button>
-                        <Button color="danger" size="sm" onClick={() => handleDelete(row.id)}>
+                        </LuditecaButton>
+                        <LuditecaButton variant="danger" size="sm" onClick={() => handleDelete(row.id)}>
                           Excluir
-                        </Button>
+                        </LuditecaButton>
                       </td>
                     </tr>
                   ))

@@ -2,22 +2,11 @@ import { useEffect, useState, useCallback } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import {
-  Alert,
-  Button,
-  Card,
-  CardBody,
-  Col,
-  Form,
-  FormGroup,
-  Input,
-  Row,
-  Spinner,
-  Table,
-} from 'reactstrap';
+import { Card, CardBody, Col, Form, Row, Spinner, Table } from 'reactstrap';
 import Layout from '../../../components/Layout';
 import ArgonEmptyState from '../../../components/argon/ArgonEmptyState';
 import ArgonCmsShell, { ArgonTableCard } from '../../../components/argon/ArgonCmsShell';
+import { LuditecaAlert, LuditecaButton, LuditecaInput } from '../../../components/argon/luditeca';
 import { useAuth } from '../../../contexts/auth';
 import { ROLES } from '../../../lib/roles';
 import { fetchTechnicalLogs } from '../../../lib/technicalLogs';
@@ -71,18 +60,26 @@ export default function AdminTelemetryPage() {
     setReloadNonce((n) => n + 1);
   };
 
+  const clearFilters = () => {
+    setLevelFilter('');
+    setCategoryFilter('');
+    setOffset(0);
+    setReloadNonce((n) => n + 1);
+  };
+
   return (
     <Layout>
       <Head>
         <title>Telemetria técnica | Luditeca</title>
       </Head>
       <ArgonCmsShell
+        contentConstrained
         title="Telemetria técnica"
         subtitle="Erros HTTP, rotas /media e eventos do editor."
         headerExtra={
-          <Button color="link" size="sm" tag={Link} href="/admin" className="p-0">
+          <LuditecaButton variant="link" size="sm" tag={Link} href="/admin" className="p-0">
             ← Hub admin
-          </Button>
+          </LuditecaButton>
         }
       >
         <Card className="shadow border-0 mb-4">
@@ -90,52 +87,39 @@ export default function AdminTelemetryPage() {
             <Form onSubmit={applyFilters}>
               <Row>
                 <Col md="3">
-                  <FormGroup>
-                    <label className="form-control-label">Nível</label>
-                    <Input
-                      type="select"
-                      value={levelFilter}
-                      onChange={(e) => setLevelFilter(e.target.value)}
-                    >
-                      <option value="">Todos</option>
-                      <option value="error">error</option>
-                      <option value="warn">warn</option>
-                      <option value="info">info</option>
-                    </Input>
-                  </FormGroup>
+                  <LuditecaInput
+                    label="Nível"
+                    type="select"
+                    value={levelFilter}
+                    onChange={(e) => setLevelFilter(e.target.value)}
+                  >
+                    <option value="">Todos</option>
+                    <option value="error">error</option>
+                    <option value="warn">warn</option>
+                    <option value="info">info</option>
+                  </LuditecaInput>
                 </Col>
                 <Col md="4">
-                  <FormGroup>
-                    <label className="form-control-label">Categoria (contém)</label>
-                    <Input
-                      value={categoryFilter}
-                      onChange={(e) => setCategoryFilter(e.target.value)}
-                      placeholder="http, client:video…"
-                    />
-                  </FormGroup>
+                  <LuditecaInput
+                    label="Categoria (contém)"
+                    value={categoryFilter}
+                    onChange={(e) => setCategoryFilter(e.target.value)}
+                    placeholder="http, client:video…"
+                  />
                 </Col>
-                <Col md="5" className="d-flex align-items-end">
-                  <Button color="primary" type="submit" className="mr-2">
+                <Col md="5" className="d-flex align-items-end flex-wrap pb-3">
+                  <LuditecaButton variant="primary" type="submit" className="mr-2 mb-2">
                     Aplicar
-                  </Button>
-                  <Button
-                    color="secondary"
-                    type="button"
-                    onClick={() => {
-                      setLevelFilter('');
-                      setCategoryFilter('');
-                      setOffset(0);
-                      setReloadNonce((n) => n + 1);
-                    }}
-                  >
+                  </LuditecaButton>
+                  <LuditecaButton variant="outline" type="button" className="mb-2" onClick={clearFilters}>
                     Limpar
-                  </Button>
+                  </LuditecaButton>
                 </Col>
               </Row>
             </Form>
           </CardBody>
         </Card>
-        {error ? <Alert color="danger">{error}</Alert> : null}
+        {error ? <LuditecaAlert color="danger">{error}</LuditecaAlert> : null}
         <ArgonTableCard title="Registos">
           {loading ? (
             <div className="text-center py-4">
@@ -171,12 +155,7 @@ export default function AdminTelemetryPage() {
                             title="Sem registos"
                             description="Não há eventos de telemetria para estes filtros ou período."
                             secondaryLabel="Limpar filtros"
-                            onSecondary={() => {
-                              setLevelFilter('');
-                              setCategoryFilter('');
-                              setOffset(0);
-                              setReloadNonce((n) => n + 1);
-                            }}
+                            onSecondary={clearFilters}
                           />
                         </td>
                       </tr>
@@ -208,23 +187,23 @@ export default function AdminTelemetryPage() {
                 </Table>
               </div>
               <div className="mt-3">
-                <Button
-                  color="default"
+                <LuditecaButton
+                  variant="outline"
                   size="sm"
                   disabled={offset === 0}
                   className="mr-2"
                   onClick={() => setOffset((o) => Math.max(0, o - limit))}
                 >
                   Anterior
-                </Button>
-                <Button
-                  color="default"
+                </LuditecaButton>
+                <LuditecaButton
+                  variant="outline"
                   size="sm"
                   disabled={offset + limit >= total}
                   onClick={() => setOffset((o) => o + limit)}
                 >
                   Seguinte
-                </Button>
+                </LuditecaButton>
               </div>
             </>
           )}

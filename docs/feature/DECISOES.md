@@ -9,5 +9,6 @@
 | 2026-05-18 | **Coloring defaults:** merge de SVGs no frontend na v1 (portar `DEFAULT_COLORING_PAGES` na Sprint 2); API só persiste overrides. | Provisório |
 | 2026-05-18 | **Activity `matching`:** adiado na UI; API aceita tipos `quiz`, `flashcard`, `trueFalse`, `fillBlank`. | Aprovado |
 | 2026-05-18 | **IA CMS:** atividades, LIBRAS, puzzle e pinturas só no hub `/admin` (abas); sidebar não duplica. Rotas `/admin/*` mantêm-se para gestão completa. Utilizadores / trilha / telemetria: sidebar admin + atalhos no cabeçalho do hub. | Aprovado |
+| 2026-05-21 | **Mídia:** desenvolvimento com ficheiros em `backend/storage/` (`STORAGE_DRIVER=local`). Produção futura: S3/MinIO via `STORAGE_DRIVER=s3` sem mudar contrato de upload (`/media/upload`) nem buckets lógicos. Ver [`ARMAZENAMENTO-MIDIA.md`](./ARMAZENAMENTO-MIDIA.md). | Aprovado |
 
 Rever antes da Sprint 4 se a app criança for outro repositório.

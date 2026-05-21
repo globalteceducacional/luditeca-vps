@@ -1,14 +1,19 @@
 /**
- * Assistência «novo livro» — UI legado (EditorLayout + Tailwind).
- * Mantido para referência / recuperação; o fluxo ativo é `/books/new` (Argon — docs/feature/ARGON-UI-MIGRACAO.md).
+ * Assistência «novo livro» — UI legado (EditorLayout).
+ * Migrado para componentes Luditeca; fluxo activo recomendado: `/books/new`.
  */
 import Head from 'next/head';
 import Link from 'next/link';
-import { FiUpload } from 'react-icons/fi';
-import { Alert, Button, Container } from 'reactstrap';
+import { FiPlus, FiTrash2, FiUpload } from 'react-icons/fi';
+import { Container } from 'reactstrap';
 import EditorLayout from '../../components/EditorLayout';
 import LoadingProgressOverlay from '../../components/LoadingProgressOverlay';
+import BookCatalogPickers from '../../components/books/create/BookCatalogPickers';
+import BookCoverUploadField from '../../components/books/create/BookCoverUploadField';
+import { LuditecaAlert, LuditecaButton, LuditecaInput } from '../../components/argon/luditeca';
 import { useNewBookWizard } from '../../hooks/useNewBookWizard';
+
+const STEPS = ['Início', 'Metadados', 'Capítulos', 'Conteúdo'];
 
 export default function NewBookLegacy() {
   const w = useNewBookWizard();
@@ -46,239 +51,189 @@ export default function NewBookLegacy() {
         <LoadingProgressOverlay active title="Criando livro" message="Salvando no servidor..." mode="indeterminate" />
       ) : null}
 
-      <Container className="py-4" style={{ maxWidth: 720 }}>
+      <Container className="py-4 luditeca-form-constrained">
         <p className="small text-muted mb-2">
           <Link href="/books/new">Usar assistente Argon (recomendado)</Link>
           {' · '}
           <Link href="/books">Catálogo</Link>
         </p>
-        <div className="mb-6 text-center">
-          <h1 className="text-2xl font-bold text-gray-800">Criar novo livro (legado)</h1>
-          <p className="mt-1 text-sm text-gray-600">Assistente em passos — sem conhecimento técnico profundo.</p>
+        <div className="mb-4 text-center">
+          <h1 className="h2 text-dark">Criar novo livro (legado)</h1>
+          <p className="text-muted mb-0">Assistente em passos — abre o editor visual no fim.</p>
         </div>
 
-        <div className="mb-6 flex flex-wrap justify-center gap-2">
-          {['Início', 'Metadados', 'Capítulos', 'Conteúdo'].map((label, i) => (
-            <div
+        <div className="d-flex flex-wrap justify-content-center mb-4">
+          {STEPS.map((label, i) => (
+            <span
               key={label}
-              className={`flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${
-                w.step === i ? 'bg-blue-600 text-white' : w.step > i ? 'bg-blue-100 text-blue-800' : 'bg-gray-200 text-gray-600'
+              className={`badge badge-pill mr-2 mb-2 px-3 py-2 ${
+                w.step === i ? 'badge-primary' : w.step > i ? 'badge-info' : 'badge-secondary'
               }`}
             >
-              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/20 text-[11px]">
-                {i + 1}
-              </span>
+              <span className="mr-1">{i + 1}</span>
               {label}
-            </div>
+            </span>
           ))}
         </div>
 
-        {w.error ? <Alert color="danger">{w.error}</Alert> : null}
+        {w.error ? <LuditecaAlert color="danger">{w.error}</LuditecaAlert> : null}
 
         {w.step === 0 ? (
-          <div className="rounded-lg bg-white p-8 shadow-md">
-            <h2 className="text-lg font-semibold text-gray-800">Bem-vindo</h2>
-            <p className="mt-3 text-gray-600">
-              Vai definir o título e a ficha do livro, organizar <strong>capítulos</strong> (secções simples) e, se
-              quiser, importar um ficheiro PowerPoint. No fim, abrimos o <strong>editor visual</strong> para continuar a
-              trabalhar as páginas.
-            </p>
-            <button type="button" className="mt-6 rounded bg-blue-600 px-6 py-2 font-semibold text-white hover:bg-blue-700" onClick={() => w.setStep(1)}>
-              Começar
-            </button>
+          <div className="card shadow-sm border-0">
+            <div className="card-body p-4 p-md-5">
+              <h2 className="h4">Bem-vindo</h2>
+              <p className="text-muted">
+                Vai definir o título e a ficha do livro, organizar <strong>capítulos</strong> e, se quiser,
+                importar um PowerPoint. No fim, abrimos o <strong>editor visual</strong>.
+              </p>
+              <LuditecaButton type="button" variant="primary" onClick={() => w.setStep(1)}>
+                Começar
+              </LuditecaButton>
+            </div>
           </div>
         ) : null}
 
         {w.step >= 1 ? (
-          <form onSubmit={w.handleSubmit} className="rounded-lg bg-white px-8 py-6 shadow-md">
-            {w.step === 1 ? (
-              <>
-                <h2 className="mb-4 text-lg font-semibold text-gray-800">Metadados</h2>
-                <div className="mb-4">
-                  <label className="mb-2 block text-sm font-bold text-gray-700" htmlFor="title">
-                    Título *
-                  </label>
-                  <input
-                    id="title"
-                    type="text"
+          <form onSubmit={w.handleSubmit} className="card shadow-sm border-0">
+            <div className="card-body p-4 p-md-5">
+              {w.step === 1 ? (
+                <>
+                  <h2 className="h4 mb-4">Metadados</h2>
+                  <LuditecaInput
+                    label="Título"
+                    required
+                    id="legacy-title"
                     value={w.title}
                     onChange={(e) => w.setTitle(e.target.value)}
-                    className="w-full rounded border px-3 py-2 text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-                    required
                   />
-                </div>
-                <div className="mb-4">
-                  <label className="mb-2 block text-sm font-bold text-gray-700" htmlFor="author">
-                    Autor
-                  </label>
-                  <select
-                    id="author"
-                    value={w.authorId}
-                    onChange={(e) => w.setAuthorId(e.target.value)}
-                    className="w-full rounded border px-3 py-2 text-gray-700 shadow-sm"
-                  >
-                    <option value="">Selecione um autor</option>
-                    {w.loadingAuthors ? (
-                      <option disabled>Carregando autores...</option>
-                    ) : (
-                      w.authors.map((author) => (
-                        <option key={author.id} value={author.id}>
-                          {author.name}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                </div>
-                <div className="mb-4">
-                  <label className="mb-2 block text-sm font-bold text-gray-700" htmlFor="category">
-                    Categoria
-                  </label>
-                  <select
-                    id="category"
-                    value={w.categoryId}
-                    onChange={(e) => w.setCategoryId(e.target.value)}
-                    className="w-full rounded border px-3 py-2 text-gray-700 shadow-sm"
-                  >
-                    <option value="">Selecione uma categoria</option>
-                    {w.loadingCategories ? (
-                      <option disabled>Carregando categorias...</option>
-                    ) : (
-                      w.categories.map((category) => (
-                        <option key={category.id} value={category.id}>
-                          {category.name}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                </div>
-                <div className="mb-4">
-                  <label className="mb-2 block text-sm font-bold text-gray-700" htmlFor="description">
-                    Descrição
-                  </label>
-                  <textarea
-                    id="description"
+                  <BookCatalogPickers
+                    authorId={w.authorId}
+                    categoryId={w.categoryId}
+                    authors={w.authors}
+                    categories={w.categories}
+                    loadingAuthors={w.loadingAuthors}
+                    loadingCategories={w.loadingCategories}
+                    disabled={w.uploadingCover}
+                    onAuthorIdChange={w.setAuthorId}
+                    onCategoryIdChange={w.setCategoryId}
+                  />
+                  <LuditecaInput
+                    label="Descrição"
+                    type="textarea"
+                    rows={4}
                     value={w.description}
                     onChange={(e) => w.setDescription(e.target.value)}
-                    className="w-full rounded border px-3 py-2 text-gray-700 shadow-sm"
-                    rows={4}
                   />
-                </div>
-                <div className="mb-4">
-                  <label className="mb-2 block text-sm font-bold text-gray-700">Capa</label>
-                  <div className="flex flex-wrap items-center gap-4">
-                    <label className="flex cursor-pointer items-center rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-600">
-                      <i className="ni ni-image mr-2" />
-                      {w.uploadingCover ? 'A enviar…' : 'Enviar imagem'}
-                      <input type="file" accept="image/*" className="hidden" onChange={w.handleCoverUpload} disabled={w.uploadingCover} />
-                    </label>
-                    {w.coverImage ? <span className="text-sm text-green-600">Capa selecionada</span> : null}
-                  </div>
-                  {w.coverImage ? (
-                    <div className="mt-4 rounded border p-4">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={w.coverImage} alt="" className="max-h-48 object-contain" />
-                    </div>
-                  ) : null}
-                </div>
-              </>
-            ) : null}
+                  <BookCoverUploadField
+                    coverUrl={w.coverImage}
+                    onUpload={w.handleCoverUpload}
+                    uploading={w.uploadingCover}
+                    disabled={w.uploadingCover}
+                  />
+                </>
+              ) : null}
 
-            {w.step === 2 ? (
-              <>
-                <h2 className="mb-2 text-lg font-semibold text-gray-800">Capítulos</h2>
-                <p className="mb-4 text-sm text-gray-600">
-                  Cada capítulo gera uma primeira página vazia no livro — pode renomear e acrescentar mais páginas depois no
-                  editor. Se importar PPTX no passo seguinte, as páginas do ficheiro passam à frente desta estrutura.
-                </p>
-                <div className="space-y-2">
+              {w.step === 2 ? (
+                <>
+                  <h2 className="h4 mb-2">Capítulos</h2>
+                  <p className="text-muted small mb-4">
+                    Cada capítulo gera uma primeira página vazia. Se importar PPTX no passo seguinte, as páginas do
+                    ficheiro passam à frente desta estrutura.
+                  </p>
                   {w.chapterTitles.map((ch, i) => (
-                    <div key={`ch-row-${i}`} className="flex gap-2">
-                      <input
-                        type="text"
+                    <div key={`ch-row-${i}`} className="d-flex align-items-start gap-2 mb-2">
+                      <LuditecaInput
+                        className="flex-grow-1 mb-0"
+                        formGroupClassName="mb-0 flex-grow-1"
                         value={ch}
+                        placeholder={`Capítulo ${i + 1}`}
                         onChange={(e) => {
                           const next = [...w.chapterTitles];
                           next[i] = e.target.value;
                           w.setChapterTitles(next);
                         }}
-                        className="flex-1 rounded border px-3 py-2 text-gray-800"
-                        placeholder={`Capítulo ${i + 1}`}
                       />
                       {w.chapterTitles.length > 1 ? (
-                        <button
+                        <LuditecaButton
                           type="button"
-                          className="rounded border border-red-200 px-2 text-sm text-red-600 hover:bg-red-50"
+                          variant="link"
+                          className="p-0 text-danger mt-2"
                           onClick={() => w.setChapterTitles(w.chapterTitles.filter((_, j) => j !== i))}
+                          title="Remover capítulo"
                         >
-                          Remover
-                        </button>
+                          <FiTrash2 />
+                        </LuditecaButton>
                       ) : null}
                     </div>
                   ))}
-                </div>
-                <button
-                  type="button"
-                  className="mt-3 rounded border border-blue-300 px-3 py-1 text-sm font-semibold text-blue-700 hover:bg-blue-50"
-                  onClick={() => w.setChapterTitles([...w.chapterTitles, `Capítulo ${w.chapterTitles.length + 1}`])}
-                >
-                  + Adicionar capítulo
-                </button>
-              </>
-            ) : null}
-
-            {w.step === 3 ? (
-              <>
-                <h2 className="mb-2 text-lg font-semibold text-gray-800">Conteúdo inicial</h2>
-                <p className="mb-4 text-sm text-gray-600">
-                  Opcional: importe um PowerPoint para criar várias páginas de uma vez. Se não importar, usamos os capítulos do
-                  passo anterior (uma página por capítulo).
-                </p>
-                <div className="mb-4 flex flex-wrap items-center gap-4">
-                  <label
-                    className={`flex cursor-pointer items-center rounded px-4 py-2 font-bold text-white ${
-                      w.importingPptx ? 'cursor-not-allowed bg-gray-400' : 'bg-indigo-600 hover:bg-indigo-700'
-                    }`}
+                  <LuditecaButton
+                    type="button"
+                    variant="outline"
+                    outlineColor="primary"
+                    size="sm"
+                    className="d-inline-flex align-items-center"
+                    onClick={() =>
+                      w.setChapterTitles([...w.chapterTitles, `Capítulo ${w.chapterTitles.length + 1}`])
+                    }
                   >
-                    <FiUpload className="mr-2" />
-                    {w.importingPptx ? 'A importar…' : 'Selecionar PPTX'}
+                    <FiPlus className="mr-1" />
+                    Adicionar capítulo
+                  </LuditecaButton>
+                </>
+              ) : null}
+
+              {w.step === 3 ? (
+                <>
+                  <h2 className="h4 mb-2">Conteúdo inicial</h2>
+                  <p className="text-muted small mb-4">
+                    Opcional: importe um PowerPoint para criar várias páginas de uma vez.
+                  </p>
+                  <label className="d-inline-block mb-0">
+                    <LuditecaButton
+                      variant="primary"
+                      tag="span"
+                      disabled={w.importingPptx}
+                      className="d-inline-flex align-items-center"
+                    >
+                      <FiUpload className="mr-2" />
+                      {w.importingPptx ? 'A importar…' : 'Selecionar PPTX'}
+                    </LuditecaButton>
                     <input
                       type="file"
                       accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation"
-                      className="hidden"
+                      className="d-none"
                       onChange={w.handlePptxImport}
                       disabled={w.importingPptx}
                     />
                   </label>
                   {w.importedPages.length > 0 ? (
-                    <span className="text-sm font-medium text-green-700">{w.importedPages.length} páginas importadas</span>
+                    <LuditecaAlert color="success" className="mt-3 mb-0">
+                      {w.importedPages.length} páginas importadas
+                    </LuditecaAlert>
                   ) : null}
-                </div>
-              </>
-            ) : null}
+                </>
+              ) : null}
 
-            <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-              <button
-                type="button"
-                className="rounded border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-                onClick={w.goBackStep}
-              >
-                {w.step === 1 ? '← Início' : '← Anterior'}
-              </button>
-              {w.step < 3 ? (
-                <button type="submit" className="rounded bg-blue-600 px-6 py-2 font-semibold text-white hover:bg-blue-700">
-                  Seguinte
-                </button>
-              ) : (
-                <button
-                  type="submit"
-                  disabled={w.loading}
-                  className={`rounded bg-emerald-600 px-6 py-2 font-semibold text-white hover:bg-emerald-500 ${
-                    w.loading ? 'cursor-not-allowed opacity-50' : ''
-                  }`}
-                >
-                  {w.loading ? 'A criar…' : 'Criar livro e abrir editor'}
-                </button>
-              )}
+              <div className="d-flex flex-wrap justify-content-between align-items-center mt-4 pt-4 border-top">
+                <LuditecaButton type="button" variant="outline" onClick={w.goBackStep}>
+                  {w.step === 1 ? '← Início' : '← Anterior'}
+                </LuditecaButton>
+                {w.step < 3 ? (
+                  <LuditecaButton type="submit" variant="primary">
+                    Seguinte
+                  </LuditecaButton>
+                ) : (
+                  <LuditecaButton
+                    type="submit"
+                    variant="success"
+                    disabled={w.loading}
+                    loading={w.loading}
+                    loadingLabel="A criar…"
+                  >
+                    Criar livro e abrir editor
+                  </LuditecaButton>
+                )}
+              </div>
             </div>
           </form>
         ) : null}

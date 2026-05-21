@@ -1,23 +1,59 @@
+/** Caminhos alternativos de criação (hub em /books/new). */
+export const BOOK_CREATION_PATHS = {
+  appTypes: {
+    id: 'app-types',
+    title: 'Livro para a app infantil',
+    description:
+      'História com páginas animadas, escolhas interativas ou PDF/EPUB. Publica na biblioteca da app.',
+    href: null,
+    recommended: true,
+  },
+  wizard: {
+    id: 'wizard',
+    title: 'Livro com editor visual (canvas)',
+    description:
+      'Ideal se tens PowerPoint ou queres desenhar páginas no canvas (Konva). Não usa os tipos animado/interativo/digital.',
+    href: '/books/new-wizard',
+    badge: 'PPTX / capítulos',
+  },
+};
+
 /** Tipos editoriais do fluxo Base44 (imutável após criação). */
 export const BOOK_TYPES = [
   {
     id: 'animated',
     title: 'Livro animado',
     description: 'Páginas com imagens/GIF, texto e trilha sonora opcional.',
+    whenToUse: 'Slides simples, imagens por página, sem ramificações.',
     icon: '🎬',
   },
   {
     id: 'interactive',
     title: 'Livro interativo',
     description: 'Cenas com escolhas que levam a outros caminhos na história.',
+    whenToUse: 'História ramificada: o leitor escolhe o que acontece a seguir.',
     icon: '🔀',
   },
   {
     id: 'digital',
     title: 'E-book digital',
     description: 'PDF ou EPUB com capa e metadados.',
+    whenToUse: 'Já tens o livro pronto em PDF ou EPUB.',
     icon: '📕',
   },
+];
+
+/** Rótulos para breadcrumbs e UI. */
+export const BOOK_TYPE_LABELS = {
+  animated: 'Livro animado',
+  interactive: 'Livro interativo',
+  digital: 'E-book digital',
+};
+
+export const BOOK_TYPE_FLOW_STEPS = [
+  { id: 'metadata', label: 'Ficha do livro' },
+  { id: 'content', label: 'Conteúdo' },
+  { id: 'publish', label: 'Publicação' },
 ];
 
 const BOOK_TYPE_IDS = new Set(BOOK_TYPES.map((t) => t.id));

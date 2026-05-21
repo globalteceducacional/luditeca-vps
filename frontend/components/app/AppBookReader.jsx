@@ -38,7 +38,7 @@ function AppNode({ node, canvasW, canvasH }) {
   if (node.type === 'text') {
     return (
       <div
-        className="absolute overflow-hidden pointer-events-none text-sky-900"
+        className="absolute overflow-hidden pointer-events-none text-luditeca-ink"
         style={{
           ...style,
           fontSize: props.fontSize ? `${Math.max(10, props.fontSize * 0.55)}px` : '14px',
@@ -82,13 +82,13 @@ function AppPageView({ page, canvas }) {
 
   return (
     <div
-      className="relative w-full bg-white rounded-lg overflow-hidden shadow-inner"
+      className="relative w-full bg-luditeca-surface rounded-lg overflow-hidden shadow-inner"
       style={{ aspectRatio: `${cw} / ${ch}` }}
     >
       {bg ? (
         <img src={bg} alt="" className="absolute inset-0 w-full h-full object-cover" />
       ) : (
-        <div className="absolute inset-0 bg-gradient-to-br from-sky-50 to-indigo-50" />
+        <div className="absolute inset-0 bg-gradient-to-br from-luditeca-primary-50 to-luditeca-subtle" />
       )}
       {nodes.map((node) => (
         <AppNode key={node.id} node={node} canvasW={cw} canvasH={ch} />
@@ -103,7 +103,7 @@ export default function AppBookReader({ pagesV2 }) {
 
   if (!isPagesV2(pagesV2)) {
     return (
-      <p className="text-sm text-sky-600 bg-sky-50 border border-sky-100 rounded-lg p-4">
+      <p className="text-sm text-luditeca-muted bg-luditeca-primary-50 border border-luditeca-primary-100 rounded-lg p-4">
         Este livro ainda não tem páginas no formato v2.
       </p>
     );
@@ -111,7 +111,7 @@ export default function AppBookReader({ pagesV2 }) {
 
   const pages = pagesV2.pages;
   if (!pages.length) {
-    return <p className="text-sm text-sky-600">Livro sem páginas.</p>;
+    return <p className="text-sm text-luditeca-muted">Livro sem páginas.</p>;
   }
 
   const safeIndex = Math.min(index, pages.length - 1);
@@ -125,19 +125,19 @@ export default function AppBookReader({ pagesV2 }) {
           type="button"
           disabled={safeIndex <= 0}
           onClick={() => setIndex((i) => Math.max(0, i - 1))}
-          className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-sky-200 text-sky-800 disabled:opacity-40 hover:bg-sky-50"
+          className="app-btn-nav"
         >
           <FiChevronLeft />
           Anterior
         </button>
-        <span className="text-sm text-sky-700 font-medium">
+        <span className="text-sm text-luditeca-body font-medium">
           {safeIndex + 1} / {pages.length}
         </span>
         <button
           type="button"
           disabled={safeIndex >= pages.length - 1}
           onClick={() => setIndex((i) => Math.min(pages.length - 1, i + 1))}
-          className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-sky-200 text-sky-800 disabled:opacity-40 hover:bg-sky-50"
+          className="app-btn-nav"
         >
           Seguinte
           <FiChevronRight />

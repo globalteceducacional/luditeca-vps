@@ -4,6 +4,7 @@ import { toast } from 'react-hot-toast';
 import { createBook } from '../lib/books';
 import { getAuthors } from '../lib/authors';
 import { getCategories } from '../lib/categories';
+import { canonicalBookAssetUrl } from '../lib/bookMediaSrc';
 import { uploadFile } from '../lib/storageApi';
 import { useAuth } from '../contexts/auth';
 import { importPptxForBook } from '../lib/pptxImport';
@@ -94,8 +95,8 @@ export function useNewBookWizard() {
     if (!file) return;
     try {
       setUploadingCover(true);
-      const { url } = await uploadFile('covers', file.name, file);
-      setCoverImage(url || '');
+      const uploaded = await uploadFile('covers', file.name, file);
+      setCoverImage(canonicalBookAssetUrl(uploaded, 'covers') || '');
       toast.success('Capa enviada com sucesso!');
     } catch (err) {
       toast.error(err?.message || 'Falha ao enviar capa.');

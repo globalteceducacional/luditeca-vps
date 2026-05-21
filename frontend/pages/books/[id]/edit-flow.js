@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { Alert } from 'reactstrap';
 import Layout from '../../../components/Layout';
+import LuditecaAlert from '../../../components/argon/LuditecaAlert';
 import ArgonCmsShell from '../../../components/argon/ArgonCmsShell';
 import BookTypeFlowPage from '../../../components/books/create/BookTypeFlowPage';
 import { getBook } from '../../../lib/books';
@@ -53,10 +53,10 @@ export default function EditBookFlowPage() {
     return (
       <Layout>
         <ArgonCmsShell title="Editor por tipo">
-          <Alert color="info">
+          <LuditecaAlert color="info">
             Este livro foi criado no fluxo clássico (sem <code>book_type</code>). Use o{' '}
             <Link href={`/books/${bookId}/edit-v2`}>editor visual v2</Link>.
-          </Alert>
+          </LuditecaAlert>
           <Link href="/books">← Voltar ao catálogo</Link>
         </ArgonCmsShell>
       </Layout>
@@ -67,7 +67,7 @@ export default function EditBookFlowPage() {
     return (
       <Layout>
         <ArgonCmsShell title="Editor por tipo">
-          <Alert color="danger">Não foi possível carregar o livro.</Alert>
+          <LuditecaAlert color="danger">Não foi possível carregar o livro.</LuditecaAlert>
           <Link href="/books">← Voltar</Link>
         </ArgonCmsShell>
       </Layout>

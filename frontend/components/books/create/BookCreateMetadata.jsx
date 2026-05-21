@@ -1,8 +1,7 @@
-import { FormGroup, Input, Label } from 'reactstrap';
 import WorkflowStatusSelect from '../../argon/WorkflowStatusSelect';
+import { LuditecaInput } from '../../argon/luditeca';
 import BookCatalogPickers from './BookCatalogPickers';
-
-const fc = 'luditeca-form-control';
+import BookCoverUploadField from './BookCoverUploadField';
 
 export default function BookCreateMetadata({
   form,
@@ -23,35 +22,26 @@ export default function BookCreateMetadata({
 
   return (
     <>
-      <FormGroup>
-        <Label className="form-control-label">Título *</Label>
-        <Input
-          className={fc}
-          value={form.title}
-          onChange={(e) => set('title', e.target.value)}
-          required
-        />
-      </FormGroup>
-      <FormGroup>
-        <Label className="form-control-label">Descrição</Label>
-        <Input
-          className={fc}
-          type="textarea"
-          rows={3}
-          value={form.description}
-          onChange={(e) => set('description', e.target.value)}
-        />
-      </FormGroup>
+      <LuditecaInput
+        label="Título"
+        required
+        value={form.title}
+        onChange={(e) => set('title', e.target.value)}
+      />
+      <LuditecaInput
+        label="Descrição"
+        type="textarea"
+        rows={3}
+        value={form.description}
+        onChange={(e) => set('description', e.target.value)}
+      />
       {showAgeRange ? (
-        <FormGroup>
-          <Label className="form-control-label">Faixa etária</Label>
-          <Input
-            className={fc}
-            placeholder="Ex.: 4–7 anos"
-            value={form.age_range}
-            onChange={(e) => set('age_range', e.target.value)}
-          />
-        </FormGroup>
+        <LuditecaInput
+          label="Faixa etária"
+          placeholder="Ex.: 4–7 anos"
+          value={form.age_range}
+          onChange={(e) => set('age_range', e.target.value)}
+        />
       ) : null}
 
       <BookCatalogPickers
@@ -70,8 +60,8 @@ export default function BookCreateMetadata({
       />
 
       {showWorkflow ? (
-        <FormGroup>
-          <Label className="form-control-label">Estado editorial</Label>
+        <div className="form-group">
+          <label className="form-control-label">Estado editorial</label>
           <WorkflowStatusSelect
             value={form.workflow_status}
             onChange={(v) => set('workflow_status', v)}
@@ -80,26 +70,14 @@ export default function BookCreateMetadata({
           <p className="small text-muted mb-0 mt-1">
             «Publicado» torna o livro visível na app infantil (quando o resto do conteúdo estiver pronto).
           </p>
-        </FormGroup>
+        </div>
       ) : null}
-      <FormGroup>
-        <Label className="form-control-label">Capa</Label>
-        <Input
-          className={fc}
-          type="file"
-          accept="image/*"
-          onChange={onCoverUpload}
-          disabled={uploadingCover}
-        />
-        {form.cover_image ? (
-          <img
-            src={form.cover_image}
-            alt=""
-            className="mt-2 rounded border"
-            style={{ maxHeight: 120 }}
-          />
-        ) : null}
-      </FormGroup>
+      <BookCoverUploadField
+        coverUrl={form.cover_image}
+        onUpload={onCoverUpload}
+        uploading={uploadingCover}
+        disabled={uploadingCover}
+      />
     </>
   );
 }

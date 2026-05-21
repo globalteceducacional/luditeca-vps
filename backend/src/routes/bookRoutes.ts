@@ -491,11 +491,15 @@ export async function registerBookRoutes(app: FastifyInstance) {
         body.link_slidebook != null ? String(body.link_slidebook) : null,
     };
     if (bookType) {
+      const wfForValidate = parseBookWorkflowStatus(
+        body.workflow_status ?? body.workflowStatus,
+      );
+      const validateOpts = { workflowStatus: wfForValidate ?? 'draft' };
       if (bookType === BookType.digital) {
-        const digCheck = validateDigitalBookAssets(body);
+        const digCheck = validateDigitalBookAssets(body, validateOpts);
         if (!digCheck.ok) return reply.code(400).send({ error: digCheck.error });
       } else {
-        const pagesCheck = validateBookTypePages(bookType, pages);
+        const pagesCheck = validateBookTypePages(bookType, pages, validateOpts);
         if (!pagesCheck.ok) return reply.code(400).send({ error: pagesCheck.error });
       }
       createData.bookType = bookType;
@@ -730,10 +734,17 @@ export async function registerBookRoutes(app: FastifyInstance) {
       }
 
       const effectiveType = prev.bookType ?? data.bookType;
+      const effectiveWorkflow =
+        data.workflowStatus ??
+        parseBookWorkflowStatus(clean.workflow_status ?? clean.workflowStatus) ??
+        prev.workflowStatus ??
+        'draft';
+      const validateOpts = { workflowStatus: effectiveWorkflow };
       if (effectiveType && 'pages' in clean) {
         const pagesCheck = validateBookTypePages(
           effectiveType as BookType,
           clean.pages,
+          validateOpts,
         );
         if (!pagesCheck.ok) return reply.code(400).send({ error: pagesCheck.error });
       }
@@ -746,9 +757,11 @@ export async function registerBookRoutes(app: FastifyInstance) {
           'pdfUrl' in data ||
           'epubUrl' in data ||
           'pdf_url' in clean ||
-          'epub_url' in clean
+          'epub_url' in clean ||
+          'workflowStatus' in data ||
+          'workflow_status' in clean
         ) {
-          const digCheck = validateDigitalBookAssets(merged);
+          const digCheck = validateDigitalBookAssets(merged, validateOpts);
           if (!digCheck.ok) return reply.code(400).send({ error: digCheck.error });
         }
       }

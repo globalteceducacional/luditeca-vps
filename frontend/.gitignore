@@ -13,6 +13,9 @@
 # production
 /build
 
+# gerado por scripts/copy-vendor-css.js (postinstall / dev / build)
+/public/vendor/
+
 # misc
 .DS_Store
 *.pem

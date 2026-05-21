@@ -70,7 +70,7 @@ export default function AppLibraryPage() {
                   <div className="min-w-0 flex-grow-1">
                     <h2 className="luditeca-app-list-card-title">{book.title}</h2>
                     {book.book_type ? (
-                      <p className="text-xs text-violet-700 font-medium mb-1">
+                      <p className="app-badge-type mb-1">
                         {getBookTypeLabel(book.book_type)}
                       </p>
                     ) : null}

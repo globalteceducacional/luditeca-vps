@@ -3,7 +3,8 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { toast } from 'react-hot-toast';
-import { Alert, Button, Form, FormGroup, Input, Spinner } from 'reactstrap';
+import { Form } from 'reactstrap';
+import { LuditecaAlert, LuditecaButton, LuditecaInput } from '../../../../components/argon/luditeca';
 import AdminImageUploadField from '../../../../components/admin/AdminImageUploadField';
 import Layout from '../../../../components/Layout';
 import ArgonCmsShell from '../../../../components/argon/ArgonCmsShell';
@@ -102,72 +103,61 @@ export default function AdminLibrasEditPage() {
         <title>{isNew ? 'Nova lição LIBRAS' : 'Editar LIBRAS'} | Admin</title>
       </Head>
       <ArgonCmsShell
+        contentConstrained
         title={isNew ? 'Nova lição LIBRAS' : 'Editar lição'}
         subtitle="Palavra, imagem e quiz opcional."
         loading={loading}
         headerExtra={
-          <Button color="link" size="sm" tag={Link} href="/admin/libras" className="p-0">
+          <LuditecaButton variant="link" size="sm" tag={Link} href="/admin/libras" className="p-0">
             ← Voltar
-          </Button>
+          </LuditecaButton>
         }
       >
         <ArgonFormCard title="Conteúdo">
           <Form onSubmit={handleSubmit}>
-            {error ? <Alert color="danger">{error}</Alert> : null}
-            <FormGroup>
-              <label className="form-control-label">Palavra / sinal *</label>
-              <Input
-                className="luditeca-form-control"
-                value={form.word}
-                onChange={(e) => setForm((f) => ({ ...f, word: e.target.value }))}
-                required
-              />
-            </FormGroup>
-            <FormGroup>
-              <label className="form-control-label">Categoria</label>
-              <Input
-                className="luditeca-form-control"
-                value={form.category}
-                onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
-              />
-            </FormGroup>
+            {error ? <LuditecaAlert color="danger">{error}</LuditecaAlert> : null}
+            <LuditecaInput
+              label="Palavra / sinal"
+              required
+              value={form.word}
+              onChange={(e) => setForm((f) => ({ ...f, word: e.target.value }))}
+            />
+            <LuditecaInput
+              label="Categoria"
+              value={form.category}
+              onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
+            />
             <AdminImageUploadField
               label="Imagem ilustrativa"
               uploadKind="libras"
               value={form.image_url}
               onChange={(url) => setForm((f) => ({ ...f, image_url: url }))}
             />
-            <FormGroup>
-              <label className="form-control-label">Descrição</label>
-              <Input
-                className="luditeca-form-control"
-                type="textarea"
-                rows="3"
-                value={form.description}
-                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-              />
-            </FormGroup>
+            <LuditecaInput
+              label="Descrição"
+              type="textarea"
+              rows={3}
+              value={form.description}
+              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+            />
             <hr />
             <h4 className="heading-small text-muted mb-3">Quiz opcional</h4>
-            <FormGroup>
-              <label className="form-control-label">Pergunta</label>
-              <Input
-                className="luditeca-form-control"
-                value={form.quiz_question}
-                onChange={(e) => setForm((f) => ({ ...f, quiz_question: e.target.value }))}
-              />
-            </FormGroup>
+            <LuditecaInput
+              label="Pergunta"
+              value={form.quiz_question}
+              onChange={(e) => setForm((f) => ({ ...f, quiz_question: e.target.value }))}
+            />
             {form.quiz_options.map((opt, i) => (
-              <FormGroup key={i} className="d-flex align-items-center">
-                <Input
+              <div key={i} className="d-flex align-items-center mb-3">
+                <input
                   type="radio"
                   name="quiz_correct"
                   className="mr-2"
                   checked={form.quiz_correct === i}
                   onChange={() => setForm((f) => ({ ...f, quiz_correct: i }))}
                 />
-                <Input
-                  className="luditeca-form-control"
+                <LuditecaInput
+                  formGroupClassName="mb-0 flex-grow-1 w-100"
                   placeholder={`Opção ${i + 1}`}
                   value={opt}
                   onChange={(e) => {
@@ -176,11 +166,11 @@ export default function AdminLibrasEditPage() {
                     setForm((f) => ({ ...f, quiz_options }));
                   }}
                 />
-              </FormGroup>
+              </div>
             ))}
-            <Button color="primary" type="submit" disabled={saving} block>
-              {saving ? <Spinner size="sm" /> : isNew ? 'Criar lição' : 'Guardar'}
-            </Button>
+            <LuditecaButton variant="primary" type="submit" disabled={saving} loading={saving} block>
+              {isNew ? 'Criar lição' : 'Guardar'}
+            </LuditecaButton>
           </Form>
         </ArgonFormCard>
       </ArgonCmsShell>
