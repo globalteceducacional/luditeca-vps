@@ -1,5 +1,6 @@
 import { emptyQuizQuestion, normalizeQuizForApi } from './bookTypes';
-import { normalizeInteractiveScenes, nextSceneId } from './interactiveScenes';
+import { emptyAdventurePage, isInteractiveMetaRow } from './interactiveAdventure';
+import { normalizeInteractiveScenes, nextPageId } from './interactiveScenes';
 
 function emptyAnimatedPage(pageNumber = 1) {
   return {
@@ -11,16 +12,9 @@ function emptyAnimatedPage(pageNumber = 1) {
   };
 }
 
-function emptyInteractiveSceneForTimeline({ isFirst = false } = {}) {
-  return {
-    scene_id: nextSceneId([]),
-    scene_title: '',
-    text: '',
-    image_url: '',
-    choices: [],
-    is_start: isFirst,
-    is_ending: false,
-  };
+function emptyInteractiveSceneForTimeline({ isFirst = false, pageId = null } = {}) {
+  const id = Number(pageId) > 0 ? Number(pageId) : nextPageId([]);
+  return emptyAdventurePage(id, { isFirst });
 }
 
 export const PAGE_TYPE_QUIZ = 'quiz';
@@ -75,9 +69,12 @@ export function timelineFromBook(data, bookType) {
 
   let content = pages;
   if (bookType === 'interactive') {
-    content = pages.length
-      ? normalizeInteractiveScenes(pages)
+    const meta = pages.find(isInteractiveMetaRow) || null;
+    const storyRaw = pages.filter((p) => !isInteractiveMetaRow(p) && !isQuizTimelineItem(p));
+    content = storyRaw.length
+      ? normalizeInteractiveScenes(storyRaw)
       : [emptyInteractiveSceneForTimeline({ isFirst: true })];
+    if (meta) content = [meta, ...content];
   }
 
   const quiz = normalizeQuizForApi(data?.quiz ?? data?.book_quiz ?? data?.bookQuiz ?? []);
@@ -91,7 +88,7 @@ export function normalizeInteractiveTimeline(timeline) {
   const sceneIndices = [];
   const scenes = [];
   list.forEach((item, i) => {
-    if (!isQuizTimelineItem(item)) {
+    if (!isQuizTimelineItem(item) && !isInteractiveMetaRow(item)) {
       sceneIndices.push(i);
       scenes.push(item);
     }
@@ -160,7 +157,9 @@ export function buildAnimatedReaderSlots(pages = [], bookQuiz = []) {
 }
 
 export function filterScenesOnly(timeline) {
-  return (Array.isArray(timeline) ? timeline : []).filter((i) => !isQuizTimelineItem(i));
+  return (Array.isArray(timeline) ? timeline : []).filter(
+    (i) => !isQuizTimelineItem(i) && !isInteractiveMetaRow(i),
+  );
 }
 
 export function extractQuizFromTimeline(timeline) {
@@ -184,7 +183,7 @@ export function buildInteractiveReaderSlots(pages = [], bookQuiz = []) {
     );
   }
 
-  const scenes = sorted.filter((p) => !isQuizTimelineItem(p));
+  const scenes = sorted.filter((p) => !isQuizTimelineItem(p) && !isInteractiveMetaRow(p));
   const slots = scenes.map((s) => ({ kind: 'scene', data: s }));
   normalizeQuizForApi(bookQuiz).forEach((q) => {
     slots.push({ kind: 'quiz', data: q });
@@ -194,4 +193,12 @@ export function buildInteractiveReaderSlots(pages = [], bookQuiz = []) {
 
 export function timelineHasInlineQuiz(pages = []) {
   return (Array.isArray(pages) ? pages : []).some(isQuizTimelineItem);
+}
+
+/** Insere um bloco de quiz logo após o índice dado (página ou cena). */
+export function insertQuizAfterTimeline(timeline, afterIndex) {
+  const list = Array.isArray(timeline) ? [...timeline] : [];
+  const insertAt = Math.min(Math.max(0, afterIndex + 1), list.length);
+  list.splice(insertAt, 0, emptyQuizTimelineItem(insertAt + 1));
+  return renumberTimeline(list);
 }

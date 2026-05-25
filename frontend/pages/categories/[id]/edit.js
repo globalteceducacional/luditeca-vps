@@ -6,7 +6,7 @@ import { toast } from 'react-hot-toast';
 import { Form } from 'reactstrap';
 import { useAuth } from '../../../contexts/auth';
 import { getCategory, updateCategory } from '../../../lib/categories';
-import { getFileUrl } from '../../../lib/mediaUrl';
+import { BOOK_MEDIA_BUCKETS, canonicalBookAssetUrl, resolveBookAssetUrl } from '../../../lib/bookMediaSrc';
 import { uploadFile } from '../../../lib/storageApi';
 import Layout from '../../../components/Layout';
 import ArgonCmsShell from '../../../components/argon/ArgonCmsShell';
@@ -43,13 +43,9 @@ export default function EditCategory() {
       if (fetchErr) throw fetchErr;
       if (!data) throw new Error('Categoria não encontrada');
       setName(data.name || '');
-      let url = '';
-      if (data.image_url) {
-        url = data.image_url.startsWith('http')
-          ? data.image_url
-          : getFileUrl('categories', data.image_url);
-      }
-      setImageUrl(url);
+      setImageUrl(
+        resolveBookAssetUrl(data.image_url, BOOK_MEDIA_BUCKETS.category) || data.image_url || '',
+      );
     } catch (err) {
       setError(err.message || 'Erro ao carregar a categoria');
       toast.error(err.message || 'Erro ao carregar a categoria');
@@ -67,8 +63,10 @@ export default function EditCategory() {
       if (!user?.id) throw new Error('Utilizador não autenticado');
       const fileExt = file.name.split('.').pop();
       const fileName = `categoria_${id || 'edit'}_${Date.now()}.${fileExt}`;
-      const { url } = await uploadFile('categories', fileName, file);
-      setImageUrl(url);
+      const uploaded = await uploadFile('categories', fileName, file);
+      setImageUrl(
+        canonicalBookAssetUrl(uploaded, BOOK_MEDIA_BUCKETS.category) || uploaded.url || '',
+      );
       toast.success('Imagem enviada.');
     } catch {
       setError('Erro ao fazer upload da imagem');

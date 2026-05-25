@@ -1,55 +1,58 @@
 import { useEffect } from 'react';
-import { Container, Row, Col } from 'reactstrap';
+import LuditecaLogo from '../components/auth/LuditecaLogo';
+import AuthHeroIllustration from '../components/auth/AuthHeroIllustration';
+import AuthThemeToggle from '../components/auth/AuthThemeToggle';
+
+const AUTH_FEATURES = [
+  'Editor de livros digitais, animados e interativos',
+  'Biblioteca e atividades para alunos na app',
+  'Gestão de autores, categorias e conteúdos',
+];
 
 export default function ArgonAuth({ children }) {
   useEffect(() => {
-    document.body.classList.add('bg-default');
-    return () => document.body.classList.remove('bg-default');
+    document.body.classList.add('luditeca-auth-body');
+    return () => document.body.classList.remove('luditeca-auth-body');
   }, []);
 
+  const year = new Date().getFullYear();
+
   return (
-    <>
-      <div className="main-content">
-        <div className="header bg-gradient-info py-7 py-lg-8">
-          <Container>
-            <div className="header-body text-center mb-7">
-              <Row className="justify-content-center">
-                <Col lg="5" md="6">
-                  <h1 className="text-white">Luditeca</h1>
-                  <p className="text-lead text-light">
-                    Plataforma educativa — entre com as suas credenciais.
-                  </p>
-                </Col>
-              </Row>
-            </div>
-          </Container>
-          <div className="separator separator-bottom separator-skew zindex-100">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              preserveAspectRatio="none"
-              version="1.1"
-              viewBox="0 0 2560 100"
-              x="0"
-              y="0"
-            >
-              <polygon className="fill-default" points="2560 0 2560 100 0 100" />
-            </svg>
-          </div>
+    <div className="luditeca-auth-page">
+      <aside className="luditeca-auth-page__hero">
+        <div className="luditeca-auth-page__hero-inner">
+          <LuditecaLogo variant="full" size="lg" tone="on-dark" className="luditeca-auth-page__hero-logo" />
+          <p className="luditeca-auth-page__eyebrow">Plataforma educativa</p>
+          <p className="luditeca-auth-page__brand-lead">
+            Crie, publique e partilhe experiências de leitura com a sua equipa pedagógica.
+          </p>
+          <ul className="luditeca-auth-page__features">
+            {AUTH_FEATURES.map((text) => (
+              <li key={text}>{text}</li>
+            ))}
+          </ul>
         </div>
-        <Container className="mt--8 pb-5">
-          <Row className="justify-content-center">{children}</Row>
-        </Container>
-      </div>
-      <footer className="py-4 text-center text-muted text-sm">
-        <a
-          href="https://www.creative-tim.com/product/argon-dashboard-react"
-          target="_blank"
-          rel="noreferrer"
-        >
-          Argon Dashboard
-        </a>{' '}
-        · Creative Tim (MIT)
-      </footer>
-    </>
+        <AuthHeroIllustration className="luditeca-auth-page__illustration" />
+        <div className="luditeca-auth-page__hero-decor" aria-hidden />
+      </aside>
+
+      <main className="luditeca-auth-page__main">
+        <div className="luditeca-auth-page__toolbar">
+          <LuditecaLogo
+            variant="full"
+            size="sm"
+            tone="auto"
+            className="luditeca-auth-page__mobile-logo d-lg-none"
+          />
+          <AuthThemeToggle />
+        </div>
+
+        <div className="luditeca-auth-page__form-wrap">{children}</div>
+
+        <p className="luditeca-auth-page__copyright">
+          © {year} Luditeca. Todos os direitos reservados.
+        </p>
+      </main>
+    </div>
   );
 }

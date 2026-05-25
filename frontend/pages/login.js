@@ -1,27 +1,31 @@
 import { useState } from 'react';
-import { useRouter } from 'next/router';
+import Head from 'next/head';
 import Link from 'next/link';
-import {
-  Button,
-  Card,
-  CardBody,
-  CardHeader,
-  Col,
-  Form,
-  FormGroup,
-  Input,
-  InputGroup,
-  InputGroupAddon,
-  InputGroupText,
-  Row,
-} from 'reactstrap';
+import { useRouter } from 'next/router';
+import { FiEye, FiEyeOff } from 'react-icons/fi';
 import ArgonAuth from '../layouts/ArgonAuth';
+import LuditecaAuthCard from '../components/auth/LuditecaAuthCard';
+import { LuditecaAlert, LuditecaButton, LuditecaInput } from '../components/argon/luditeca';
 import { useAuth } from '../contexts/auth';
 import { ROLES } from '../lib/roles';
+
+function PasswordToggle({ visible, onToggle }) {
+  return (
+    <button
+      type="button"
+      className="btn btn-link btn-sm luditeca-auth-password-toggle p-0"
+      onClick={onToggle}
+      aria-label={visible ? 'Ocultar palavra-passe' : 'Mostrar palavra-passe'}
+    >
+      {visible ? <FiEyeOff size={18} aria-hidden /> : <FiEye size={18} aria-hidden />}
+    </button>
+  );
+}
 
 function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -32,7 +36,7 @@ function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      const result = await login(email, password);
+      const result = await login(email.trim(), password);
       if (!result.success) throw new Error(result.error || 'Falha no login');
       const role = result.user?.role;
       if (role === ROLES.aluno || role === ROLES.professor) {
@@ -41,7 +45,7 @@ function LoginPage() {
         router.push('/books');
       }
     } catch (err) {
-      const fallback = 'Falha ao fazer login. Verifique email e senha.';
+      const fallback = 'Não foi possível iniciar sessão. Verifique o email e a palavra-passe.';
       const msg = typeof err?.message === 'string' ? err.message.trim() : '';
       setError(msg && msg !== 'Failed to fetch' ? msg : fallback);
     } finally {
@@ -50,70 +54,80 @@ function LoginPage() {
   };
 
   return (
-    <Col lg="5" md="7">
-      <Card className="bg-secondary shadow border-0">
-        <CardHeader className="bg-transparent pb-4">
-          <div className="text-muted text-center mt-2">
-            <h2 className="text-default">Entrar</h2>
-          </div>
-        </CardHeader>
-        <CardBody className="px-lg-5 py-lg-5">
-          {error && (
-            <div className="alert alert-danger" role="alert">
-              {error}
-            </div>
-          )}
-          <Form onSubmit={handleLogin} role="form">
-            <FormGroup className="mb-3">
-              <InputGroup className="input-group-alternative">
-                <InputGroupAddon addonType="prepend">
-                  <InputGroupText>
-                    <i className="ni ni-email-83" />
-                  </InputGroupText>
-                </InputGroupAddon>
-                <Input
-                  placeholder="Email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  autoComplete="email"
-                />
-              </InputGroup>
-            </FormGroup>
-            <FormGroup>
-              <InputGroup className="input-group-alternative">
-                <InputGroupAddon addonType="prepend">
-                  <InputGroupText>
-                    <i className="ni ni-lock-circle-open" />
-                  </InputGroupText>
-                </InputGroupAddon>
-                <Input
-                  placeholder="Senha"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  autoComplete="current-password"
-                />
-              </InputGroup>
-            </FormGroup>
-            <div className="text-center">
-              <Button className="my-4" color="primary" type="submit" disabled={loading}>
-                {loading ? 'A entrar…' : 'Entrar'}
-              </Button>
-            </div>
-          </Form>
-        </CardBody>
-      </Card>
-      <Row className="mt-3">
-        <Col className="text-center" xs="12">
-          <Link href="/forgot-password" className="text-light">
-            <small>Esqueceu a senha?</small>
-          </Link>
-        </Col>
-      </Row>
-    </Col>
+    <>
+      <Head>
+        <title>Iniciar sessão | Luditeca</title>
+        <meta name="description" content="Acesso à plataforma Luditeca — CMS e app educativa." />
+      </Head>
+
+      <LuditecaAuthCard
+        title="Bem-vindo de volta"
+        subtitle="Utilize o email e a palavra-passe da sua conta."
+        footer={
+          <p className="mb-0 text-center">
+            <Link href="/forgot-password" className="luditeca-auth-link">
+              Esqueceu a palavra-passe?
+            </Link>
+          </p>
+        }
+      >
+        {error ? (
+          <LuditecaAlert color="danger" className="mb-4">
+            {error}
+          </LuditecaAlert>
+        ) : null}
+
+        <form onSubmit={handleLogin} noValidate>
+          <LuditecaInput
+            label="Email"
+            type="email"
+            name="email"
+            autoComplete="email"
+            inputMode="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            disabled={loading}
+            placeholder="nome@escola.pt"
+          />
+
+          <LuditecaInput
+            label="Palavra-passe"
+            type={showPassword ? 'text' : 'password'}
+            name="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            disabled={loading}
+            placeholder="••••••••"
+            labelAction={
+              <PasswordToggle
+                visible={showPassword}
+                onToggle={() => setShowPassword((v) => !v)}
+              />
+            }
+          />
+
+          <LuditecaButton
+            type="submit"
+            variant="primary"
+            className="w-100 mt-2"
+            size="lg"
+            loading={loading}
+            loadingLabel="A iniciar sessão…"
+            disabled={loading}
+          >
+            Entrar
+          </LuditecaButton>
+        </form>
+
+        <p className="luditeca-auth-hint text-muted mb-0 mt-4">
+          Editores e administradores entram no CMS. Alunos e professores são encaminhados para a
+          experiência em <strong>/app</strong>.
+        </p>
+      </LuditecaAuthCard>
+    </>
   );
 }
 

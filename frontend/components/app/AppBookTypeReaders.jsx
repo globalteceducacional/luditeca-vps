@@ -7,6 +7,8 @@ import {
   timelineHasInlineQuiz,
 } from '../../lib/bookContentTimeline';
 import { getSceneDisplayLabel } from '../../lib/interactiveScenes';
+import AppInteractiveAdventureReader from './AppInteractiveAdventureReader';
+import { extractStoryPages } from '../../lib/interactiveAdventure';
 
 function mediaSrc(url, bucket = BOOK_MEDIA_BUCKETS.pages) {
   return resolveBookAssetUrl(url, bucket);
@@ -193,7 +195,7 @@ export function AppAnimatedBookReader({ pages = [], soundtrackUrl, quiz }) {
 }
 
 /** Modo sequência: cenas e quiz na ordem definida no CMS. */
-function AppInteractiveSequenceReader({ pages = [], quiz }) {
+function AppInteractiveSequenceReader({ pages = [], quiz, sceneById, onFollowChoice }) {
   const slots = useMemo(() => buildInteractiveReaderSlots(pages, quiz), [pages, quiz]);
   const [index, setIndex] = useState(0);
 
@@ -239,13 +241,28 @@ function AppInteractiveSequenceReader({ pages = [], quiz }) {
       </div>
       {choices.length > 0 && !scene?.is_ending ? (
         <ul className="space-y-2">
-          {choices.map((ch, i) => (
-            <li key={i}>
-              <span className="app-choice-branch block text-left opacity-80 cursor-default">
-                {ch.label || 'Escolha'} → outra cena (use modo história)
-              </span>
-            </li>
-          ))}
+          {choices.map((ch, i) => {
+            const target = String(ch?.target_scene_id || '').trim();
+            const canFollow = target && sceneById?.has(target);
+            return (
+              <li key={i}>
+                {canFollow ? (
+                  <button
+                    type="button"
+                    className="app-choice-branch"
+                    onClick={() => onFollowChoice?.(target)}
+                  >
+                    {ch.label || 'Continuar'}
+                  </button>
+                ) : (
+                  <span className="app-choice-branch block text-left opacity-60 cursor-default">
+                    {ch.label || 'Escolha'}
+                    {target ? ' (destino inválido)' : ' (sem destino)'}
+                  </span>
+                )}
+              </li>
+            );
+          })}
         </ul>
       ) : null}
       <SlotNav
@@ -259,10 +276,11 @@ function AppInteractiveSequenceReader({ pages = [], quiz }) {
   );
 }
 
-/** Livro interativo: ramificações por escolhas; sequência quando há quiz intercalado. */
-export function AppInteractiveBookReader({ scenes = [], quiz }) {
+/** Livro interativo: aventura ramificada; modo sequência quando há quiz editorial. */
+export function AppInteractiveBookReader({ bookId, scenes = [], quiz }) {
   const hasSequence = useMemo(() => timelineHasInlineQuiz(scenes), [scenes]);
-  const [mode, setMode] = useState(hasSequence ? 'sequence' : 'branch');
+  const [mode, setMode] = useState(hasSequence ? 'sequence' : 'adventure');
+  const storyPages = useMemo(() => extractStoryPages(scenes), [scenes]);
 
   const sceneList = useMemo(() => {
     return (Array.isArray(scenes) ? scenes : []).filter(
@@ -278,17 +296,8 @@ export function AppInteractiveBookReader({ scenes = [], quiz }) {
     return map;
   }, [sceneList]);
 
-  const startId = useMemo(() => {
-    const start = sceneList.find((s) => s.is_start && s.scene_id);
-    return start?.scene_id || sceneList[0]?.scene_id || null;
-  }, [sceneList]);
-
-  const [sceneId, setSceneId] = useState(null);
-  const activeId = sceneId || startId;
-  const scene = activeId ? byId.get(String(activeId)) : null;
-
-  if (!sceneList.length && !hasSequence) {
-    return <p className="text-sm text-luditeca-muted">Este livro ainda não tem cenas.</p>;
+  if (!storyPages.length && !hasSequence) {
+    return <p className="text-sm text-luditeca-muted">Este livro ainda não tem páginas da história.</p>;
   }
 
   return (
@@ -298,13 +307,13 @@ export function AppInteractiveBookReader({ scenes = [], quiz }) {
           <button
             type="button"
             className={`px-3 py-1.5 rounded-lg text-sm font-medium border ${
-              mode === 'branch'
+              mode === 'adventure'
                 ? 'bg-luditeca-primary-600 text-white border-luditeca-primary-600'
                 : 'bg-luditeca-surface text-luditeca-body border-luditeca-primary-200'
             }`}
-            onClick={() => setMode('branch')}
+            onClick={() => setMode('adventure')}
           >
-            História (escolhas)
+            Escolha sua aventura
           </button>
           <button
             type="button"
@@ -315,62 +324,20 @@ export function AppInteractiveBookReader({ scenes = [], quiz }) {
             }`}
             onClick={() => setMode('sequence')}
           >
-            Ordem do livro
+            Ordem do livro (+ quiz)
           </button>
         </div>
       ) : null}
 
-      {mode === 'sequence' && hasSequence ? (
-        <AppInteractiveSequenceReader pages={scenes} quiz={quiz} />
-      ) : !scene ? (
-        <p className="text-sm text-luditeca-muted">Este livro ainda não tem cenas.</p>
+      {mode === 'adventure' || !hasSequence ? (
+        <AppInteractiveAdventureReader bookId={bookId} pages={scenes} />
       ) : (
-        <>
-          <div className="app-panel-padded">
-            <p className="text-xs text-luditeca-muted mb-2">
-              {getSceneDisplayLabel(scene, sceneList.findIndex((s) => s.scene_id === scene.scene_id))}
-            </p>
-            {mediaSrc(scene.image_url) ? (
-              <img
-                src={mediaSrc(scene.image_url)}
-                alt=""
-                className="w-full max-h-64 object-contain rounded-lg mb-3"
-              />
-            ) : null}
-            {scene.text ? (
-              <p className="text-luditeca-ink whitespace-pre-wrap text-lg">{scene.text}</p>
-            ) : null}
-            {scene.is_ending ? (
-              <p className="text-luditeca-accent-700 font-semibold mt-3">Fim da história.</p>
-            ) : null}
-          </div>
-          {Array.isArray(scene.choices) && scene.choices.length > 0 && !scene.is_ending ? (
-            <ul className="space-y-2">
-              {scene.choices.map((ch, i) => {
-                const target = ch.target_scene_id;
-                const disabled = !target || !byId.has(String(target));
-                return (
-                  <li key={i}>
-                    <button
-                      type="button"
-                      disabled={disabled}
-                      onClick={() => target && setSceneId(String(target))}
-                      className="app-choice-branch"
-                    >
-                      {ch.label || 'Continuar'}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : null}
-          {startId && activeId !== startId ? (
-            <button type="button" className="app-link-reset" onClick={() => setSceneId(startId)}>
-              Recomeçar história
-            </button>
-          ) : null}
-          {!hasSequence ? <AppBookQuiz quiz={quiz} /> : null}
-        </>
+        <AppInteractiveSequenceReader
+          pages={scenes}
+          quiz={quiz}
+          sceneById={byId}
+          onFollowChoice={() => setMode('adventure')}
+        />
       )}
     </div>
   );

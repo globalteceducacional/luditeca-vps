@@ -6,7 +6,7 @@ import { toast } from 'react-hot-toast';
 import { Form } from 'reactstrap';
 import { useAuth } from '../../../contexts/auth';
 import { getAuthor, updateAuthor } from '../../../lib/authors';
-import { getFileUrl } from '../../../lib/mediaUrl';
+import { BOOK_MEDIA_BUCKETS, canonicalBookAssetUrl, resolveBookAssetUrl } from '../../../lib/bookMediaSrc';
 import { uploadFile } from '../../../lib/storageApi';
 import Layout from '../../../components/Layout';
 import ArgonCmsShell from '../../../components/argon/ArgonCmsShell';
@@ -45,13 +45,7 @@ export default function EditAuthor() {
       if (!data) throw new Error('Autor não encontrado');
       setName(data.name || '');
       setBio(data.bio || '');
-      let url = '';
-      if (data.photo_url) {
-        url = data.photo_url.startsWith('http')
-          ? data.photo_url
-          : getFileUrl('autores', data.photo_url);
-      }
-      setPhotoUrl(url);
+      setPhotoUrl(resolveBookAssetUrl(data.photo_url, BOOK_MEDIA_BUCKETS.author) || data.photo_url || '');
     } catch (err) {
       setError(err.message || 'Erro ao carregar o autor');
       toast.error(err.message || 'Erro ao carregar o autor');
@@ -69,8 +63,8 @@ export default function EditAuthor() {
       if (!user?.id) throw new Error('Utilizador não autenticado');
       const fileExt = file.name.split('.').pop();
       const fileName = `autor_${id || 'edit'}_${Date.now()}.${fileExt}`;
-      const { url } = await uploadFile('autores', fileName, file);
-      setPhotoUrl(url);
+      const uploaded = await uploadFile('autores', fileName, file);
+      setPhotoUrl(canonicalBookAssetUrl(uploaded, BOOK_MEDIA_BUCKETS.author) || uploaded.url || '');
       toast.success('Foto enviada.');
     } catch {
       setError('Erro ao fazer upload da foto');

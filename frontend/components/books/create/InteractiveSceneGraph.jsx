@@ -10,16 +10,29 @@ function truncate(str, max = 22) {
 
 export default function InteractiveSceneGraph({ pages = [] }) {
   const [open, setOpen] = useState(false);
-  const graph = useMemo(() => buildInteractiveSceneGraph(pages), [pages]);
+  const graph = useMemo(
+    () => (open ? buildInteractiveSceneGraph(pages) : null),
+    [open, pages],
+  );
 
-  if (!graph.nodes.length) return null;
+  if (!open) {
+    return (
+      <div className="mb-3">
+        <Button color="secondary" outline size="sm" type="button" onClick={() => setOpen(true)}>
+          Ver grafo visual
+        </Button>
+      </div>
+    );
+  }
+
+  if (!graph?.nodes.length) return null;
 
   const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
 
   return (
     <div className="mb-3">
-      <Button color="secondary" outline size="sm" type="button" onClick={() => setOpen((v) => !v)}>
-        {open ? 'Ocultar grafo visual' : 'Ver grafo visual'}
+      <Button color="secondary" outline size="sm" type="button" onClick={() => setOpen(false)}>
+        Ocultar grafo visual
       </Button>
       {open ? (
         <div className="mt-2 p-2 border rounded bg-white overflow-auto">

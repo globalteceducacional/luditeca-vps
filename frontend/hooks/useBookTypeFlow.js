@@ -14,6 +14,7 @@ import {
   splitTimelineForApi,
   timelineFromBook,
 } from '../lib/bookContentTimeline';
+import { emptyAdventurePage } from '../lib/interactiveAdventure';
 import { validateInteractiveScenesClient } from '../lib/interactiveScenes';
 
 export function emptyAnimatedPage(pageNumber = 1) {
@@ -26,17 +27,12 @@ export function emptyAnimatedPage(pageNumber = 1) {
   };
 }
 
-export function emptyInteractiveScene(sceneId = null, { isFirst = false } = {}) {
-  const id = sceneId || 'scene_1';
-  return {
-    scene_id: id,
-    scene_title: '',
-    text: '',
-    image_url: '',
-    choices: [],
-    is_start: isFirst,
-    is_ending: false,
-  };
+export function emptyInteractiveScene(
+  pageId = null,
+  { isFirst = false, isEnding = false, endingType = null } = {},
+) {
+  const id = Number(pageId) > 0 ? Number(pageId) : 1;
+  return emptyAdventurePage(id, { isFirst, isEnding, endingType });
 }
 
 function mapBookToForm(data, bookType) {
@@ -81,7 +77,25 @@ export function useBookTypeFlow({ bookType, bookId = null }) {
     author_id: '',
     category_id: '',
     cover_image: '',
-    pages: bookType === 'interactive' ? [emptyInteractiveScene(null, { isFirst: true })] : [],
+    pages:
+      bookType === 'interactive'
+        ? (() => {
+            const page2 = emptyInteractiveScene(2, { isEnding: true, endingType: 'neutral' });
+            const page1 = {
+              ...emptyInteractiveScene(1, { isFirst: true }),
+              choices: [
+                {
+                  label: '',
+                  target_page_id: 2,
+                  target_scene_id: '2',
+                  conditions: null,
+                  effects: null,
+                },
+              ],
+            };
+            return [page1, page2];
+          })()
+        : [],
     quiz: [],
     soundtrack_url: '',
     pdf_url: '',

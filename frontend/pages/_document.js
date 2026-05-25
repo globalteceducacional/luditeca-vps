@@ -14,6 +14,7 @@ export default function Document() {
         />
         <link rel="stylesheet" href="/argon/plugins/nucleo/css/nucleo.css" />
         <link rel="stylesheet" href="/argon/css/nextjs-argon-dashboard.min.css" />
+        <link rel="icon" href="/luditeca-logo.svg" type="image/svg+xml" />
       </Head>
       <body>
         <Main />

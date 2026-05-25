@@ -67,6 +67,36 @@ describe('validateBookTypePages', () => {
     ]);
     expect(r.ok).toBe(true);
   });
+
+  it('aceita page_id numérico e ignora meta', () => {
+    const r = validateBookTypePages(BookType.interactive, [
+      { page_type: 'interactive_meta', version: 1 },
+      {
+        page_id: 1,
+        is_start: true,
+        choices: [{ label: 'Ir', target_page_id: 2 }],
+      },
+      { page_id: 2, is_ending: true, choices: [] },
+    ]);
+    expect(r.ok).toBe(true);
+  });
+
+  it('permite publicar interativo sem imagem nas cenas', () => {
+    const r = validateBookTypePages(
+      BookType.interactive,
+      [
+        {
+          page_id: 1,
+          is_start: true,
+          text: 'Início',
+          choices: [{ label: 'Fim', target_page_id: 2 }],
+        },
+        { page_id: 2, is_ending: true, text: 'Fim', choices: [] },
+      ],
+      { workflowStatus: 'published' },
+    );
+    expect(r.ok).toBe(true);
+  });
 });
 
 describe('validateDigitalBookAssets', () => {

@@ -7,6 +7,7 @@ import '../styles/argon-luditeca.css';
 import '../styles/luditeca-ds.css';
 
 import { AuthProvider } from '../contexts/auth';
+import { CmsThemeProvider } from '../contexts/cmsTheme';
 import { devLog } from '../lib/devLog';
 
 function Passthrough({ children }) {
@@ -18,9 +19,11 @@ function LuditecaApp({ Component, pageProps }) {
   devLog('_app renderizado');
   return (
     <AuthProvider>
-      <Layout>
-        <Component {...pageProps} />
-      </Layout>
+      <CmsThemeProvider>
+        <Layout>
+          <Component {...pageProps} />
+        </Layout>
+      </CmsThemeProvider>
     </AuthProvider>
   );
 }

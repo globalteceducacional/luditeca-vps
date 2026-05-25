@@ -17,6 +17,9 @@
     "db:seed": "npm run build && tsx scripts/seed.ts",
     "db:studio": "prisma studio",
     "create-admin": "tsx scripts/create-admin.ts",
+    "inspect-book": "tsx scripts/inspect-interactive-book.ts",
+    "seed:interactive-demo": "tsx scripts/seed-interactive-demo.ts",
+    "publish:interactive-demo": "tsx scripts/publish-interactive-demo.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

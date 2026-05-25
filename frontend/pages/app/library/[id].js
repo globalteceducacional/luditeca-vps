@@ -72,7 +72,12 @@ export default function AppBookDetailPage() {
     }
     if (bookType === 'interactive') {
       return (
-        <AppInteractiveBookReader key={book.id} scenes={legacyPages} quiz={book.quiz} />
+        <AppInteractiveBookReader
+          key={book.id}
+          bookId={book.id}
+          scenes={legacyPages}
+          quiz={book.quiz}
+        />
       );
     }
     if (bookType === 'digital') {

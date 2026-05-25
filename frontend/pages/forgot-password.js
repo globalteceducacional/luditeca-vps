@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import Head from 'next/head';
-import { Col } from 'reactstrap';
 import ArgonAuth from '../layouts/ArgonAuth';
+import LuditecaAuthCard from '../components/auth/LuditecaAuthCard';
+import { LuditecaAlert, LuditecaButton, LuditecaInput } from '../components/argon/luditeca';
 import { apiFetch } from '../lib/apiClient';
 
 function ForgotPassword() {
@@ -37,41 +38,58 @@ function ForgotPassword() {
   };
 
   return (
-    <Col lg="5" md="7">
+    <>
       <Head>
-        <title>Recuperar senha | Luditeca CMS</title>
+        <title>Recuperar acesso | Luditeca</title>
       </Head>
-      <div className="card bg-secondary shadow border-0 p-4 p-lg-5">
-        <h1 className="text-center mb-2">Recuperar acesso</h1>
-        <p className="text-muted text-center mb-4">
-          Indique o email da conta. Por segurança, a resposta é sempre genérica.
-        </p>
 
-        {error && <div className="alert alert-danger">{error}</div>}
-        {message && <div className="alert alert-success">{message}</div>}
+      <LuditecaAuthCard
+        title="Recuperar acesso"
+        subtitle="Indique o email da conta. Por segurança, a resposta é sempre genérica."
+        footer={
+          <p className="mb-0 text-center">
+            <Link href="/login" className="luditeca-auth-link">
+              Voltar ao login
+            </Link>
+          </p>
+        }
+      >
+        {error ? (
+          <LuditecaAlert color="danger" className="mb-4">
+            {error}
+          </LuditecaAlert>
+        ) : null}
+        {message ? (
+          <LuditecaAlert color="success" className="mb-4">
+            {message}
+          </LuditecaAlert>
+        ) : null}
 
         <form onSubmit={handleSubmit}>
-          <div className="form-group mb-3">
-            <label htmlFor="email">Email</label>
-            <input
-              id="email"
-              type="email"
-              className="form-control"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-          </div>
-          <button type="submit" className="btn btn-primary btn-block" disabled={loading}>
-            {loading ? 'A enviar…' : 'Pedir recuperação'}
-          </button>
+          <LuditecaInput
+            label="Email"
+            type="email"
+            id="forgot-email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            disabled={loading}
+            placeholder="nome@escola.pt"
+          />
+          <LuditecaButton
+            type="submit"
+            variant="primary"
+            className="w-100"
+            size="lg"
+            loading={loading}
+            loadingLabel="A enviar…"
+            disabled={loading}
+          >
+            Pedir recuperação
+          </LuditecaButton>
         </form>
-
-        <p className="mt-4 text-center">
-          <Link href="/login">Voltar ao login</Link>
-        </p>
-      </div>
-    </Col>
+      </LuditecaAuthCard>
+    </>
   );
 }
 

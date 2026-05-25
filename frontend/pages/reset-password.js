@@ -2,20 +2,9 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
-import {
-  Button,
-  Card,
-  CardBody,
-  CardHeader,
-  Col,
-  Form,
-  FormGroup,
-  Input,
-  InputGroup,
-  InputGroupAddon,
-  InputGroupText,
-} from 'reactstrap';
 import ArgonAuth from '../layouts/ArgonAuth';
+import LuditecaAuthCard from '../components/auth/LuditecaAuthCard';
+import { LuditecaAlert, LuditecaButton, LuditecaInput } from '../components/argon/luditeca';
 import { apiFetch } from '../lib/apiClient';
 
 function ResetPasswordPage() {
@@ -37,11 +26,11 @@ function ResetPasswordPage() {
     e.preventDefault();
     setError(null);
     if (password.length < 6) {
-      setError('A nova senha deve ter pelo menos 6 caracteres.');
+      setError('A nova palavra-passe deve ter pelo menos 6 caracteres.');
       return;
     }
     if (password !== confirm) {
-      setError('As senhas não coincidem.');
+      setError('As palavras-passe não coincidem.');
       return;
     }
     setLoading(true);
@@ -59,72 +48,89 @@ function ResetPasswordPage() {
   };
 
   return (
-    <Col lg="5" md="7">
+    <>
       <Head>
-        <title>Nova senha | Luditeca</title>
+        <title>Nova palavra-passe | Luditeca</title>
       </Head>
-      <Card className="bg-secondary shadow border-0">
-        <CardHeader className="bg-transparent">
-          <h2 className="text-center mb-0">Definir nova senha</h2>
-        </CardHeader>
-        <CardBody className="px-lg-5 py-lg-5">
-          {ok ? (
-            <div className="text-center">
-              <p className="text-success mb-4">Senha atualizada. Pode iniciar sessão.</p>
-              <Button color="primary" tag={Link} href="/login">
-                Ir para o login
-              </Button>
-            </div>
-          ) : (
-            <Form onSubmit={handleSubmit}>
-              {error ? <div className="alert alert-danger">{error}</div> : null}
-              <FormGroup>
-                <InputGroup className="input-group-alternative mb-3">
-                  <InputGroupAddon addonType="prepend">
-                    <InputGroupText>
-                      <i className="ni ni-key-25" />
-                    </InputGroupText>
-                  </InputGroupAddon>
-                  <Input
-                    placeholder="Token"
-                    value={token}
-                    onChange={(e) => setToken(e.target.value)}
-                    required
-                  />
-                </InputGroup>
-              </FormGroup>
-              <FormGroup>
-                <Input
-                  type="password"
-                  placeholder="Nova senha"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  minLength={6}
-                />
-              </FormGroup>
-              <FormGroup>
-                <Input
-                  type="password"
-                  placeholder="Confirmar senha"
-                  value={confirm}
-                  onChange={(e) => setConfirm(e.target.value)}
-                  required
-                />
-              </FormGroup>
-              <Button color="primary" block type="submit" disabled={loading}>
-                {loading ? 'A guardar…' : 'Guardar nova senha'}
-              </Button>
-            </Form>
-          )}
-          {!ok ? (
-            <p className="text-center mt-4 mb-0">
-              <Link href="/login">Voltar ao login</Link>
+
+      <LuditecaAuthCard
+        title="Definir nova palavra-passe"
+        subtitle={
+          ok
+            ? 'A sua conta está pronta para um novo início de sessão.'
+            : 'Introduza o token recebido e escolha uma palavra-passe segura.'
+        }
+        footer={
+          !ok ? (
+            <p className="mb-0 text-center">
+              <Link href="/login" className="luditeca-auth-link">
+                Voltar ao login
+              </Link>
             </p>
-          ) : null}
-        </CardBody>
-      </Card>
-    </Col>
+          ) : null
+        }
+      >
+        {ok ? (
+          <div className="text-center">
+            <LuditecaAlert color="success" className="mb-4">
+              Palavra-passe atualizada com sucesso.
+            </LuditecaAlert>
+            <LuditecaButton variant="primary" tag={Link} href="/login" className="w-100" size="lg">
+              Ir para o login
+            </LuditecaButton>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit}>
+            {error ? (
+              <LuditecaAlert color="danger" className="mb-4">
+                {error}
+              </LuditecaAlert>
+            ) : null}
+
+            <LuditecaInput
+              label="Token de recuperação"
+              type="text"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              required
+              disabled={loading}
+              hint="O token vem no email de recuperação ou na consola em desenvolvimento."
+            />
+            <LuditecaInput
+              label="Nova palavra-passe"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={6}
+              disabled={loading}
+              autoComplete="new-password"
+            />
+            <LuditecaInput
+              label="Confirmar palavra-passe"
+              type="password"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              required
+              disabled={loading}
+              autoComplete="new-password"
+            />
+
+            <LuditecaButton
+              type="submit"
+              variant="primary"
+              className="w-100"
+              size="lg"
+              loading={loading}
+              loadingLabel="A guardar…"
+              disabled={loading}
+            >
+              Guardar nova palavra-passe
+            </LuditecaButton>
+          </form>
+        )}
+      </LuditecaAuthCard>
+    </>
   );
 }
 

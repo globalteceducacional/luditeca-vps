@@ -1,5 +1,5 @@
 import { buildInteractiveSceneGraph, validateInteractiveScenesClient } from './interactiveScenes';
-import { isQuizTimelineItem } from './bookContentTimeline';
+import { filterScenesOnly, isQuizTimelineItem } from './bookContentTimeline';
 import { normalizeQuizForApi } from './bookTypes';
 
 /**
@@ -42,10 +42,19 @@ export function getBookPublishChecklist(bookType, form) {
 
   if (bookType === 'interactive') {
     const timeline = Array.isArray(f.pages) ? f.pages : [];
-    const scenes = timeline.filter((s) => !isQuizTimelineItem(s));
+    const scenes = filterScenesOnly(timeline);
     add('scenes', 'Pelo menos uma cena', scenes.length > 0, true, 1);
     const withImage = scenes.filter((s) => String(s?.image_url || '').trim());
-    add('scene_images', 'Todas as cenas com imagem', scenes.length > 0 && withImage.length === scenes.length, true, 1);
+    add(
+      'scene_images',
+      'Imagens nas cenas (recomendado)',
+      withImage.length === scenes.length,
+      false,
+      1,
+      scenes.length && withImage.length < scenes.length
+        ? 'A história pode ser só texto; imagens enriquecem a leitura na app.'
+        : null,
+    );
     const hasStart = scenes.some((s) => s.is_start);
     add('scene_start', 'Cena inicial definida', hasStart || scenes.length <= 1, true, 1);
     const validation = validateInteractiveScenesClient(timeline, { requireContent: true });

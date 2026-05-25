@@ -1,111 +1,90 @@
 /**
- * Helpers do editor interativo (IDs internos; rótulos amigáveis na UI).
+ * Helpers do editor interativo (páginas numeradas — «Escolha sua aventura»).
  */
 
+import {
+  extractStoryPages,
+  getPageId,
+  getChoiceTargetPageId,
+  getPageLabel,
+  isQuizPageRow,
+  isInteractiveMetaRow,
+  normalizeAdventurePages,
+  validateAdventureStory,
+} from './interactiveAdventure';
+
 export function nextSceneId(scenes) {
-  const list = Array.isArray(scenes) ? scenes : [];
+  const list = extractStoryPages(scenes);
+  const used = new Set(list.map((s) => getPageId(s)).filter(Boolean));
   let n = list.length + 1;
-  const used = new Set(list.map((s) => String(s?.scene_id || '').trim()).filter(Boolean));
-  while (used.has(`scene_${n}`)) n += 1;
-  return `scene_${n}`;
+  while (used.has(n)) n += 1;
+  return String(n);
+}
+
+export function nextPageId(scenes) {
+  const list = extractStoryPages(scenes);
+  const used = new Set(list.map((s) => getPageId(s)).filter(Boolean));
+  let n = list.length + 1;
+  while (used.has(n)) n += 1;
+  return n;
 }
 
 export function getSceneDisplayLabel(scene, index = 0) {
-  const title = String(scene?.scene_title ?? '').trim();
-  if (title) return title;
-  const text = String(scene?.text ?? '').trim();
-  if (text) return text.length > 40 ? `${text.slice(0, 40)}…` : text;
-  return `Cena ${index + 1}`;
+  return getPageLabel(scene, index);
 }
 
-function isQuizPageRow(row) {
-  return String(row?.page_type || '').toLowerCase() === 'quiz';
-}
-
-/** Garante IDs únicos e marca a primeira cena como inicial quando há só uma ou nenhuma marcada. */
+/** Garante page_id únicos, destinos e página inicial. */
 export function normalizeInteractiveScenes(scenes) {
-  const list = (Array.isArray(scenes) ? scenes : [])
-    .filter((s) => !isQuizPageRow(s))
-    .map((s) => ({ ...s }));
-  if (!list.length) return list;
-
-  const used = new Set();
-  list.forEach((scene, idx) => {
-    let id = String(scene.scene_id ?? '').trim();
-    if (!id || used.has(id)) {
-      id = nextSceneId(list.slice(0, idx));
-      while (used.has(id)) {
-        id = `${id}_${idx}`;
-      }
-    }
-    scene.scene_id = id;
-    used.add(id);
-  });
-
-  const hasStart = list.some((s) => s.is_start);
-  if (!hasStart) {
-    list[0].is_start = true;
-    for (let i = 1; i < list.length; i += 1) list[i].is_start = false;
-  }
-
-  return list;
+  return extractStoryPages(normalizeAdventurePages(scenes).pages);
 }
 
 /** Ao remover uma cena, limpa escolhas que apontavam para ela. */
-export function remapChoicesAfterSceneRemoval(scenes, removedSceneId) {
-  const id = String(removedSceneId || '').trim();
-  if (!id) return scenes;
-  return (Array.isArray(scenes) ? scenes : []).map((scene) => ({
-    ...scene,
-    choices: (scene.choices || []).map((ch) => {
-      if (String(ch?.target_scene_id || '') === id) {
-        return { ...ch, target_scene_id: '' };
-      }
-      return ch;
-    }),
-  }));
+export function remapChoicesAfterSceneRemoval(scenes, removedPageId) {
+  const removed = Number(removedPageId) || String(removedPageId || '').trim();
+  if (!removed) return scenes;
+  return (Array.isArray(scenes) ? scenes : []).map((scene) => {
+    if (isQuizPageRow(scene) || isInteractiveMetaRow(scene)) return scene;
+    return {
+      ...scene,
+      choices: (scene.choices || []).map((ch) => {
+        const target = getChoiceTargetPageId(ch);
+        if (target === removed || String(ch?.target_scene_id) === String(removed)) {
+          return { ...ch, target_page_id: null, target_scene_id: '' };
+        }
+        return ch;
+      }),
+    };
+  });
+}
+
+/** Cenas disponíveis como destino de uma escolha (exclui a página actual). */
+export function listChoiceDestinationScenes(scenes, currentScene) {
+  const currentId = getPageId(currentScene);
+  const list = extractStoryPages(Array.isArray(scenes) ? scenes : []);
+  return list.filter((s) => {
+    const pid = getPageId(s);
+    return pid != null && pid !== currentId;
+  });
 }
 
 /** Validação no cliente antes do submit (mensagens para editores). */
 export function validateInteractiveScenesClient(scenes, { requireContent = false } = {}) {
   const raw = Array.isArray(scenes) ? scenes : [];
-  const list = normalizeInteractiveScenes(raw);
-  if (!list.length && raw.some(isQuizPageRow)) {
-    return { ok: false, error: 'Adicione pelo menos uma cena além das perguntas de quiz.' };
+  if (!extractStoryPages(raw).length && raw.some(isQuizPageRow)) {
+    return { ok: false, error: 'Adicione pelo menos uma página além das perguntas de quiz.' };
   }
-  if (!list.length) {
-    return { ok: false, error: 'Adicione pelo menos uma cena.' };
-  }
-
-  for (let i = 0; i < list.length; i += 1) {
-    const scene = list[i];
-    const label = getSceneDisplayLabel(scene, i);
-    if (requireContent && !String(scene.image_url || '').trim()) {
-      return { ok: false, error: `«${label}» precisa de uma imagem.` };
-    }
-    const choices = Array.isArray(scene.choices) ? scene.choices : [];
-    for (const ch of choices) {
-      const target = String(ch?.target_scene_id || '').trim();
-      if (target && !list.some((s) => s.scene_id === target)) {
-        return {
-          ok: false,
-          error: `Uma escolha em «${label}» aponta para uma cena que já não existe.`,
-        };
-      }
-    }
-  }
-
-  if (list.length > 1 && !list.some((s) => s.is_start)) {
-    return { ok: false, error: 'Marque qual cena inicia a história.' };
-  }
-
-  return { ok: true, scenes: list };
+  return validateAdventureStory(raw, { requireContent });
 }
 
 const GRAPH_NODE_W = 148;
 const GRAPH_NODE_H = 52;
 const GRAPH_GAP_X = 28;
 const GRAPH_GAP_Y = 72;
+
+function sceneGraphKey(scene) {
+  const pid = getPageId(scene);
+  return pid != null ? String(pid) : String(scene?.scene_id ?? '').trim();
+}
 
 /**
  * Layout simples (BFS a partir da cena inicial) para desenhar o grafo no CMS.
@@ -116,28 +95,37 @@ export function buildInteractiveSceneGraph(scenes) {
     return { nodes: [], edges: [], width: 320, height: 120, issues: [] };
   }
 
-  const byId = new Map(list.map((s, index) => [s.scene_id, { scene: s, index }]));
+  const byId = new Map();
+  list.forEach((s, index) => {
+    const key = sceneGraphKey(s);
+    if (key) byId.set(key, { scene: s, index });
+  });
+
   const startScene = list.find((s) => s.is_start) || list[0];
+  const startKey = sceneGraphKey(startScene);
   const depths = new Map();
-  const queue = [[startScene.scene_id, 0]];
+  const queue = startKey ? [[startKey, 0]] : [];
   const visited = new Set();
 
   while (queue.length) {
     const [id, depth] = queue.shift();
-    if (!visited.has(id)) {
-      visited.add(id);
-      depths.set(id, depth);
-    }
+    if (!id || visited.has(id)) continue;
+    visited.add(id);
+    depths.set(id, depth);
     const scene = byId.get(id)?.scene;
     if (!scene) continue;
     for (const ch of scene.choices || []) {
-      const target = String(ch?.target_scene_id || '').trim();
-      if (target && byId.has(target)) queue.push([target, depth + 1]);
+      const targetId = getChoiceTargetPageId(ch);
+      const target = targetId != null ? String(targetId) : '';
+      if (target && byId.has(target) && !visited.has(target)) {
+        queue.push([target, depth + 1]);
+      }
     }
   }
 
   list.forEach((s) => {
-    if (!depths.has(s.scene_id)) depths.set(s.scene_id, 0);
+    const key = sceneGraphKey(s);
+    if (key && !depths.has(key)) depths.set(key, 0);
   });
 
   const layerMap = new Map();
@@ -176,12 +164,15 @@ export function buildInteractiveSceneGraph(scenes) {
 
   const edges = [];
   list.forEach((scene) => {
+    const from = sceneGraphKey(scene);
+    if (!from) return;
     (scene.choices || []).forEach((ch, ci) => {
-      const to = String(ch?.target_scene_id || '').trim();
+      const targetId = getChoiceTargetPageId(ch);
+      const to = targetId != null ? String(targetId) : '';
       if (!to) return;
       edges.push({
-        id: `${scene.scene_id}-${ci}-${to}`,
-        from: scene.scene_id,
+        id: `${from}-${ci}-${to}`,
+        from,
         to,
         label: String(ch?.label || '').trim() || '→',
         broken: !byId.has(to),

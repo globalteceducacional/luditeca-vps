@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { Spinner } from 'reactstrap';
 import ArgonAdmin from '../layouts/ArgonAdmin';
-import { CmsThemeProvider } from '../contexts/cmsTheme';
 import { useAuth } from '../contexts/auth';
 import { ROLES } from '../lib/roles';
 
@@ -34,9 +33,5 @@ export default function Layout({ children }) {
 
   if (!user) return null;
 
-  return (
-    <CmsThemeProvider>
-      <ArgonAdmin>{children}</ArgonAdmin>
-    </CmsThemeProvider>
-  );
+  return <ArgonAdmin>{children}</ArgonAdmin>;
 }

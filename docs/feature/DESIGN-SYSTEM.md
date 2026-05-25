@@ -132,9 +132,16 @@ import { BookCatalogGridSkeleton, TableRowsSkeleton } from '../components/argon/
 ### Tema escuro CMS (Fase 4)
 
 - Preferência: `localStorage` chave `luditeca-cms-theme` — `light` | `dark` | `system`
-- Contexto: `CmsThemeProvider` + `useCmsTheme()` em `frontend/contexts/cmsTheme.js`
-- Escopo: `.luditeca-cms-chrome[data-luditeca-theme="dark"]` (sidebar + conteúdo; `/app` não usa este shell)
-- Toggle: `LuditecaThemeToggle` na navbar; select em `/profile` («Aparência do painel»)
+- Contexto: `CmsThemeProvider` em `frontend/pages/_app.js` (global) + `useCmsTheme()` em `frontend/contexts/cmsTheme.js`
+- Atributo: `html[data-luditeca-theme="dark"]` — tokens em `tokens.css`; overrides CMS em `luditeca-ds.css`
+- Login/recuperar senha: `AuthThemeToggle` (mesma preferência); estilos `.luditeca-auth-page*`
+- Toggle CMS: `LuditecaThemeToggle` na navbar; select em `/profile` («Aparência do painel»)
+
+### Autenticação (login)
+
+- Layout: `frontend/layouts/ArgonAuth.js` — painel marca + formulário
+- Componentes: `LuditecaAuthCard`, `LuditecaLogo`, `AuthHeroIllustration`, `AuthThemeToggle`
+- Páginas: `/login`, `/forgot-password`, `/reset-password`
 
 ## Referências de ficheiros
 

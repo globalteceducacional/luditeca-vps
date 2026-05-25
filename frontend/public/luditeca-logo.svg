@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none" role="img" aria-label="Luditeca">
+  <defs>
+    <linearGradient id="g" x1="8" y1="6" x2="40" y2="42" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#7c3aed"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="40" height="40" rx="12" fill="url(#g)"/>
+  <path d="M14 16.5c0-1.1.9-2 2-2h6.2c.6 0 1.2.3 1.6.8l1.2 1.6c.4.5 1 .8 1.6.8H32c1.1 0 2 .9 2 2v14.5c0 1.1-.9 2-2 2H16c-1.1 0-2-.9-2-2V16.5z" fill="#fff" fill-opacity=".95"/>
+  <path d="M24 14.5v22" stroke="#4f46e5" stroke-opacity=".35" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M18 22h4M26 22h4M18 26.5h4M26 26.5h3" stroke="#4f46e5" stroke-opacity=".45" stroke-width="1.25" stroke-linecap="round"/>
+  <circle cx="33" cy="15" r="3" fill="#fbbf24" stroke="#fff" stroke-width="1.25"/>
+</svg>

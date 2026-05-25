@@ -7,6 +7,19 @@ export const BOOK_TYPE_VALUES: BookType[] = [
 ];
 
 const BOOK_TYPE_SET = new Set<string>(BOOK_TYPE_VALUES);
+const PAGE_TYPE_INTERACTIVE_META = 'interactive_meta';
+
+function getInteractivePageKey(scene: Record<string, unknown>): string {
+  const n = Number(scene.page_id);
+  if (Number.isFinite(n) && n > 0 && Math.floor(n) === n) return String(n);
+  return String(scene.scene_id ?? '').trim();
+}
+
+function getChoiceTargetKey(ch: Record<string, unknown>): string {
+  const n = Number(ch.target_page_id);
+  if (Number.isFinite(n) && n > 0) return String(n);
+  return String(ch.target_scene_id ?? '').trim();
+}
 
 export function parseBookType(v: unknown): BookType | undefined {
   if (v === null || v === undefined || v === '') return undefined;
@@ -130,34 +143,31 @@ export function validateBookTypePages(
       }
       continue;
     }
+    if (pageType === PAGE_TYPE_INTERACTIVE_META) continue;
     sceneCount += 1;
-    const sceneId = String(scene.scene_id ?? '').trim();
+    const sceneId = getInteractivePageKey(scene);
     if (!sceneId) {
-      return { ok: false, error: `Cena ${i + 1} sem identificador interno.` };
+      return { ok: false, error: `Página ${i + 1} sem ID (page_id ou scene_id).` };
     }
     if (sceneIds.has(sceneId)) {
       return { ok: false, error: `Cena ${i + 1}: identificador duplicado.` };
     }
     sceneIds.add(sceneId);
     if (scene.is_start) hasStart = true;
-    if (strict) {
-      const imageUrl = String(scene.image_url ?? '').trim();
-      if (!imageUrl) {
-        return { ok: false, error: `Cena ${i + 1} precisa de imagem.` };
-      }
-    }
+    // Interativo: imagem opcional (história pode ser só texto + escolhas).
   }
 
   for (const row of pages) {
     if (!row || typeof row !== 'object') continue;
     const scene = row as Record<string, unknown>;
-    if (String(scene.page_type ?? '').trim().toLowerCase() === 'quiz') continue;
+    const pt = String(scene.page_type ?? '').trim().toLowerCase();
+    if (pt === 'quiz' || pt === PAGE_TYPE_INTERACTIVE_META) continue;
     const choices = Array.isArray(scene.choices) ? scene.choices : [];
     for (const ch of choices) {
       if (!ch || typeof ch !== 'object') continue;
-      const target = String((ch as Record<string, unknown>).target_scene_id ?? '').trim();
+      const target = getChoiceTargetKey(ch as Record<string, unknown>);
       if (target && !sceneIds.has(target)) {
-        return { ok: false, error: 'Uma escolha aponta para uma cena que não existe.' };
+        return { ok: false, error: 'Uma escolha aponta para uma página que não existe.' };
       }
     }
   }

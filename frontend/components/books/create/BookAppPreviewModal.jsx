@@ -3,7 +3,10 @@ import {
   AppDigitalBookReader,
   AppInteractiveBookReader,
 } from '../../app/AppBookTypeReaders';
-import { buildAnimatedReaderSlots } from '../../../lib/bookContentTimeline';
+import {
+  buildAnimatedReaderSlots,
+  extractQuizFromTimeline,
+} from '../../../lib/bookContentTimeline';
 import { LuditecaAlert, LuditecaButton, LuditecaModal } from '../../argon/luditeca';
 
 /**
@@ -11,6 +14,9 @@ import { LuditecaAlert, LuditecaButton, LuditecaModal } from '../../argon/ludite
  */
 export default function BookAppPreviewModal({ open, toggle, bookType, form }) {
   const pages = Array.isArray(form?.pages) ? form.pages : [];
+  const quizFromTimeline = extractQuizFromTimeline(pages);
+  const quiz =
+    Array.isArray(form?.quiz) && form.quiz.length > 0 ? form.quiz : quizFromTimeline;
 
   const hasContent =
     bookType === 'digital'
@@ -46,7 +52,7 @@ export default function BookAppPreviewModal({ open, toggle, bookType, form }) {
           <AppAnimatedBookReader pages={pages} soundtrackUrl={form?.soundtrack_url} quiz={form?.quiz} />
         ) : null}
         {bookType === 'interactive' ? (
-          <AppInteractiveBookReader scenes={pages} quiz={quiz} />
+          <AppInteractiveBookReader bookId="preview" scenes={pages} quiz={quiz} />
         ) : null}
         {bookType === 'digital' ? (
           <AppDigitalBookReader pdfUrl={form?.pdf_url} epubUrl={form?.epub_url} />

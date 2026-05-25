@@ -78,6 +78,7 @@
   /* Layout */
   --luditeca-content-max: 1280px;
   --luditeca-form-max: 880px;
+  --luditeca-auth-form-max: 26rem;
   --luditeca-app-max: 56rem;
   --luditeca-navbar-offset: 4.5rem;
 
