@@ -27,7 +27,12 @@ function mediaSrc(url) {
 /**
  * Leitor «Escolha sua aventura»: páginas numeradas, inventário, flags, save/load, voltar.
  */
-export default function AppInteractiveAdventureReader({ bookId, pages = [] }) {
+export default function AppInteractiveAdventureReader({
+  bookId,
+  pages = [],
+  jumpToPageId = null,
+  onJumpApplied,
+}) {
   const storyPages = useMemo(() => extractStoryPages(pages), [pages]);
   const pageIndex = useMemo(() => buildPageIndex(storyPages), [storyPages]);
   const startId = useMemo(() => getStartPageId(storyPages), [storyPages]);
@@ -40,13 +45,21 @@ export default function AppInteractiveAdventureReader({ bookId, pages = [] }) {
       setRun(null);
       return;
     }
+    if (jumpToPageId != null && pageIndex.has(jumpToPageId)) {
+      const base = createInitialRunState(bookId, storyPages);
+      const jumped = navigateToPage(base, jumpToPageId, storyPages);
+      setRun(jumped);
+      saveRunState(bookId, jumped);
+      onJumpApplied?.();
+      return;
+    }
     const saved = loadRunState(bookId);
     if (saved?.currentPageId && pageIndex.has(saved.currentPageId)) {
       setRun(saved);
     } else {
       setRun(createInitialRunState(bookId, storyPages));
     }
-  }, [bookId, startId, storyPages, pageIndex]);
+  }, [bookId, startId, storyPages, pageIndex, jumpToPageId, onJumpApplied]);
 
   const persist = useCallback(
     (next) => {

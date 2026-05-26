@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 import { resolveBookAssetUrl, BOOK_MEDIA_BUCKETS } from '../../lib/bookMediaSrc';
 import {
@@ -8,7 +8,7 @@ import {
 } from '../../lib/bookContentTimeline';
 import { getSceneDisplayLabel } from '../../lib/interactiveScenes';
 import AppInteractiveAdventureReader from './AppInteractiveAdventureReader';
-import { extractStoryPages } from '../../lib/interactiveAdventure';
+import { extractStoryPages, getChoiceTargetPageId, getPageId } from '../../lib/interactiveAdventure';
 
 function mediaSrc(url, bucket = BOOK_MEDIA_BUCKETS.pages) {
   return resolveBookAssetUrl(url, bucket);
@@ -195,7 +195,7 @@ export function AppAnimatedBookReader({ pages = [], soundtrackUrl, quiz }) {
 }
 
 /** Modo sequência: cenas e quiz na ordem definida no CMS. */
-function AppInteractiveSequenceReader({ pages = [], quiz, sceneById, onFollowChoice }) {
+function AppInteractiveSequenceReader({ pages = [], quiz, pageIndex, onFollowChoice }) {
   const slots = useMemo(() => buildInteractiveReaderSlots(pages, quiz), [pages, quiz]);
   const [index, setIndex] = useState(0);
 
@@ -242,8 +242,8 @@ function AppInteractiveSequenceReader({ pages = [], quiz, sceneById, onFollowCho
       {choices.length > 0 && !scene?.is_ending ? (
         <ul className="space-y-2">
           {choices.map((ch, i) => {
-            const target = String(ch?.target_scene_id || '').trim();
-            const canFollow = target && sceneById?.has(target);
+            const target = getChoiceTargetPageId(ch);
+            const canFollow = target != null && pageIndex?.has(target);
             return (
               <li key={i}>
                 {canFollow ? (
@@ -280,21 +280,25 @@ function AppInteractiveSequenceReader({ pages = [], quiz, sceneById, onFollowCho
 export function AppInteractiveBookReader({ bookId, scenes = [], quiz }) {
   const hasSequence = useMemo(() => timelineHasInlineQuiz(scenes), [scenes]);
   const [mode, setMode] = useState(hasSequence ? 'sequence' : 'adventure');
+  const [jumpPageId, setJumpPageId] = useState(null);
   const storyPages = useMemo(() => extractStoryPages(scenes), [scenes]);
 
-  const sceneList = useMemo(() => {
-    return (Array.isArray(scenes) ? scenes : []).filter(
-      (s) => String(s?.page_type || '').toLowerCase() !== 'quiz',
-    );
-  }, [scenes]);
-
-  const byId = useMemo(() => {
+  const pageIndex = useMemo(() => {
     const map = new Map();
-    sceneList.forEach((s) => {
-      if (s?.scene_id) map.set(String(s.scene_id), s);
+    storyPages.forEach((s) => {
+      const id = getPageId(s);
+      if (id != null) map.set(id, s);
     });
     return map;
-  }, [sceneList]);
+  }, [storyPages]);
+
+  const handleFollowChoice = useCallback((targetPageId) => {
+    const id = Number(targetPageId);
+    if (Number.isFinite(id) && id > 0) {
+      setJumpPageId(id);
+      setMode('adventure');
+    }
+  }, []);
 
   if (!storyPages.length && !hasSequence) {
     return <p className="text-sm text-luditeca-muted">Este livro ainda não tem páginas da história.</p>;
@@ -330,13 +334,18 @@ export function AppInteractiveBookReader({ bookId, scenes = [], quiz }) {
       ) : null}
 
       {mode === 'adventure' || !hasSequence ? (
-        <AppInteractiveAdventureReader bookId={bookId} pages={scenes} />
+        <AppInteractiveAdventureReader
+          bookId={bookId}
+          pages={scenes}
+          jumpToPageId={jumpPageId}
+          onJumpApplied={() => setJumpPageId(null)}
+        />
       ) : (
         <AppInteractiveSequenceReader
           pages={scenes}
           quiz={quiz}
-          sceneById={byId}
-          onFollowChoice={() => setMode('adventure')}
+          pageIndex={pageIndex}
+          onFollowChoice={handleFollowChoice}
         />
       )}
     </div>
