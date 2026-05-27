@@ -90,14 +90,15 @@ export async function registerAppRoutes(app: FastifyInstance) {
         }),
         prisma.book.count({ where }),
       ]);
-      return reply.send(
-        listEnvelope(
-          rows.map((r) => bookCardResponse(r)),
-          total,
-          limit,
-          skip,
-        ),
+      const mediaUrlCache = new Map<string, string>();
+      const items = await Promise.all(
+        rows.map(async (r) => {
+          const card = bookCardResponse(r) as Record<string, unknown>;
+          await hydrateBookAssetUrls(card, mediaUrlCache);
+          return card;
+        }),
       );
+      return reply.send(listEnvelope(items, total, limit, skip));
     },
   );
 

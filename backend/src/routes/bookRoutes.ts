@@ -303,9 +303,17 @@ export async function registerBookRoutes(app: FastifyInstance) {
         }),
         prisma.book.count(),
       ]);
+      const mediaUrlCache = new Map<string, string>();
+      const data = await Promise.all(
+        rows.map(async (r) => {
+          const card = bookCardResponse(r) as Record<string, unknown>;
+          await hydrateBookAssetUrls(card, mediaUrlCache);
+          return card;
+        }),
+      );
       return reply.send(
         jsonSafe({
-          data: rows.map((r) => bookCardResponse(r)),
+          data,
           total,
           limit,
           skip,

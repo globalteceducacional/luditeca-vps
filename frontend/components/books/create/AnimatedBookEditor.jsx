@@ -1,6 +1,6 @@
 import { FiArrowDown, FiArrowUp, FiHelpCircle, FiPlus, FiTrash2 } from 'react-icons/fi';
 import { sortFilesByNumericName } from '../../../lib/bookTypes';
-import { resolveBookAssetUrl } from '../../../lib/bookMediaSrc';
+import { BookPreviewImage } from './BookPreviewMedia';
 import {
   emptyQuizTimelineItem,
   insertQuizAfterTimeline,
@@ -208,8 +208,8 @@ export default function AnimatedBookEditor({ form, onChange, onUpload, uploading
             ) : (
               <>
                 {item.image_url ? (
-                  <img
-                    src={resolveBookAssetUrl(item.image_url) || item.image_url}
+                  <BookPreviewImage
+                    url={item.image_url}
                     alt=""
                     className="mb-2 rounded"
                     style={{ maxHeight: 100 }}

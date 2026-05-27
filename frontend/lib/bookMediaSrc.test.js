@@ -56,4 +56,12 @@ describe('canonicalBookAssetUrl', () => {
       }),
     ).toBe('uid/library/book-animated/a.gif');
   });
+
+  it('completa path relativo com userId/library', () => {
+    expect(
+      canonicalBookAssetUrl({ path: 'book-animated/a.gif' }, 'pages', {
+        userId: 'uid',
+      }),
+    ).toBe('uid/library/book-animated/a.gif');
+  });
 });

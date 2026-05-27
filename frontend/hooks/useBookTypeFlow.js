@@ -7,7 +7,7 @@ import { getCategories } from '../lib/categories';
 import { uploadFile } from '../lib/storageApi';
 import { useAuth } from '../contexts/auth';
 import { CMS_ROLES, isRole } from '../lib/roles';
-import { canonicalBookAssetUrl } from '../lib/bookMediaSrc';
+import { canonicalBookAssetUrl, normalizeLegacyAssetPath } from '../lib/bookMediaSrc';
 import { normalizeQuizForApi } from '../lib/bookTypes';
 import {
   isQuizTimelineItem,
@@ -35,23 +35,48 @@ export function emptyInteractiveScene(
   return emptyAdventurePage(id, { isFirst, isEnding, endingType });
 }
 
-function mapBookToForm(data, bookType) {
+function normalizeFormAssets(formSlice, bookType, userId) {
+  if (!userId) return formSlice;
+  const enrich = (raw, bucket) =>
+    normalizeLegacyAssetPath(raw, { userId, root: 'library', bucket });
+
+  const next = { ...formSlice };
+  if (next.cover_image) next.cover_image = enrich(next.cover_image, 'covers');
+  if (next.soundtrack_url) next.soundtrack_url = enrich(next.soundtrack_url, 'pages');
+  if (next.pdf_url) next.pdf_url = enrich(next.pdf_url, 'pages');
+  if (next.epub_url) next.epub_url = enrich(next.epub_url, 'pages');
+
+  if (Array.isArray(next.pages)) {
+    next.pages = next.pages.map((item) => {
+      const row = { ...item };
+      if (row.image_url) row.image_url = enrich(row.image_url, 'pages');
+      return row;
+    });
+  }
+  return next;
+}
+
+function mapBookToForm(data, bookType, userId = null) {
   const timeline = timelineFromBook(data, bookType);
 
-  return {
-    title: data?.title || '',
-    description: data?.description || '',
-    age_range: data?.age_range || '',
-    author_id: data?.author_id || '',
-    category_id: data?.category_id || '',
-    cover_image: data?.cover_image || '',
-    pages: timeline,
-    quiz: [],
-    soundtrack_url: data?.soundtrack_url || '',
-    pdf_url: data?.pdf_url || '',
-    epub_url: data?.epub_url || '',
-    workflow_status: data?.workflow_status || 'draft',
-  };
+  return normalizeFormAssets(
+    {
+      title: data?.title || '',
+      description: data?.description || '',
+      age_range: data?.age_range || '',
+      author_id: data?.author_id || '',
+      category_id: data?.category_id || '',
+      cover_image: data?.cover_image || '',
+      pages: timeline,
+      quiz: [],
+      soundtrack_url: data?.soundtrack_url || '',
+      pdf_url: data?.pdf_url || '',
+      epub_url: data?.epub_url || '',
+      workflow_status: data?.workflow_status || 'draft',
+    },
+    bookType,
+    userId,
+  );
 }
 
 function isPublishedStatus(status) {
@@ -191,7 +216,7 @@ export function useBookTypeFlow({ bookType, bookId = null }) {
         setLoadingBook(false);
         return;
       }
-      setForm(mapBookToForm(data, bookType));
+      setForm(mapBookToForm(data, bookType, user?.id));
       setLoadingBook(false);
     })();
     return () => {
@@ -212,7 +237,10 @@ export function useBookTypeFlow({ bookType, bookId = null }) {
     try {
       const path = pathPrefix ? `${pathPrefix}/${file.name}` : file.name;
       const uploaded = await uploadFile(bucket, path, file);
-      const canonical = canonicalBookAssetUrl(uploaded, bucket);
+      const canonical = canonicalBookAssetUrl(uploaded, bucket, {
+        userId: user?.id,
+        root: 'library',
+      });
       if (!canonical) throw new Error('Upload sem URL.');
       return canonical;
     } finally {
@@ -368,7 +396,7 @@ export function useBookTypeFlow({ bookType, bookId = null }) {
     }
 
     if (result.data) {
-      setForm(mapBookToForm(result.data, bookType));
+      setForm(mapBookToForm(result.data, bookType, user?.id));
     }
 
     return { ok: true, data: result.data, bookId: newId || targetId };

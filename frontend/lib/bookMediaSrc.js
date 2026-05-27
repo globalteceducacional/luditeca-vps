@@ -114,11 +114,41 @@ export function resolveBookAssetUrl(url, bucket = BOOK_MEDIA_BUCKETS.pages) {
   return getFileUrl(bucket, s);
 }
 
+/** Corrige caminhos antigos (`book-animated/x.png`) para chave completa no storage. */
+export function normalizeLegacyAssetPath(raw, { userId, root = 'library', bucket } = {}) {
+  const value = String(raw || '').trim();
+  if (!value) return value;
+  if (/^https?:\/\//i.test(value)) {
+    const storage = parseBookMediaStorage(value, bucket);
+    return storage?.filePath || value;
+  }
+  const storage = parseBookMediaStorage(value, bucket);
+  if (storage?.filePath?.includes('/library/')) return storage.filePath;
+  if (userId && storage?.filePath?.startsWith(`${userId}/`)) return storage.filePath;
+  return enrichStoragePath(storage?.filePath || value, { userId, root }) || value;
+}
+
+function enrichStoragePath(filePath, { userId, root = 'library' } = {}) {
+  const rel = String(filePath || '').replace(/^\/+/, '');
+  if (!rel) return null;
+  if (userId && rel.startsWith(`${userId}/`)) return rel;
+  if (rel.includes('/library/')) return rel;
+  if (userId) {
+    if (rel.startsWith(`${root}/`)) return `${userId}/${rel}`;
+    return `${userId}/${root}/${rel}`;
+  }
+  return rel;
+}
+
 /**
  * Após upload: chave estável no bucket (ex.: `uid/library/book-animated/file.gif`).
  * Evita gravar URLs com `/media/` duplicado ou presign que expira.
  */
-export function canonicalBookAssetUrl(uploadResult, bucket = BOOK_MEDIA_BUCKETS.pages) {
+export function canonicalBookAssetUrl(
+  uploadResult,
+  bucket = BOOK_MEDIA_BUCKETS.pages,
+  opts = {},
+) {
   if (!uploadResult) return null;
   const candidates =
     typeof uploadResult === 'string'
@@ -130,12 +160,24 @@ export function canonicalBookAssetUrl(uploadResult, bucket = BOOK_MEDIA_BUCKETS.
           uploadResult.filePath,
         ].filter(Boolean);
 
+  // Preferir caminhos completos (com `uid/library/`) extraídos da URL presignada.
   for (const raw of candidates) {
     const storage = parseBookMediaStorage(raw, bucket);
-    if (storage?.filePath) return storage.filePath;
+    const fp = storage?.filePath;
+    if (fp && (fp.includes('/library/') || (opts.userId && fp.startsWith(`${opts.userId}/`)))) {
+      return fp;
+    }
   }
+
+  for (const raw of candidates) {
+    const storage = parseBookMediaStorage(raw, bucket);
+    if (storage?.filePath) {
+      return enrichStoragePath(storage.filePath, opts);
+    }
+  }
+
   const fallback = candidates[0];
-  return fallback ? resolveBookAssetUrl(fallback, bucket) : null;
+  return fallback ? enrichStoragePath(String(fallback), opts) : null;
 }
 
 export { getMediaBaseUrl };
