@@ -8,6 +8,12 @@ import {
   hashPasswordResetToken,
   writeAuditLog,
 } from '../lib/auditLog.js';
+import { applyReadingXpAwards } from '../lib/xpRewards.js';
+import { buildProfileStats } from '../lib/profileStats.js';
+import {
+  achievementsCatalogPayload,
+  syncAchievementsForUser,
+} from '../lib/profileAchievementSync.js';
 
 export async function registerAuthRoutes(app: FastifyInstance) {
   const parseJsonMap = (value: unknown): Record<string, unknown> => {
@@ -299,7 +305,33 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         name: row.profile?.name ?? row.name ?? '',
         icone: row.profile?.icone ?? null,
         books_read_history: row.profile?.booksReadHistory ?? [],
+        age: row.profile?.age ?? null,
+        avatar_id: row.profile?.avatarId ?? null,
+        xp_total: row.profile?.xpTotal ?? 0,
+        xp_balance: row.profile?.xpBalance ?? 0,
+        badges: row.profile?.badges ?? [],
+        stats: buildProfileStats({
+          progress: row.profile?.progress,
+          booksRead: row.profile?.booksRead,
+          favorites: row.profile?.favorites,
+          xpTotal: row.profile?.xpTotal ?? 0,
+        }),
       },
+    });
+  });
+
+  app.get('/me/profile/achievements', { preHandler: requireAuth }, async (request, reply) => {
+    const id = request.user!.id;
+    const synced = await syncAchievementsForUser(id);
+    const row = await prisma.profile.findUnique({ where: { userId: id } });
+
+    return reply.send({
+      stats: synced.stats,
+      badges: synced.badges,
+      xp_total: synced.xpTotal,
+      xp_balance: synced.xpBalance,
+      achievements: achievementsCatalogPayload(row?.badges ?? synced.badges, synced.stats),
+      newly_unlocked: synced.unlocked,
     });
   });
 
@@ -307,6 +339,11 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     const body = request.body as {
       name?: string;
       icone?: string | null;
+      age?: unknown;
+      avatar_id?: string | null;
+      xp_total?: unknown;
+      xp_balance?: unknown;
+      badges?: unknown;
       progress?: unknown;
       favorites?: unknown;
       permissions?: unknown;
@@ -322,18 +359,40 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       });
     }
 
+    const existing = await prisma.profile.findUnique({ where: { userId: id } });
+
     const profileData: Record<string, unknown> = {};
     if (body.name !== undefined) profileData.name = body.name?.trim() || null;
     if (body.icone !== undefined) profileData.icone = body.icone;
     if (body.progress !== undefined) profileData.progress = parseJsonMap(body.progress);
     if (body.permissions !== undefined) profileData.permissions = parseJsonMap(body.permissions);
     if (body.favorites !== undefined) profileData.favorites = parseJsonList(body.favorites);
+    if (body.badges !== undefined) profileData.badges = parseJsonList(body.badges);
     if (body.books_read_history !== undefined) {
       profileData.booksReadHistory = parseJsonList(body.books_read_history);
     }
+    if (body.age !== undefined) {
+      const age = Number(body.age);
+      profileData.age =
+        Number.isFinite(age) && age >= 1 && age <= 99 ? Math.floor(age) : null;
+    }
+    if (body.avatar_id !== undefined) {
+      const aid = body.avatar_id?.trim();
+      profileData.avatarId = aid && aid.length > 0 ? aid : null;
+    }
+    if (body.xp_total !== undefined) {
+      const xp = Number(body.xp_total);
+      profileData.xpTotal = Number.isFinite(xp) && xp >= 0 ? Math.floor(xp) : 0;
+    }
+    if (body.xp_balance !== undefined) {
+      const xp = Number(body.xp_balance);
+      profileData.xpBalance = Number.isFinite(xp) && xp >= 0 ? Math.floor(xp) : 0;
+    }
     if (body.books_read !== undefined) {
       const n = Number(body.books_read);
-      profileData.booksRead = Number.isFinite(n) && n >= 0 ? BigInt(Math.floor(n)) : BigInt(0);
+      const nextRead = Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
+      const prevRead = Number(existing?.booksRead ?? 0);
+      profileData.booksRead = BigInt(nextRead);
     }
 
     if (Object.keys(profileData).length > 0) {
@@ -344,7 +403,81 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       });
     }
 
-    return reply.send({ ok: true });
+    const synced = await syncAchievementsForUser(id);
+
+    return reply.send({
+      ok: true,
+      xp_total: synced.xpTotal,
+      xp_balance: synced.xpBalance,
+      badges: synced.badges,
+      achievements_unlocked: synced.unlocked,
+      xp_from_achievements: synced.xpFromAchievements,
+    });
+  });
+
+  app.post('/me/profile/award-xp', { preHandler: requireAuth }, async (request, reply) => {
+    const body = request.body as {
+      pages?: { book_id?: string; page_index?: unknown }[];
+      reading_seconds?: unknown;
+    };
+    const id = request.user!.id;
+
+    const pageInputs =
+      body.pages
+        ?.map((p) => ({
+          book_id: String(p.book_id ?? '').trim(),
+          page_index: Number(p.page_index),
+        }))
+        .filter((p) => p.book_id.length > 0) ?? [];
+
+    const readingSeconds = Number(body.reading_seconds ?? 0);
+
+    if (pageInputs.length === 0 && !(Number.isFinite(readingSeconds) && readingSeconds > 0)) {
+      return reply.code(400).send({
+        error: 'Envie páginas lidas e/ou reading_seconds para atribuir XP.',
+      });
+    }
+
+    const row = await prisma.profile.findUnique({ where: { userId: id } });
+    const currentProgress = parseJsonMap(row?.progress);
+    const awarded = applyReadingXpAwards(
+      row?.xpTotal ?? 0,
+      row?.xpBalance ?? 0,
+      currentProgress,
+      {
+        pages: pageInputs,
+        reading_seconds: Number.isFinite(readingSeconds) ? readingSeconds : 0,
+      },
+    );
+
+    await prisma.profile.upsert({
+      where: { userId: id },
+      create: {
+        userId: id,
+        xpTotal: awarded.xpTotal,
+        xpBalance: awarded.xpBalance,
+        progress: JSON.parse(JSON.stringify(awarded.progress)),
+        badges: row?.badges ?? [],
+      },
+      update: {
+        xpTotal: awarded.xpTotal,
+        xpBalance: awarded.xpBalance,
+        progress: JSON.parse(JSON.stringify(awarded.progress)),
+      },
+    });
+
+    const synced = await syncAchievementsForUser(id);
+
+    return reply.send({
+      ok: true,
+      xp_granted: awarded.xpGranted,
+      xp_total: synced.xpTotal,
+      xp_balance: synced.xpBalance,
+      badges: synced.badges,
+      achievements_unlocked: synced.unlocked,
+      xp_from_achievements: synced.xpFromAchievements,
+      stats: synced.stats,
+    });
   });
 
   app.get('/me/favorites/books', { preHandler: requireAuth }, async (request, reply) => {
