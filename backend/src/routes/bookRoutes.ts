@@ -742,8 +742,10 @@ export async function registerBookRoutes(app: FastifyInstance) {
       }
 
       const effectiveType = prev.bookType ?? data.bookType;
-      const effectiveWorkflow =
-        data.workflowStatus ??
+      const wfFromData =
+        typeof data.workflowStatus === 'string' ? data.workflowStatus : null;
+      const effectiveWorkflow: string =
+        wfFromData ??
         parseBookWorkflowStatus(clean.workflow_status ?? clean.workflowStatus) ??
         prev.workflowStatus ??
         'draft';
