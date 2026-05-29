@@ -25,6 +25,8 @@ RUN adduser --system --uid 1001 nextjs
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+# Falha cedo se o standalone não tiver server.js na raiz (evita crash loop silencioso).
+RUN test -f server.js || (echo "ERRO: server.js em falta no standalone" && ls -la && exit 1)
 USER nextjs
 EXPOSE 3000
 ENV PORT=3000
