@@ -46,8 +46,10 @@ function parseCorsOrigin() {
         }
         return [
             'http://localhost:3000',
+            'http://localhost:3001',
             'http://localhost:8080',
             'http://127.0.0.1:3000',
+            'http://127.0.0.1:3001',
             'http://127.0.0.1:8080',
         ];
     }
@@ -156,11 +158,15 @@ async function main() {
     // stream binário; em alguns casos interferia com a cadeia `onSend` do CORS e
     // o Chrome recebia resposta sem `Access-Control-Allow-Origin` em `fetch()`.
     app.get('/media/*', { compress: false }, async (request, reply) => {
-        const wildcard = String(request.params['*'] || '').replace(/^\/+/, '');
+        let wildcard = String(request.params['*'] || '').replace(/^\/+/, '');
         if (!wildcard || wildcard.includes('..')) {
             return reply.code(400).send({ error: 'Caminho inválido.' });
         }
-        const [bucket, ...rest] = wildcard.split('/');
+        // URLs antigas/erradas: `/media/media/pages/...` (prefixo `media/` duplicado).
+        let segments = wildcard.split('/').filter(Boolean);
+        while (segments[0] === 'media' && segments.length > 2)
+            segments.shift();
+        const [bucket, ...rest] = segments;
         if (!bucket || rest.length === 0) {
             return reply.code(400).send({ error: 'Caminho inválido.' });
         }

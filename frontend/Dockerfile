@@ -1,6 +1,8 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
+# postinstall corre copy-vendor-css.js — precisa de scripts/ antes do npm ci
+COPY scripts ./scripts
 RUN npm ci
 
 FROM node:20-alpine AS builder

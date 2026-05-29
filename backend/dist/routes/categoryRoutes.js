@@ -1,6 +1,7 @@
 import { prisma } from '../lib/prisma.js';
 import { jsonSafe } from '../lib/serialize.js';
 import { requireAdmin } from '../plugins/auth.js';
+import { requireCmsEditor } from '../plugins/auth.js';
 import { requireAuth } from '../plugins/auth.js';
 export async function registerCategoryRoutes(app) {
     // Leitura (necessário no fluxo de criar/editar livros): admin + editor
@@ -15,12 +16,16 @@ export async function registerCategoryRoutes(app) {
             return reply.code(404).send({ error: 'Categoria não encontrada.' });
         return reply.send(jsonSafe(row));
     });
-    // Escrita: somente ADM
-    app.post('/categories', { preHandler: requireAdmin }, async (request, reply) => {
+    // Criação no fluxo do livro: admin + editor (edição/apagar continuam só ADM)
+    app.post('/categories', { preHandler: requireCmsEditor }, async (request, reply) => {
         const body = request.body;
+        const name = String(body.name || '').trim();
+        if (!name) {
+            return reply.code(400).send({ error: 'O nome da categoria é obrigatório.' });
+        }
         const row = await prisma.category.create({
             data: {
-                name: String(body.name || ''),
+                name,
                 imageUrl: body.image_url != null ? String(body.image_url) : null,
             },
         });

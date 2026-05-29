@@ -7,8 +7,10 @@ import { requireAuth } from '../plugins/auth.js';
 import { copyObject, deletePrefix, deleteObject, listAllKeys, presignedGetUrl, } from '../lib/s3.js';
 import { isPagesV2, migratePagesLegacyToV2 } from '../lib/pagesV2/migrate.js';
 import { parseCatalogStringArrayFromBody, persistBookSearchIndex } from '../lib/bookSearchIndex.js';
-import { hydrateLegacyPagesMediaUrls, hydratePagesV2MediaUrls, parseBookDetailView, } from '../lib/bookMediaHydrate.js';
+import { hydrateBookAssetUrls, hydrateLegacyPagesMediaUrls, hydratePagesV2MediaUrls, parseBookDetailView, } from '../lib/bookMediaHydrate.js';
 import { BOOK_CARD_SELECT, bookCardResponse, bookResponse, parseLimitOffset, } from '../lib/bookSerialize.js';
+import { normalizeBookQuiz, parseBookType, parseOptionalString, parseOptionalUrl, validateBookTypePages, validateDigitalBookAssets, } from '../lib/bookTypes.js';
+import { BookType } from '@prisma/client';
 function toBigIntOrNull(v) {
     if (v === null || v === undefined || v === '')
         return null;
@@ -229,8 +231,14 @@ export async function registerBookRoutes(app) {
             }),
             prisma.book.count(),
         ]);
+        const mediaUrlCache = new Map();
+        const data = await Promise.all(rows.map(async (r) => {
+            const card = bookCardResponse(r);
+            await hydrateBookAssetUrls(card, mediaUrlCache);
+            return card;
+        }));
         return reply.send(jsonSafe({
-            data: rows.map((r) => bookCardResponse(r)),
+            data,
             total,
             limit,
             skip,
@@ -338,14 +346,33 @@ export async function registerBookRoutes(app) {
             resp.needsMigration = true;
             resp.pages_v2_suggested = migratePagesLegacyToV2(pagesLegacy);
         }
+        await hydrateBookAssetUrls(resp, mediaUrlCache);
         return reply.send(resp);
     });
     app.post('/books', { preHandler: requireCmsEditor }, async (request, reply) => {
         const body = request.body;
-        let pages = body.pages ?? [
-            { id: String(Date.now()), background: '', elements: [], orientation: 'portrait' },
-        ];
+        const bookType = parseBookType(body.book_type ?? body.bookType);
+        if (body.book_type != null || body.bookType != null) {
+            if (!bookType) {
+                return reply.code(400).send({
+                    error: 'book_type inválido (animated|interactive|digital).',
+                });
+            }
+        }
         const pagesV2 = (body.pages_v2 ?? body.pagesV2);
+        let pages = body.pages;
+        if (pages === undefined) {
+            pages = bookType
+                ? []
+                : [
+                    {
+                        id: String(Date.now()),
+                        background: '',
+                        elements: [],
+                        orientation: 'portrait',
+                    },
+                ];
+        }
         const importSessionId = isNonEmptyString(body.import_session_id)
             ? String(body.import_session_id).trim()
             : null;
@@ -359,6 +386,42 @@ export async function registerBookRoutes(app) {
             categoryId: toBigIntOrNull(body.category_id),
             linkSlidebook: body.link_slidebook != null ? String(body.link_slidebook) : null,
         };
+        if (bookType) {
+            const wfForValidate = parseBookWorkflowStatus(body.workflow_status ?? body.workflowStatus);
+            const validateOpts = { workflowStatus: wfForValidate ?? 'draft' };
+            if (bookType === BookType.digital) {
+                const digCheck = validateDigitalBookAssets(body, validateOpts);
+                if (!digCheck.ok)
+                    return reply.code(400).send({ error: digCheck.error });
+            }
+            else {
+                const pagesCheck = validateBookTypePages(bookType, pages, validateOpts);
+                if (!pagesCheck.ok)
+                    return reply.code(400).send({ error: pagesCheck.error });
+            }
+            createData.bookType = bookType;
+            const ageRange = parseOptionalString(body.age_range ?? body.ageRange);
+            if (ageRange !== undefined)
+                createData.ageRange = ageRange;
+            const quiz = normalizeBookQuiz(body.quiz ?? body.book_quiz ?? body.bookQuiz);
+            if (quiz !== undefined)
+                createData.bookQuiz = quiz;
+            const soundtrack = parseOptionalUrl(body.soundtrack_url ?? body.soundtrackUrl);
+            if (soundtrack !== undefined)
+                createData.soundtrackUrl = soundtrack;
+            const pdfUrl = parseOptionalUrl(body.pdf_url ?? body.pdfUrl);
+            if (pdfUrl !== undefined)
+                createData.pdfUrl = pdfUrl;
+            const epubUrl = parseOptionalUrl(body.epub_url ?? body.epubUrl);
+            if (epubUrl !== undefined)
+                createData.epubUrl = epubUrl;
+            if ('is_pdf' in body || 'isPdf' in body) {
+                createData.isPdf = Boolean(body.is_pdf ?? body.isPdf);
+            }
+            else if (bookType === 'digital') {
+                createData.isPdf = Boolean(pdfUrl || epubUrl);
+            }
+        }
         const wfCreate = parseBookWorkflowStatus(body.workflow_status ?? body.workflowStatus);
         if (wfCreate) {
             createData.workflowStatus = wfCreate;
@@ -524,10 +587,84 @@ export async function registerBookRoutes(app) {
         }
         const prev = await prisma.book.findUnique({
             where: { id },
-            select: { workflowStatus: true, title: true },
+            select: {
+                workflowStatus: true,
+                title: true,
+                bookType: true,
+                pdfUrl: true,
+                epubUrl: true,
+            },
         });
         if (!prev) {
             return reply.code(404).send({ error: 'Livro não encontrado.' });
+        }
+        if ('book_type' in clean || 'bookType' in clean) {
+            const rawType = clean.book_type ?? clean.bookType;
+            const patchBookType = parseBookType(rawType);
+            if (rawType != null && rawType !== '' && !patchBookType) {
+                return reply.code(400).send({
+                    error: 'book_type inválido (animated|interactive|digital).',
+                });
+            }
+            if (patchBookType && prev.bookType && patchBookType !== prev.bookType) {
+                return reply.code(400).send({ error: 'book_type é imutável após criação.' });
+            }
+            if (patchBookType && !prev.bookType)
+                data.bookType = patchBookType;
+        }
+        if ('age_range' in clean || 'ageRange' in clean) {
+            data.ageRange = parseOptionalString(clean.age_range ?? clean.ageRange) ?? null;
+        }
+        if ('quiz' in clean || 'book_quiz' in clean || 'bookQuiz' in clean) {
+            const raw = clean.quiz ?? clean.book_quiz ?? clean.bookQuiz;
+            if (raw === null)
+                data.bookQuiz = null;
+            else {
+                const quiz = normalizeBookQuiz(raw);
+                if (quiz !== undefined)
+                    data.bookQuiz = quiz;
+            }
+        }
+        if ('soundtrack_url' in clean || 'soundtrackUrl' in clean) {
+            data.soundtrackUrl =
+                parseOptionalUrl(clean.soundtrack_url ?? clean.soundtrackUrl) ?? null;
+        }
+        if ('pdf_url' in clean || 'pdfUrl' in clean) {
+            data.pdfUrl = parseOptionalUrl(clean.pdf_url ?? clean.pdfUrl) ?? null;
+        }
+        if ('epub_url' in clean || 'epubUrl' in clean) {
+            data.epubUrl = parseOptionalUrl(clean.epub_url ?? clean.epubUrl) ?? null;
+        }
+        if ('is_pdf' in clean || 'isPdf' in clean) {
+            data.isPdf = Boolean(clean.is_pdf ?? clean.isPdf);
+        }
+        const effectiveType = prev.bookType ?? data.bookType;
+        const wfFromData = typeof data.workflowStatus === 'string' ? data.workflowStatus : null;
+        const effectiveWorkflow = wfFromData ??
+            parseBookWorkflowStatus(clean.workflow_status ?? clean.workflowStatus) ??
+            prev.workflowStatus ??
+            'draft';
+        const validateOpts = { workflowStatus: effectiveWorkflow };
+        if (effectiveType && 'pages' in clean) {
+            const pagesCheck = validateBookTypePages(effectiveType, clean.pages, validateOpts);
+            if (!pagesCheck.ok)
+                return reply.code(400).send({ error: pagesCheck.error });
+        }
+        if (effectiveType === BookType.digital) {
+            const merged = {
+                pdf_url: 'pdfUrl' in data ? data.pdfUrl : prev.pdfUrl,
+                epub_url: 'epubUrl' in data ? data.epubUrl : prev.epubUrl,
+            };
+            if ('pdfUrl' in data ||
+                'epubUrl' in data ||
+                'pdf_url' in clean ||
+                'epub_url' in clean ||
+                'workflowStatus' in data ||
+                'workflow_status' in clean) {
+                const digCheck = validateDigitalBookAssets(merged, validateOpts);
+                if (!digCheck.ok)
+                    return reply.code(400).send({ error: digCheck.error });
+            }
         }
         if (Object.keys(data).length === 0) {
             const row = await prisma.book.findUnique({

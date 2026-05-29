@@ -15,12 +15,16 @@ export async function registerAuthorRoutes(app) {
             return reply.code(404).send({ error: 'Autor não encontrado.' });
         return reply.send(jsonSafe(row));
     });
-    // Escrita: somente ADM
-    app.post('/authors', { preHandler: requireAdmin }, async (request, reply) => {
+    // Criação no fluxo do livro: admin + editor (edição/apagar continuam só ADM)
+    app.post('/authors', { preHandler: requireCmsEditor }, async (request, reply) => {
         const body = request.body;
+        const name = String(body.name || '').trim();
+        if (!name) {
+            return reply.code(400).send({ error: 'O nome do autor é obrigatório.' });
+        }
         const row = await prisma.author.create({
             data: {
-                name: String(body.name || ''),
+                name,
                 bio: body.bio != null ? String(body.bio) : null,
                 photoUrl: body.photo_url != null ? String(body.photo_url) : null,
             },

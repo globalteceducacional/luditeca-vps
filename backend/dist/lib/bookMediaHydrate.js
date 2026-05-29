@@ -28,20 +28,54 @@ async function resolveStorageUrl(cache, storage) {
         return null;
     }
 }
+const KNOWN_MEDIA_BUCKETS = new Set([
+    'covers',
+    'pages',
+    'presentations',
+    'audios',
+    'videos',
+    'categories',
+    'autores',
+    'avatars',
+]);
+function peelStoragePathSegments(segments) {
+    const parts = [...segments];
+    while (parts.length > 0 && parts[0] === 'media')
+        parts.shift();
+    if (parts.length >= 2 && KNOWN_MEDIA_BUCKETS.has(parts[0])) {
+        const bucket = parts[0];
+        return { bucket, filePath: parts.slice(1).join('/') };
+    }
+    return null;
+}
 function parseStorageFromUrl(rawUrl) {
     if (!isNonEmptyString(rawUrl))
         return null;
+    const raw = String(rawUrl).trim();
     try {
-        const parsed = new URL(String(rawUrl));
-        const path = parsed.pathname.replace(/^\/+/, '');
-        const [bucket, ...rest] = path.split('/');
-        if (!bucket || rest.length === 0)
-            return null;
-        return { bucket, filePath: rest.join('/') };
+        if (/^https?:\/\//i.test(raw)) {
+            const marker = '/media/';
+            let pathname = new URL(raw).pathname;
+            const idx = pathname.indexOf(marker);
+            if (idx >= 0)
+                pathname = pathname.slice(idx + marker.length);
+            else
+                pathname = pathname.replace(/^\/+/, '');
+            const peeled = peelStoragePathSegments(pathname.split('/').filter(Boolean));
+            if (peeled)
+                return peeled;
+        }
     }
     catch {
-        return null;
+        /* ignore */
     }
+    const clean = raw.replace(/^\/+/, '');
+    if (!clean.includes('://')) {
+        const peeled = peelStoragePathSegments(clean.split('/').filter(Boolean));
+        if (peeled)
+            return peeled;
+    }
+    return null;
 }
 export async function hydrateLegacyPagesMediaUrls(pages, cache) {
     if (!Array.isArray(pages))
@@ -73,8 +107,40 @@ export async function hydrateLegacyPagesMediaUrls(pages, cache) {
                 element.storage = fallbackStorage;
             }
         }));
+        // Fluxo por tipo (animated / interactive): `image_url` plano na página/cena.
+        if (isNonEmptyString(page.image_url)) {
+            const imgStorage = parseStorageFromUrl(page.image_url);
+            const signedImg = await resolve(imgStorage);
+            if (signedImg)
+                page.image_url = signedImg;
+        }
     }));
     return next;
+}
+/** Presign de URLs de assets do livro (capa, trilha, PDF, EPUB). */
+export async function hydrateBookAssetUrls(book, cache) {
+    const limit = pLimit(PRESIGN_CONCURRENCY);
+    const resolve = (storage) => limit(() => resolveStorageUrl(cache, storage));
+    const pairs = [
+        ['soundtrackUrl', 'soundtrack_url'],
+        ['pdfUrl', 'pdf_url'],
+        ['epubUrl', 'epub_url'],
+        ['coverImage', 'cover_image'],
+    ];
+    await Promise.all(pairs.map(async ([camel, snake]) => {
+        const raw = book[camel] ?? book[snake];
+        if (!isNonEmptyString(raw))
+            return;
+        const storage = parseStorageFromUrl(raw);
+        if (!storage)
+            return;
+        const signed = await resolve(storage);
+        if (signed) {
+            book[camel] = signed;
+            book[snake] = signed;
+        }
+    }));
+    return book;
 }
 export async function hydratePagesV2MediaUrls(v2, cache) {
     if (!isPagesV2(v2))

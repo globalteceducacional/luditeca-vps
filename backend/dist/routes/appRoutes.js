@@ -1,7 +1,7 @@
 import { BookWorkflowStatus } from '@prisma/client';
 import { activityToApi, coloringPageToApi, librasLessonToApi, listEnvelope, puzzleGameToApi, } from '../lib/contentApi.js';
 import { parsePagination } from '../lib/contentTypes.js';
-import { hydrateLegacyPagesMediaUrls, hydratePagesV2MediaUrls, parseBookDetailView, } from '../lib/bookMediaHydrate.js';
+import { hydrateBookAssetUrls, hydrateLegacyPagesMediaUrls, hydratePagesV2MediaUrls, parseBookDetailView, } from '../lib/bookMediaHydrate.js';
 import { BOOK_CARD_SELECT, bookCardResponse, bookResponse, parseLimitOffset, } from '../lib/bookSerialize.js';
 import { isPagesV2, migratePagesLegacyToV2 } from '../lib/pagesV2/migrate.js';
 import { prisma } from '../lib/prisma.js';
@@ -40,6 +40,7 @@ async function buildPublishedBookDetail(bookId, viewRaw) {
         resp.needsMigration = true;
         resp.pages_v2_suggested = migratePagesLegacyToV2(pagesLegacy);
     }
+    await hydrateBookAssetUrls(resp, mediaUrlCache);
     return { status: 200, body: resp };
 }
 export async function registerAppRoutes(app) {
@@ -56,7 +57,13 @@ export async function registerAppRoutes(app) {
             }),
             prisma.book.count({ where }),
         ]);
-        return reply.send(listEnvelope(rows.map((r) => bookCardResponse(r)), total, limit, skip));
+        const mediaUrlCache = new Map();
+        const items = await Promise.all(rows.map(async (r) => {
+            const card = bookCardResponse(r);
+            await hydrateBookAssetUrls(card, mediaUrlCache);
+            return card;
+        }));
+        return reply.send(listEnvelope(items, total, limit, skip));
     });
     app.get('/app/books/:id', { preHandler: requireAppUser }, async (request, reply) => {
         let id;
